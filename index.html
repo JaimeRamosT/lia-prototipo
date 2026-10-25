@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>LIA</title>
+<meta name="description" content="Lía arma tu horario de estudio en las horas que de verdad tienes libres. Para universitarios que estudian y trabajan.">
+<meta name="theme-color" content="#3D3BF3">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="LIA">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta property="og:type" content="website">
+<meta property="og:title" content="LIA · Tu horario de estudio">
+<meta property="og:description" content="Lía arma tu horario de estudio en las horas que de verdad tienes libres.">
+<link rel="preload" href="fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* Base: márgenes seguros del teléfono (notch y barra inferior). */
+:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;padding:0}
+img{max-width:100%}
+/* Inter 4 (SIL Open Font License 1.1, ver fonts/OFL.txt), alojada aquí para que la app funcione sin internet. */
+@font-face{font-family:'Inter';font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+/* Layout: one-column phone app (max 440px) — scrolling view + fixed tab bar; sheets slide up from the bottom. */
+:root{
+  --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C1B29; --mute:#6B6A7B; --line:#E6E2D9;
+  --pri:#3D3BF3; --pri-ink:#FFFFFF; --pri-soft:#ECEBFF; --pri-sub:#C9C8FF;
+  --clase:#E8EBF2; --clase-ink:#1C1B29; --trabajo:#FFE6BA; --trabajo-ink:#5A3B00;
+  --otro:#E4F1EA; --otro-ink:#1F4D33; --exam:#FF5A4E; --exam-soft:#FFEFEC; --exam-ink:#B4271B;
+  --ok:#1E9E5A; --ok-soft:#E3F7EC; --night:#16153A; --night-ink:#FFFFFF; --shadow:rgba(28,27,41,.10);
+  --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
+  --pri:#7472FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
+  --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
+  --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
+  --ok:#4CC98A; --ok-soft:#173326; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
+  --pri:#7472FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
+  --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
+  --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
+  --ok:#4CC98A; --ok-soft:#173326; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4); color-scheme:dark}
+html,body{height:100%}
+[hidden]{display:none!important}
+body.wm{background:#3D3BF3}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.4;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0;text-align:inherit}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:8px}
+.app{max-width:440px;height:100%;margin:0 auto;display:flex;flex-direction:column;position:relative;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+main{flex:1;overflow-y:auto;overflow-x:hidden;padding-block:16px 24px;display:flex;flex-direction:column;gap:16px;scrollbar-width:none}
+main::-webkit-scrollbar{display:none}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);align-items:end;padding-block:8px 10px;border-top:1px solid var(--line);background:var(--bg)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:500;color:var(--mute);padding-block:4px}
+.tab svg{width:24px;height:24px}
+.tab[aria-current="page"]{color:var(--pri);font-weight:600}
+.tab .av{width:40px;height:40px}
+/* type */
+h1{font-size:28px;line-height:1.1;letter-spacing:-.02em;margin:0;font-weight:700;text-wrap:balance}
+h2{font-size:17px;margin:0;font-weight:600}
+.kicker{font-size:13px;color:var(--mute);font-weight:500}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.muted{color:var(--mute)}
+.small{font-size:13px}
+.tnum{font-variant-numeric:tabular-nums}
+.stack{display:flex;flex-direction:column;gap:10px}
+.row-h{display:flex;align-items:center;gap:10px}
+.between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.grow{flex:1;min-width:0}
+/* surfaces */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
+.hero{background:var(--pri);color:var(--pri-ink);border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:6px}
+.hero .eyebrow{color:var(--pri-ink);opacity:.75}
+.hero .big{font-size:32px;font-weight:700;letter-spacing:-.02em}
+.note{background:var(--pri-soft);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.note b{color:var(--pri)}
+.warn{background:var(--exam-soft);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.warn b{color:var(--exam-ink)}
+.night{background:var(--night);color:var(--night-ink);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:center}
+.night .sub{opacity:.75;font-size:13px}
+.demo{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface);border:1px dashed var(--pri);border-radius:14px;padding:10px 12px;font-size:13px}
+/* buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;border-radius:14px;font-weight:600;font-size:16px;padding:0 18px;width:100%}
+.btn.pri{background:var(--pri);color:var(--pri-ink)}
+.btn.light{background:var(--surface);color:var(--pri)}
+.btn.sec{background:var(--surface);color:var(--pri);border:1.5px solid var(--line)}
+.btn.danger{background:var(--surface);color:var(--exam-ink);border:1.5px solid var(--line)}
+.btn.sm{min-height:40px;font-size:14px;border-radius:12px;width:auto}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;font-size:13px;font-weight:600;background:var(--pri-soft);color:var(--pri)}
+.pill.solid{background:var(--pri);color:var(--pri-ink)}
+.pill.ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.dashed{display:flex;align-items:center;gap:10px;border:1.5px dashed var(--pri);color:var(--pri);border-radius:16px;padding:10px 12px;font-weight:600;width:100%}
+.dashed .grow{text-align:left}
+.mic{width:36px;height:36px;border-radius:50%;background:var(--pri);color:var(--pri-ink);display:grid;place-items:center;flex:none}
+.mic svg{width:18px;height:18px}
+.ico{width:22px;height:22px;flex:none}
+/* avatar */
+.av{border-radius:50%;background:linear-gradient(135deg,#3D3BF3,#A855F7);display:grid;place-items:center;flex:none;color:#fff}
+.av svg{width:55%;height:55%}
+/* agenda */
+.agenda{display:flex;flex-direction:column;gap:8px}
+.ag{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start;width:100%}
+.ag .t{font-size:13px;color:var(--mute);font-weight:500;padding-top:12px}
+.blk{border-radius:12px;padding:11px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.blk b{font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.blk small{font-size:13px;opacity:.75}
+.k-clase{background:var(--clase);color:var(--clase-ink)}
+.k-trabajo{background:var(--trabajo);color:var(--trabajo-ink)}
+.k-traslado,.k-otro{background:var(--otro);color:var(--otro-ink)}
+.k-excepcion{background:repeating-linear-gradient(135deg,var(--clase) 0 8px,var(--surface) 8px 16px);color:var(--clase-ink);border:1px solid var(--line)}
+.k-estudio{background:var(--pri);color:var(--pri-ink)}
+.k-hecho{background:var(--ok-soft);color:var(--ok)}
+.k-examen{background:var(--exam);color:#fff}
+.k-dormir{background:var(--night);color:var(--night-ink)}
+.past{opacity:.45}
+/* lists */
+.item{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;width:100%}
+.sw{width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;font-weight:700;font-size:13px}
+.tag{font-size:13px;font-weight:600;white-space:nowrap}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--pri);border-radius:4px}
+/* week */
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.day span{font-size:12px;color:var(--mute);font-weight:500}
+.day b{font-size:17px;font-weight:600}
+.day[aria-pressed="true"]{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+.day[aria-pressed="true"] span{color:var(--pri-sub)}
+.day .dot{width:5px;height:5px;border-radius:50%;background:var(--pri)}
+.day[aria-pressed="true"] .dot{background:var(--pri-ink)}
+.day .dot.x{background:var(--exam)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat b{display:block;font-size:22px;color:var(--pri);font-weight:700}
+.stat span{font-size:12px;color:var(--mute)}
+/* chat */
+.chat{display:flex;flex-direction:column;gap:10px}
+.msg{display:flex;gap:8px;align-items:flex-start}
+.msg .bub{background:var(--surface);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:10px 12px;max-width:84%;white-space:pre-line;display:flex;flex-direction:column;gap:8px}
+.msg.me{justify-content:flex-end}
+.msg.me .bub{background:var(--pri);color:var(--pri-ink);border-color:var(--pri);border-radius:16px 16px 4px 16px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.inbar{display:flex;gap:10px;align-items:center;padding-block:8px}
+.inbar input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:24px;padding:13px 16px}
+.inbar .mic{width:48px;height:48px}
+.inbar .mic svg{width:22px;height:22px}
+/* forms */
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
+label.f input,label.f select{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;font-weight:400;color:var(--ink);font-size:16px;width:100%;min-width:0}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+@media (max-width:340px){.two:has(input[type=time]){grid-template-columns:minmax(0,1fr)}}
+.dpick{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dpick label{display:grid;place-items:center;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;color:var(--ink)}
+.dpick input{position:absolute;opacity:0;pointer-events:none}
+.dpick input:checked+span{color:var(--pri-ink)}
+.dpick label:has(input:checked){background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+.opt{display:flex;gap:12px;align-items:center;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px}
+.opt:has(input:checked){border-color:var(--pri)}
+.opt input{accent-color:var(--pri);width:20px;height:20px;flex:none}
+/* sheet */
+.scrim{position:fixed;inset:0;background:rgba(10,10,25,.45);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);width:100%;max-width:440px;border-radius:24px 24px 0 0;max-height:90%;overflow-y:auto;
+  padding-block:20px max(24px,env(safe-area-inset-bottom,0px));padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+.grab{width:40px;height:5px;border-radius:3px;background:var(--line);align-self:center}
+/* full overlays */
+.full{position:fixed;inset:0;z-index:40;background:var(--night);color:var(--night-ink);display:flex;justify-content:center}
+.full .in{width:100%;max-width:440px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
+  padding-block:max(20px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-bottom,0px));padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.full .top{width:100%;display:flex;justify-content:space-between;font-size:14px;opacity:.75}
+.full .glass{background:rgba(255,255,255,.08);border-radius:16px;padding:14px;width:100%;text-align:left;display:flex;gap:12px;align-items:center}
+.halo{width:160px;height:160px;border-radius:50%;background:rgba(110,108,255,.12);display:grid;place-items:center;position:relative}
+.halo::before{content:"";position:absolute;inset:20px;border-radius:50%;background:rgba(110,108,255,.25);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.08)}}
+.halo .av{position:relative}
+.transcript{font-size:21px;font-weight:600;line-height:1.3;min-height:56px}
+.stopb{width:72px;height:72px;border-radius:50%;background:#fff;display:grid;place-items:center}
+.stopb i{width:22px;height:22px;border-radius:5px;background:#FF5A4E}
+.ring{position:relative;width:230px;height:230px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .c{position:absolute;inset:0;display:grid;place-content:center;gap:2px}
+.ring .c b{font-size:52px;font-weight:700;letter-spacing:-.02em}
+/* welcome */
+.welcome{background:#3D3BF3;color:#fff;padding-block:20px;display:flex;flex-direction:column;gap:18px;min-height:100%}
+.welcome h1{font-size:32px;color:#fff}
+.welcome .preview{background:#fff;border-radius:22px;padding:14px;display:flex;flex-direction:column;gap:8px;color:#1C1B29}
+.welcome .preview .k-clase{background:#E8EBF2;color:#1C1B29}.welcome .preview .k-trabajo{background:#FFE6BA;color:#5A3B00}.welcome .preview .k-estudio{background:#3D3BF3;color:#fff}
+.welcome .btn.light{background:#fff;color:#3D3BF3}
+.welcome .btn.ghostw{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5)}
+.logo{display:flex;gap:8px;align-items:center;font-weight:700;font-size:20px}
+.steps{display:flex;gap:6px}.steps i{flex:1;height:6px;border-radius:3px;background:var(--line)}.steps i.on{background:var(--pri)}
+.check{width:24px;height:24px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:grid;place-items:center;flex:none}
+.check svg{width:14px;height:14px}
+/* toast */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 14px;display:flex;gap:14px;align-items:center;width:min(408px,calc(100% - 32px));font-size:14px;box-shadow:0 8px 24px var(--shadow)}
+.toast button{color:var(--pri-sub);font-weight:700;white-space:nowrap}
+:root[data-theme="light"] .toast button{color:#C9C8FF}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <main id="view" aria-live="polite"></main>
+  <nav class="tabs" id="tabs" aria-label="Secciones"></nav>
+</div>
+<div id="layer"></div>
+<div id="toastbox"></div>
+
+<script>
+/*LOGIC-START*/
+const pad=n=>String(n).padStart(2,'0');
+const toMin=t=>{const [h,m]=String(t).split(':').map(Number);return h*60+(m||0);};
+const fmt=m=>{m=Math.max(0,Math.round(m));return pad(Math.floor(m/60)%24)+':'+pad(m%60);};
+const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const fromYmd=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);};
+const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);
+const dayDiff=(a,b)=>Math.round((fromYmd(b)-fromYmd(a))/864e5);
+const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const DIAS_C=['D','L','M','M','J','V','S'];
+const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const EVAL_TYPES={parcial:{label:'Parcial',h:5,exam:true},final:{label:'Final',h:6,exam:true},practica:{label:'Práctica',h:3,exam:true},control:{label:'Control',h:2,exam:true},entrega:{label:'Entrega',h:4,exam:false},exposicion:{label:'Exposición',h:3,exam:false}};
+const COMMIT_TYPES={clase:'Clases',trabajo:'Trabajo',traslado:'Traslado',otro:'Otro'};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const hrs=m=>{m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h&&r?`${h} h ${r} min`:h?`${h} h`:`${r} min`;};
+const fechaLarga=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`;};
+const fechaCorta=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()].slice(0,3)} ${d.getDate()} ${MESES[d.getMonth()].slice(0,3)}`;};
+
+function subtract(wins,s,e){const out=[];for(const w of wins){if(e<=w.s||s>=w.e){out.push(w);continue;}if(s>w.s)out.push({s:w.s,e:s});if(e<w.e)out.push({s:e,e:w.e});}return out;}
+function busyFor(state,date){const wd=fromYmd(date).getDay();const b=[];
+  for(const c of state.commitments)if(c.days.includes(wd))b.push({s:toMin(c.start),e:toMin(c.end),kind:c.type,label:c.name,ref:c.id});
+  for(const x of state.exceptions)if(x.date===date)b.push({s:toMin(x.start),e:toMin(x.end),kind:'excepcion',label:x.label,ref:x.id});
+  return b;}
+function evalDeadline(ev,S){const t=EVAL_TYPES[ev.type]||EVAL_TYPES.parcial;
+  if(t.exam)return{date:ymd(addDays(fromYmd(ev.date),-1)),end:toMin(S.sleep)};
+  return{date:ev.date,end:Math.min(toMin(ev.time)-60,toMin(S.sleep))};}
+function doneFor(state,id){return state.done.filter(x=>x.evalId===id).reduce((a,x)=>a+x.min,0);}
+
+// Motor de horarios: reparte las horas que pide cada evaluación en los huecos libres reales.
+function plan(state,now){
+  const S=state.settings,wake=toMin(S.wake),sleep=toMin(S.sleep);
+  const today=ymd(now),nowMin=now.getHours()*60+now.getMinutes();
+  const evs=state.evals.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  let last=ymd(addDays(now,6));for(const e of evs)if(e.date>last)last=e.date;
+  const nDays=Math.min(dayDiff(today,last),60);const days={};
+  for(let i=0;i<=nDays;i++){const d=ymd(addDays(fromYmd(today),i));let wins=[{s:wake,e:sleep}];
+    if(i===0)wins=subtract(wins,0,Math.ceil((nowMin+10)/15)*15);
+    for(const b of busyFor(state,d))wins=subtract(wins,b.s,b.e);
+    for(const x of state.done)if(x.date===d)wins=subtract(wins,toMin(x.start),toMin(x.start)+x.min);
+    for(const e of evs)if(e.date===d)wins=subtract(wins,toMin(e.time)-30,toMin(e.time)+120);
+    days[d]={wins,load:0,free:wins.reduce((a,w)=>a+w.e-w.s,0)};}
+  for(const x of state.done)if(days[x.date])days[x.date].load+=x.min;
+  const blocks=[],unmet={};
+  for(const ev of evs){
+    let rem=Math.max(0,Math.round(ev.hours*60)-doneFor(state,ev.id));
+    const dl=evalDeadline(ev,S);
+    if(dl.date<today){unmet[ev.id]=ev.date<today?0:rem;continue;}
+    const dlist=Object.keys(days).filter(d=>d<=dl.date).sort();
+    const evLoad={};let progress=true;
+    while(rem>=10&&progress){progress=false;
+      for(const d of dlist){if(rem<10)break;const day=days[d];
+        const avail=Math.min(S.maxDay-day.load,120-(evLoad[d]||0));
+        if(avail<Math.min(S.minBlock,rem))continue;
+        const limit=d===dl.date?dl.end:sleep;
+        const need=Math.min(S.minBlock,rem);
+        const cands=day.wins.map(w=>({s:w.s,e:Math.min(w.e,limit)})).filter(w=>w.e-w.s>=need);
+        if(!cands.length)continue;
+        cands.sort((a,b)=>(b.e-b.s)-(a.e-a.s)||a.s-b.s);
+        const w=cands[0];let len=Math.min(S.block,rem,avail,w.e-w.s);
+        len=Math.floor(len/5)*5;if(len<need)continue;
+        let st=w.s;if(w.e-w.s>=len+180&&st<600)st=Math.min(600,w.e-len);
+        blocks.push({evalId:ev.id,date:d,s:st,e:st+len});
+        day.wins=subtract(day.wins,st,st+len+10);day.load+=len;evLoad[d]=(evLoad[d]||0)+len;rem-=len;progress=true;}}
+    unmet[ev.id]=rem>=10?rem:0;}
+  blocks.sort((a,b)=>(a.date+fmt(a.s)).localeCompare(b.date+fmt(b.s)));
+  return{blocks,unmet,days};
+}
+function agendaFor(state,P,date){
+  const it=[];const ev=id=>state.evals.find(e=>e.id===id);
+  for(const b of busyFor(state,date))it.push({...b});
+  for(const e of state.evals)if(e.date===date)it.push({s:toMin(e.time),e:toMin(e.time)+120,kind:'examen',label:`${EVAL_TYPES[e.type].label} · ${e.course}`,ref:e.id});
+  for(const x of state.done)if(x.date===date){const e=ev(x.evalId);it.push({s:toMin(x.start),e:toMin(x.start)+x.min,kind:'hecho',label:`Estudiaste ${e?e.course:''}`,ref:x.id});}
+  for(const b of P.blocks)if(b.date===date){const e=ev(b.evalId);it.push({s:b.s,e:b.e,kind:'estudio',label:`Estudiar ${e?e.course:''}`,sub:e?`Para: ${EVAL_TYPES[e.type].label} ${fechaCorta(e.date)}`:'',ref:b.evalId,block:b});}
+  it.sort((a,b)=>a.s-b.s);return it;
+}
+
+// ---------- Lectura de frases (sin IA) ----------
+const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const DAYW={domingo:0,domingos:0,lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,sabados:6};
+const EVAL_KW={parcial:'parcial',parciales:'parcial',examen:'parcial',examenes:'parcial',final:'final',finales:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',control:'control',quiz:'control',lab:'control',laboratorio:'control',entrega:'entrega',entrego:'entrega',entregar:'entrega',entregable:'entrega',exposicion:'exposicion',expongo:'exposicion',sustentacion:'exposicion',sustento:'exposicion'};
+const COMMIT_KW={trabajo:'trabajo',trabajar:'trabajo',trabajando:'trabajo',chamba:'trabajo',chambeo:'trabajo',turno:'trabajo',clase:'clase',clases:'clase',traslado:'traslado',viaje:'traslado',gimnasio:'otro',gym:'otro',ingles:'otro',voluntariado:'otro',almuerzo:'otro',futbol:'otro',iglesia:'otro',academia:'otro'};
+const NUMW={una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12};
+const MESN={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
+const TIMECTX=new Set(['las','la','de','a','desde','hasta','y','entre']);
+function tokenize(text){
+  const raw=text.replace(/[“”"¿?¡!]/g,' ').replace(/(\d)(am|pm|hrs|hr|h)\b/gi,'$1 $2').replace(/([ap])\.\s?m\.?/gi,'$1m').replace(/,/g,' , ').split(/\s+/).filter(Boolean);
+  const toks=raw.map(o=>({o:o.replace(/[.;]+$/,''),n:norm(o).replace(/[.;]+$/,'')}));
+  for(let i=0;i<toks.length;i++){const t=toks[i];if(NUMW[t.n]&&i>0&&TIMECTX.has(toks[i-1].n)){t.n=String(NUMW[t.n]);}}
+  return toks;}
+const H='(\\d{1,2})(?::(\\d{2}))?(?:\\s*(am|pm))?';
+function partOf(ns){const m=ns.match(/\b(?:en|por|de|a) (?:la|las) (manana|tarde|noche)s?\b/)||ns.match(/\b(tarde|noche)s?\b/);return m?m[1]:null;}
+function adj(h,m,ap,part){h=+h;m=+m||0;if(ap){if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;}
+  else if((part==='tarde'||part==='noche')&&h<12)h+=12;else if(part!=='manana'&&h>=1&&h<=6)h+=12;return h*60+m;}
+function parseTimes(ns){const part=partOf(ns);
+  let m=ns.match(new RegExp(`\\b(?:de|desde|entre)\\s+(?:las\\s+|la\\s+)?${H}\\s+(?:a|hasta|y)\\s+(?:las\\s+|la\\s+)?${H}`));
+  if(!m)m=ns.match(new RegExp(`\\b(\\d{1,2}):(\\d{2})(?:\\s*(am|pm))?\\s*(?:-|a|hasta)\\s*(\\d{1,2})(?::(\\d{2}))?(?:\\s*(am|pm))?`));
+  if(m){let s=adj(m[1],m[2],m[3]||(m[6]==='pm'&&+m[1]<+m[4]?'pm':null),part),e=adj(m[4],m[5],m[6],part);
+    if(e<=s&&e<720)e+=720;if(e>s)return{range:[s,e],part};}
+  m=ns.match(new RegExp(`\\b(?:hasta(?:\\s+las|\\s+la)?|salgo\\b.{0,25}?\\ba(?:\\s+las|\\s+la)?)\\s+${H}`));
+  if(m)return{until:adj(m[1],m[2],m[3],part),part};
+  m=ns.match(new RegExp(`\\b(?:a las|a la|las)\\s+${H}`))||ns.match(/\b(\d{1,2}):(\d{2})(?:\s*(am|pm))?/)||ns.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  if(m){if(m.length===3)return{at:adj(m[1],0,m[2],part),part};return{at:adj(m[1],m[2],m[3],part),part};}
+  return{part};}
+function nextWeekday(now,wd,allowToday){let d=(wd-now.getDay()+7)%7;if(d===0&&!allowToday)d=7;return ymd(addDays(now,d));}
+function parseDate(ns,now){
+  if(/\bpasado manana\b/.test(ns))return ymd(addDays(now,2));
+  const ns2=ns.replace(/\b(?:en|por|de|a) (?:la|las) mananas?\b/g,' ');
+  if(/\bhoy\b/.test(ns2))return ymd(now);
+  if(/\bmanana\b/.test(ns2))return ymd(addDays(now,1));
+  let m=ns.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
+  const mk=(d,mo)=>{let y=now.getFullYear();let dt=new Date(y,mo-1,d);if(dt<addDays(now,-1))dt=new Date(y+1,mo-1,d);return ymd(dt);};
+  if(m)return mk(+m[1],+m[2]);
+  m=ns.match(/\b(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/);
+  if(m)return mk(+m[1],MESN[m[2]]);
+  for(const [w,wd] of Object.entries(DAYW)){if(new RegExp(`\\b${w}\\b`).test(ns2)){const prox=new RegExp(`\\b(proximo|siguiente)\\s+${w}\\b`).test(ns2);let d=nextWeekday(now,wd,false);if(prox&&dayDiff(ymd(now),d)<7)d=ymd(addDays(fromYmd(d),7));return d;}}
+  m=ns.match(/\bel (\d{1,2})\b(?!\s*(?::|am|pm|h\b|horas))/);
+  if(m){const d=+m[1];let dt=new Date(now.getFullYear(),now.getMonth(),d);if(dt<addDays(now,-1))dt=new Date(now.getFullYear(),now.getMonth()+1,d);return ymd(dt);}
+  return null;}
+function parseDays(ns){
+  if(/\b(todos los dias|diario|diariamente|cada dia)\b/.test(ns))return[0,1,2,3,4,5,6];
+  if(/\bfin(?:es)? de semana\b/.test(ns))return[6,0];
+  if(/\bentre semana\b/.test(ns))return[1,2,3,4,5];
+  const dw='(lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?';
+  const m=ns.match(new RegExp(`\\b${dw}\\s+(?:a|al|hasta)\\s+(?:el\\s+)?${dw}\\b`));
+  if(m){const a=DAYW[m[1]],b=DAYW[m[2]];const out=[];let d=a;for(let k=0;k<7;k++){out.push(d);if(d===b)break;d=(d+1)%7;}return out;}
+  const out=[];for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns)&&!out.includes(wd))out.push(wd);
+  return out.sort((a,b)=>((a+6)%7)-((b+6)%7));}
+const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera']);
+const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:']);
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function extractCourse(toks,i){let j=i+1;while(j<toks.length&&SKIPW.has(toks[j].n))j++;const out=[];
+  for(;j<toks.length&&out.length<4;j++){const t=toks[j];
+    if(t.n==='de'&&out.length&&j+1<toks.length&&!STOPW.has(toks[j+1].n)&&toks[j+1].n!=='de'&&DAYW[toks[j+1].n]===undefined&&!/^\d/.test(toks[j+1].n)&&!MESN[toks[j+1].n]){out.push(t.o);continue;}
+    if(STOPW.has(t.n)||t.n==='de'||DAYW[t.n]!==undefined||(EVAL_KW[t.n]&&!out.length)||MESN[t.n])break;
+    if(/^\d/.test(t.n)){if(out.length&&/^\d$/.test(t.n)&&!(toks[j+1]&&/^(de|\/|am|pm|h|horas)$/.test(toks[j+1].n))){out.push(t.o);continue;}break;}
+    if(/^(i|ii|iii|iv|v)$/.test(t.n)&&out.length){out.push(t.o.toUpperCase());continue;}
+    out.push(t.o);}
+  return cap(out.join(' '));}
+function hasTime(ns){return /\d/.test(ns);}
+function splitClauses(toks){const parts=[];let cur=[];
+  for(let i=0;i<toks.length;i++){const t=toks[i];
+    if(t.n==='y'||t.n===','){const lns=cur.map(x=>x.n).join(' ');const rns=toks.slice(i+1).map(x=>x.n).join(' ');
+      const leftOk=hasTime(lns)||(cur.some(x=>EVAL_KW[x.n])&&parseDate(lns,new Date())!==null);
+      const rightOk=/\d/.test(rns)||Object.keys(DAYW).some(w=>new RegExp(`\\b${w}\\b`).test(rns))||cur.length&&toks.slice(i+1).some(x=>EVAL_KW[x.n]||COMMIT_KW[x.n])||/\b(hoy|manana|tarde|noche)\b/.test(rns);
+      if(cur.length&&leftOk&&rightOk){parts.push(cur);cur=[];continue;}
+      if(!cur.length)continue;}
+    cur.push(t);}
+  if(cur.length)parts.push(cur);return parts;}
+function parseClause(toks,now,prev,S){
+  const ns=toks.map(t=>t.n).join(' ');
+  const iE=toks.findIndex(t=>EVAL_KW[t.n]);
+  const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
+  if(iE>=0){let k=iE;while(k+1<toks.length&&EVAL_KW[toks[k+1].n])k++;const type=EVAL_KW[toks[k].n];const course=extractCourse(toks,k)||(type==='entrega'?'Trabajo':'Curso');
+    const date=parseDate(ns,now);const tm=parseTimes(ns);
+    let time=tm.at!=null?fmt(tm.at):tm.range?fmt(tm.range[0]):(type==='entrega'?'23:59':'09:00');
+    const hm=ns.match(/\b(\d{1,2})\s*(?:h|hrs|horas)\b/);
+    const hours=hm?Math.min(+hm[1],40):EVAL_TYPES[type].h;
+    if(!date)return{kind:'eval',error:`¿Qué día es tu ${EVAL_TYPES[type].label.toLowerCase()} de ${course}? Por ejemplo: “el jueves a las 9”.`};
+    return{kind:'eval',type,course,date,time,hours};}
+  if(iC>=0||(prev&&prev.kind==='commit'&&!prev.error)){
+    const type=iC>=0?COMMIT_KW[toks[iC].n]:prev.type;
+    const name=iC>=0?(type==='otro'?cap(toks[iC].o):COMMIT_TYPES[type]):prev.name;
+    const days=parseDays(ns);const tm=parseTimes(ns);let range=tm.range;
+    if(!range&&tm.part){range={manana:[540,780],tarde:[840,1080],noche:[1140,1320]}[tm.part];}
+    if(!days.length)return{kind:'commit',type,name,error:`¿Qué días tienes ${name.toLowerCase()}? Por ejemplo: “de lunes a viernes de 3 a 7”.`};
+    if(!range)return{kind:'commit',type,name,error:`¿A qué hora es ${name.toLowerCase()}? Por ejemplo: “de 3 a 7”.`};
+    return{kind:'commit',type,name,days,start:fmt(range[0]),end:fmt(range[1])};}
+  return null;}
+// Devuelve una intención: {intent:'add',items}, {intent:'except',...}, {intent:'ask',...}, {intent:'help'}
+function interpret(text,state,now){
+  const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
+  if(!ns.trim())return{intent:'help'};
+  if(/\b(que tengo|que me toca|mi agenda|como esta mi)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
+  if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
+  if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
+  const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|cancelaron|no voy a poder|no podre)\b/;
+  const hasEval=toks.some(t=>EVAL_KW[t.n]);
+  if(busyWords.test(ns)&&!hasEval){
+    const date=parseDate(ns,now)||ymd(now);const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=toMin(S.sleep);
+    const nowMin=date===ymd(now)?now.getHours()*60+now.getMinutes():wake;
+    let s,e,label='No disponible';
+    if(tm.range){[s,e]=tm.range;}
+    else if(tm.until!=null||(tm.at!=null&&/\b(salgo|me quedo|hasta)\b/.test(ns))){e=tm.until!=null?tm.until:tm.at;if(e<=Math.max(nowMin,wake)&&e<720)e+=720;
+      const wd=fromYmd(date).getDay();const kind=/\bclase/.test(ns)?'clase':'trabajo';
+      const c=state.commitments.filter(c=>c.days.includes(wd)&&(c.type===kind||c.type==='trabajo')&&toMin(c.end)<e).sort((a,b)=>toMin(b.end)-toMin(a.end))[0];
+      s=c?toMin(c.end):Math.max(nowMin,wake);label=c?`${c.name} (más tarde)`:'Ocupado';}
+    else if(tm.at!=null){s=tm.at;e=tm.at+60;}
+    else{s=wake;e=sleep;label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
+    if(!(e>s))return{intent:'help'};
+    return{intent:'except',ex:{date,start:fmt(s),end:fmt(Math.min(e,24*60-1)),label}};}
+  const clauses=splitClauses(toks);let prev=null;const items=[];
+  for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
+  if(items.length)return{intent:'add',items};
+  if(/\b(reorganiza|reprograma|arma|planifica|ordena)\b/.test(ns))return{intent:'replan'};
+  return{intent:'help'};}
+/*LOGIC-END*/
+
+// ---------- Estado ----------
+const KEY='lia.app.v1';
+const DEFAULT_SETTINGS={wake:'07:00',sleep:'23:00',maxDay:180,block:60,minBlock:30,autonomy:'auto',name:''};
+function exampleState(now){const t=ymd(now),d=n=>ymd(addDays(now,n));
+  const wkd=(min,skip)=>{let k=min;while([0,6].includes(addDays(now,k).getDay())||(skip&&skip.includes(ymd(addDays(now,k)))))k++;return ymd(addDays(now,k));};
+  const dA=wkd(2),dB=wkd(dayDiff(ymd(now),dA)+1),dC=wkd(dayDiff(ymd(now),dB)+3);
+  return{v:1,mode:'example',onboarded:true,settings:{...DEFAULT_SETTINGS,name:'Andrea'},
+    commitments:[
+      {id:'c1',name:'Clases en la U',type:'clase',days:[1,2,3,4,5],start:'08:00',end:'13:00'},
+      {id:'c2',name:'Almuerzo y traslado',type:'traslado',days:[1,2,3,4,5],start:'13:00',end:'14:00'},
+      {id:'c3',name:'Trabajo',type:'trabajo',days:[1,2,3,4,5],start:'15:00',end:'19:00'},
+      {id:'c4',name:'Trabajo',type:'trabajo',days:[6],start:'09:00',end:'13:00'},
+      {id:'c5',name:'Traslado a casa',type:'traslado',days:[1,2,3,4,5],start:'19:00',end:'19:45'}],
+    evals:[
+      {id:'e1',type:'parcial',course:'Cálculo II',date:dA,time:'09:00',hours:5},
+      {id:'e2',type:'entrega',course:'Proyecto Integrador',date:dB,time:'23:59',hours:4},
+      {id:'e3',type:'practica',course:'Física II',date:dC,time:'14:00',hours:3}],
+    done:[{id:'h1',evalId:'e1',date:d(-1),start:'20:00',min:90},{id:'h2',evalId:'e1',date:d(-2),start:'20:00',min:60}],
+    exceptions:[],
+    chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana. También puedes decirme cosas como “hoy salgo del trabajo a las 9”.'}]};}
+function emptyState(){return{v:1,mode:'own',onboarded:false,settings:{...DEFAULT_SETTINGS},commitments:[],evals:[],done:[],exceptions:[],
+  chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana.'}]};}
+let state;let fresh=false;
+try{const raw=localStorage.getItem(KEY);state=raw?JSON.parse(raw):null;}catch(e){state=null;}
+if(!state||state.v!==1){state=exampleState(new Date());fresh=true;}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+let undoStack=null;
+function snapshot(){undoStack=JSON.stringify(state);}
+function undo(){if(!undoStack)return;state=JSON.parse(undoStack);undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
+
+const ui={tab:'hoy',welcome:fresh,ob:0,weekOffset:0,sel:null,sheet:null,session:null,listen:null,pending:null};
+
+// ---------- Íconos ----------
+const I={
+ sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+ cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+ list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17" stroke-width="1.8"/></svg>',
+ user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
+ spark:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.1 6.2 6.4 2.3-6.4 2.3L12 19.5l-2.1-6.2L3.5 11l6.4-2.3L12 2.5z"/><path d="M19 16l.8 2.2 2.2.8-2.2.8L19 22l-.8-2.2-2.2-.8 2.2-.8L19 16z"/></svg>',
+ mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+ plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+ send:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+ moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
+ alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l9.5 17h-19L12 3.5z"/><path d="M12 10v4.5M12 17.5v.5"/></svg>',
+ check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+ back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+ next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'};
+const AV=(s=32)=>`<span class="av" style="width:${s}px;height:${s}px">${I.spark}</span>`;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- Utilidades de vista ----------
+function now(){return new Date();}
+function P(){return plan(state,now());}
+function evById(id){return state.evals.find(e=>e.id===id);}
+function enDias(date){const n=dayDiff(ymd(now()),date);return n<0?'Pasó':n===0?'Hoy':n===1?'Mañana':`En ${n} días`;}
+function tagColor(date){const n=dayDiff(ymd(now()),date);return n<=1?'var(--exam-ink)':n<=3?'var(--trabajo-ink)':'var(--pri)';}
+function swColor(type){return type==='entrega'||type==='exposicion'?'k-trabajo':type==='parcial'||type==='final'?'k-examen':'k-estudio';}
+function rowHTML(x,date){const isToday=date===ymd(now());const nm=now().getHours()*60+now().getMinutes();const past=isToday&&x.e<=nm;
+  const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'?`data-a="del-ex" data-id="${x.ref}"`:(['clase','trabajo','traslado','otro'].includes(x.kind)?`data-a="edit-commit" data-id="${x.ref}"`:'');
+  const sub=x.kind==='excepcion'?'Toca para quitar':x.sub||'';
+  return `<button class="ag ${past?'past':''}" ${act}><span class="t tnum">${fmt(x.s)}</span><span class="blk k-${x.kind}"><b>${esc(x.label)}</b><small class="tnum">${fmt(x.s)} – ${fmt(x.e)}${sub?' · '+esc(sub):''}</small></span></button>`;}
+function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
+  const sleep=`<div class="ag"><span class="t tnum">${state.settings.sleep}</span><span class="blk k-dormir"><b>A dormir</b><small>${state.evals.some(e=>e.date===ymd(addDays(fromYmd(date),1)))?'Mañana tienes evaluación: descansa':'Sin amanecidas'}</small></span></div>`;
+  if(!it.length)return `<div class="agenda"><div class="card muted small">Día libre: no hay compromisos ni estudio programado.</div>${sleep}</div>`;
+  return `<div class="agenda">${it.map(x=>rowHTML(x,date)).join('')}${sleep}</div>`;}
+function demoBanner(){return state.mode==='example'?`<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="start-own">Usar mis horarios</button></div>`:'';}
+function conflicts(){const ev=state.evals.filter(e=>e.date>=ymd(now())).sort((a,b)=>a.date.localeCompare(b.date));const out=[];
+  for(let i=0;i<ev.length-1;i++){if(dayDiff(ev[i].date,ev[i+1].date)<=1)out.push([ev[i],ev[i+1]]);}return out;}
+
+// ---------- Vistas ----------
+function vWelcome(){return `<section class="welcome">
+  <div class="logo">${I.spark.replace('<svg','<svg width="26" height="26"')} LIA</div>
+  <div class="preview"><span class="eyebrow">Un día con LIA</span>
+   <div class="blk k-clase"><b>Clases en la U</b><small>08:00 – 13:00</small></div>
+   <div class="blk k-trabajo"><b>Trabajo</b><small>15:00 – 19:00</small></div>
+   <div class="blk k-estudio"><b>Estudiar Cálculo II</b><small>20:00 – 21:00 · en tu hora libre</small></div></div>
+  <h1>Estudia en las horas que de verdad tienes libres.</h1>
+  <p style="margin:0;opacity:.85">Para universitarios que estudian y trabajan: cada semana Lía te arma un horario para estudiar en tus horas libres, para que no te amanezcas antes de cada examen.</p>
+  <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button>
+  <button class="btn ghostw" data-a="see-example">Ver con datos de ejemplo</button></div>
+  <p class="small" style="margin:0;opacity:.7;text-align:center">Tus datos se guardan solo en este teléfono.</p></section>`;}
+
+function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
+  if(s===1)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 1 de 2</span></div>
+   <div class="stack"><h1>Tu semana fija</h1><p class="muted" style="margin:0">¿Cuándo <b>no</b> puedes estudiar? Clases, trabajo, traslados. Lo registras una vez y se repite cada semana.</p></div>
+   ${dictar('commit','Dímelo: “trabajo de lunes a viernes de 3 a 7”')}
+   <div class="stack">${state.commitments.map(commitItem).join('')||'<p class="muted small" style="margin:0">Aún no hay compromisos.</p>'}
+   <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button></div>
+   <div class="card stack"><span class="eyebrow">Tu sueño</span><div class="two"><label class="f">Me despierto<input type="time" id="ob-wake" data-set="wake" value="${state.settings.wake}"></label><label class="f">Me duermo<input type="time" id="ob-sleep" data-set="sleep" value="${state.settings.sleep}"></label></div></div>
+   <button class="btn pri" data-a="ob-next" ${state.commitments.length?'':'disabled style="opacity:.5"'}>Siguiente</button>`;
+  if(s===2)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 2 de 2</span></div>
+   <div class="stack"><h1>Tus evaluaciones</h1><p class="muted" style="margin:0">Exámenes y entregas que se vienen. Lía calcula cuántas horas necesitas para cada uno.</p></div>
+   ${dictar('eval','Dímelo: “parcial de Cálculo el jueves a las 9”')}
+   <div class="stack">${state.evals.map(evalItem).join('')||'<p class="muted small" style="margin:0">Aún no hay evaluaciones.</p>'}
+   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button></div>
+   <button class="btn pri" data-a="ob-next" ${state.evals.length?'':'disabled style="opacity:.5"'}>Armar mi horario</button>`;
+  // paso 3: resumen
+  const p=P();const tot=p.blocks.reduce((a,b)=>a+b.e-b.s,0);const free=Object.values(p.days).slice(0,7).reduce((a,d)=>a+d.free,0);
+  const falt=state.evals.filter(e=>p.unmet[e.id]>0);
+  const li=t=>`<div class="row-h"><span class="check">${I.check}</span><span>${t}</span></div>`;
+  return `<div class="stack" style="align-items:center;text-align:center;margin-top:12px">${AV(72)}<h1>Lía armó tu semana</h1><p class="muted" style="margin:0">Esto es lo que hizo por ti:</p></div>
+   <div class="card stack">${li(`Registré ${state.commitments.length} compromisos fijos`)}${li(`Ordené ${state.evals.length} evaluaciones por fecha`)}${li(`Ubiqué ${hrs(tot)} de estudio en tus horas libres`)}${li(`Respeté tu trabajo, tus clases y tu sueño (${state.settings.sleep} – ${state.settings.wake})`)}${li('Nada de estudio la noche antes de un examen: a esa hora duermes')}</div>
+   ${falt.length?`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>No me alcanza el tiempo para todo.</b><br>Me faltan ${falt.map(e=>`${hrs(p.unmet[e.id])} para ${esc(e.course)}`).join(', ')}. Puedes liberar horas o subir el máximo de estudio por día en Perfil.</div></div>`:''}
+   <p class="muted small" style="text-align:center;margin:0">Tienes ${hrs(free)} libres en los próximos 7 días. ¿Algo cambió? Solo dímelo y lo reorganizo.</p>
+   <button class="btn pri" data-a="ob-finish">Ver mi semana</button>`;}
+
+function dictar(kind,ph){return `<form class="dashed" data-form="dictar" data-kind="${kind}" style="padding:6px 6px 6px 14px">
+   <input id="dict-${kind}" name="q" placeholder="${esc(ph)}" autocomplete="off" style="flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 0;font-weight:500">
+   <button type="button" class="mic" data-a="mic" data-target="dict-${kind}" aria-label="Dictar por voz">${I.mic}</button>
+   <button type="submit" class="mic" aria-label="Agregar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
+function commitItem(c){return `<button class="item" data-a="edit-commit" data-id="${c.id}"><span class="sw k-${c.type}">${COMMIT_TYPES[c.type][0]}</span><span class="grow"><b>${esc(c.name)}</b><br><span class="small muted">${diasTxt(c.days)} · ${c.start} – ${c.end}</span></span><span class="tag muted">${hrs(c.days.length*(toMin(c.end)-toMin(c.start)))}</span></button>`;}
+function diasTxt(ds){const s=[...ds].sort((a,b)=>((a+6)%7)-((b+6)%7));const k=s.join();
+  if(k==='1,2,3,4,5')return'Lun a Vie';if(k==='1,2,3,4,5,6')return'Lun a Sáb';if(s.length===7)return'Todos los días';if(k==='6,0')return'Fines de semana';
+  return s.map(d=>cap(DIAS[d].slice(0,3))).join(', ');}
+function evalItem(e){const p=P();const need=e.hours*60,done=doneFor(state,e.id),pl=p.blocks.filter(b=>b.evalId===e.id).reduce((a,b)=>a+b.e-b.s,0);
+  return `<button class="item" data-a="edit-eval" data-id="${e.id}" style="align-items:flex-start"><span class="sw ${swColor(e.type)}">${EVAL_TYPES[e.type].label[0]}</span><span class="grow stack" style="gap:6px"><span><b>${EVAL_TYPES[e.type].label} · ${esc(e.course)}</b><br><span class="small muted">${cap(fechaCorta(e.date))} · ${e.time} · ${done?`${hrs(done)} de ${hrs(need)} estudiadas`:`${hrs(need)} de estudio`}</span></span>
+   <span class="bar"><i style="width:${Math.min(100,Math.round(done/need*100))}%"></i></span>
+   ${p.unmet[e.id]>0?`<span class="small" style="color:var(--exam-ink);font-weight:600">Faltan ${hrs(p.unmet[e.id])} sin hueco</span>`:pl?`<span class="small muted">${hrs(pl)} ya agendadas</span>`:''}</span><span class="tag" style="color:${tagColor(e.date)}">${enDias(e.date)}</span></button>`;}
+
+function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
+  const next=p.blocks.find(b=>b.date>t||b.e>nm);
+  let hero;
+  if(next){const e=evById(next.evalId);const when=next.date===t?(next.s>nm?`En ${hrs(next.s-nm)}`:'Ahora'):cap(fechaLarga(next.date));
+    hero=`<section class="hero"><span class="eyebrow">Tu próximo bloque · ${esc(when)}</span><span class="big tnum">${fmt(next.s)} – ${fmt(next.e)}</span><span style="opacity:.9;font-weight:500">${esc(e.course)} · para tu ${EVAL_TYPES[e.type].label.toLowerCase()} del ${fechaCorta(e.date)}</span>
+     <div style="height:6px"></div><button class="btn light" data-a="start" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Empezar a estudiar</button>
+     <button class="small" style="color:var(--pri-ink);opacity:.85;text-align:center;padding:6px" data-a="move" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">¿No puedes a esa hora? Lía lo mueve</button></section>`;}
+  else hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span style="font-size:20px;font-weight:700">No tienes bloques de estudio pendientes.</span><span style="opacity:.85">Agrega tus próximas evaluaciones y Lía las reparte.</span><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
+  const prox=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+  let pc='';if(prox){const need=prox.hours*60,done=doneFor(state,prox.id),um=p.unmet[prox.id];
+    pc=`<button class="card stack" data-a="tab" data-t="evals" style="text-align:left"><span class="between"><b>${EVAL_TYPES[prox.type].label} · ${esc(prox.course)}</b><span class="tag" style="color:${tagColor(prox.date)}">${enDias(prox.date)} ${prox.time}</span></span><span class="bar"><i style="width:${Math.min(100,Math.round(done/need*100))}%"></i></span><span class="small muted">${hrs(done)} de ${hrs(need)} estudiadas${um>0?` · <b style="color:var(--exam-ink)">faltan ${hrs(um)} sin hueco</b>`:' · el resto ya está en tu horario'}</span></button>`;}
+  const tom=state.evals.find(e=>e.date===ymd(addDays(n,1)));
+  const night=`<div class="night"><span class="ico" style="color:var(--pri-sub)">${I.moon}</span><div><b>Hoy duermes a las ${state.settings.sleep}</b><div class="sub">${tom?`Mañana tienes ${EVAL_TYPES[tom.type].label.toLowerCase()} de ${esc(tom.course)}. Con este plan llegas sin amanecerte.`:'Tu horario no te pide amanecerte.'}</div></div></div>`;
+  const cf=conflicts()[0];
+  const cfH=cf?`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van seguidos. Ya empecé a repartir el estudio desde antes.</div></div>`:'';
+  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${hero}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+
+function vSemana(){const n=now(),t=ymd(n),p=P();
+  const mon=addDays(n,-((n.getDay()+6)%7)+7*ui.weekOffset);const days=[...Array(7)].map((_,i)=>ymd(addDays(mon,i)));
+  if(!ui.sel||!days.includes(ui.sel))ui.sel=days.includes(t)?t:days[0];
+  const study=days.reduce((a,d)=>a+p.blocks.filter(b=>b.date===d).reduce((x,b)=>x+b.e-b.s,0)+state.done.filter(x=>x.date===d).reduce((x,y)=>x+y.min,0),0);
+  const exams=state.evals.filter(e=>days.includes(e.date)).length;
+  const selStudy=p.blocks.filter(b=>b.date===ui.sel).reduce((x,b)=>x+b.e-b.s,0);
+  const range=`${fromYmd(days[0]).getDate()} – ${fromYmd(days[6]).getDate()} de ${MESES[fromYmd(days[6]).getMonth()]}`;
+  return `${demoBanner()}<div class="between"><div><div class="kicker">${range}</div><h1>Tu semana</h1></div><div class="row-h"><button class="pill ghost" data-a="wk" data-v="-1" aria-label="Semana anterior">${I.back.replace('<svg','<svg width="16" height="16"')}</button><button class="pill ghost" data-a="wk" data-v="1" aria-label="Semana siguiente">${I.next.replace('<svg','<svg width="16" height="16"')}</button></div></div>
+  <div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
+    return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
+  <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>evaluaciones esta semana · 0 amanecidas</span></div></div>
+  <div class="between"><h2>${cap(fechaLarga(ui.sel))}</h2><span class="small" style="color:var(--pri);font-weight:600">${selStudy?hrs(selStudy)+' de estudio':''}</span></div>
+  ${agendaHTML(ui.sel,p)}`;}
+
+function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const past=state.evals.filter(e=>e.date<t);
+  return `${demoBanner()}<div><div class="kicker">Exámenes y entregas</div><h1>Evaluaciones</h1></div>
+  ${dictar('eval','Dímelo: “entrego el informe el viernes”')}
+  <div class="stack">${up.map(evalItem).join('')||'<div class="card muted small">No tienes evaluaciones próximas.</div>'}
+  <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar evaluación</span></button></div>
+  ${past.length?`<h2>Pasadas</h2><div class="stack past">${past.map(evalItem).join('')}</div>`:''}`;}
+
+function vLia(){const ph='Escribe o toca el micrófono…';
+  const sug=['¿Qué tengo mañana?','Hoy salgo del trabajo a las 9','Parcial de Estadística el viernes a las 10','Libera mi sábado','¿Cuánto me falta?'];
+  return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok)">Tu secretaria · versión sin IA (entiende frases simples)</div></div></div>
+  <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}</div>
+  <div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+  <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off"><button type="button" class="mic" data-a="mic" data-target="chat-in" aria-label="Hablar con Lía">${I.mic}</button></form>`;}
+function msgHTML(m,last){return m.from==='me'?`<div class="msg me"><div class="bub">${esc(m.text)}</div></div>`:`<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${m.undo&&last&&undoStack?`<button class="pill ghost" data-a="undo" style="align-self:flex-start">Deshacer</button>`:''}</div></div>`;}
+function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
+  return `${it.name} — ${diasTxt(it.days)} · ${it.start} – ${it.end}`;}
+function pendingHTML(){const it=ui.pending.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${i.start} – ${i.end}`)}</small></div>`).join('')}
+   <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;}
+
+function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter(e=>e.date>=ymd(now())&&!p.unmet[e.id]).length,up=state.evals.filter(e=>e.date>=ymd(now())).length;
+  const studied=state.done.reduce((a,x)=>a+x.min,0);
+  return `${demoBanner()}<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · LIA versión de prueba</div></div></div>
+  <div class="stats"><div class="card stat"><b class="tnum">${covered}/${up}</b><span>evaluaciones con tiempo de estudio completo</span></div><div class="card stat"><b class="tnum">${hrs(studied)}</b><span>estudiadas con LIA</span></div></div>
+  <div class="between"><span class="eyebrow">Tu horario fijo</span><button class="pill" data-a="add-commit">${I.plus.replace('<svg','<svg width="14" height="14"')} Agregar</button></div>
+  <div class="stack">${state.commitments.map(commitItem).join('')||'<div class="card small muted">Sin compromisos.</div>'}</div>
+  <span class="eyebrow">Ajustes de Lía</span>
+  <div class="card stack">
+   <label class="f">Tu nombre<input id="set-name" data-set="name" value="${esc(S.name)}" placeholder="¿Cómo te llamas?"></label>
+   <div class="two"><label class="f">Me despierto<input type="time" id="set-wake" data-set="wake" value="${S.wake}"></label><label class="f">Me duermo<input type="time" id="set-sleep" data-set="sleep" value="${S.sleep}"></label></div>
+   <div class="two"><label class="f">Máximo de estudio al día<select id="set-max" data-set="maxDay">${[60,120,180,240,300,360].map(v=>`<option value="${v}" ${S.maxDay===v?'selected':''}>${hrs(v)}</option>`).join('')}</select></label>
+   <label class="f">Duración del bloque<select id="set-block" data-set="block">${[45,60,90,120].map(v=>`<option value="${v}" ${S.block===v?'selected':''}>${hrs(v)}</option>`).join('')}</select></label></div>
+   <span class="f" style="font-size:13px;font-weight:600;color:var(--mute)">¿Cuánta libertad le das a Lía?</span>
+   <label class="opt"><input type="radio" name="aut" id="aut-auto" data-set="autonomy" value="auto" ${S.autonomy==='auto'?'checked':''}><span><b>Hazlo y avísame</b><br><span class="small muted">Lía mueve tus bloques y te cuenta qué cambió.</span></span></label>
+   <label class="opt"><input type="radio" name="aut" id="aut-ask" data-set="autonomy" value="ask" ${S.autonomy==='ask'?'checked':''}><span><b>Pregúntame antes</b><br><span class="small muted">Lía te propone el cambio y tú apruebas.</span></span></label>
+  </div>
+  <span class="eyebrow">Tus datos</span>
+  ${installCard()}
+  <div class="stack">${state.mode==='example'?'<button class="btn pri" data-a="start-own">Usar mis horarios</button>':'<button class="btn sec" data-a="see-example">Ver datos de ejemplo</button>'}<button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
+  <p class="small muted" style="margin:0;text-align:center">LIA ${APP_VERSION} · prototipo de prueba</p>`;}
+
+// ---------- Hojas (formularios) ----------
+function sheetCommit(id){const c=state.commitments.find(x=>x.id===id)||{id:'',name:'',type:'trabajo',days:[1,2,3,4,5],start:'15:00',end:'19:00'};
+  return `<form class="stack" data-form="commit" data-id="${c.id}" style="gap:14px"><div class="grab"></div><h2>${c.id?'Editar compromiso':'Nuevo compromiso'}</h2>
+  <label class="f">Nombre<input id="c-name" name="name" required value="${esc(c.name)}" placeholder="Trabajo, Clases, Gimnasio…"></label>
+  <label class="f">Tipo<select id="c-type" name="type">${Object.entries(COMMIT_TYPES).map(([k,v])=>`<option value="${k}" ${c.type===k?'selected':''}>${v}</option>`).join('')}</select></label>
+  <div class="f">Días<div class="dpick">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="d" value="${d}" ${c.days.includes(d)?'checked':''}><span>${DIAS_C[d]}</span></label>`).join('')}</div></div>
+  <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}"></label></div>
+  <button class="btn pri" type="submit">Guardar</button>${c.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${c.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+function sheetEval(id){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:5};
+  return `<form class="stack" data-form="eval" data-id="${e.id}" style="gap:14px"><div class="grab"></div><h2>${e.id?'Editar evaluación':'Nueva evaluación'}</h2>
+  <div class="two"><label class="f">Tipo<select id="e-type" name="type" data-a-change="etype">${Object.entries(EVAL_TYPES).map(([k,v])=>`<option value="${k}" ${e.type===k?'selected':''}>${v.label}</option>`).join('')}</select></label>
+  <label class="f">Horas de estudio<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" value="${e.hours}"></label></div>
+  <label class="f">Curso<input id="e-course" name="course" required value="${esc(e.course)}" placeholder="Cálculo II"></label>
+  <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
+  <button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+function sheetBlock(d){const e=evById(d.ev);return `<div class="grab"></div><span class="eyebrow">Bloque de estudio</span><h2>${esc(e?e.course:'')} · ${fmt(+d.s)} – ${fmt(+d.e)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))} · para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</p>
+  <button class="btn pri" data-a="start" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Empezar ahora</button>
+  <button class="btn sec" data-a="done-block" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Ya lo estudié</button>
+  <button class="btn sec" data-a="move" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">No puedo a esa hora · que Lía lo mueva</button>
+  <button class="btn sec" data-a="close">Cerrar</button>`;}
+function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus compromisos, evaluaciones y sesiones de este teléfono. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
+function sheetOwn(){return `<div class="grab"></div><h2>Empezar con tus horarios</h2><p class="muted" style="margin:0">Vamos a quitar los datos de ejemplo y registrar tu semana real. Toma 2 minutos.</p><button class="btn pri" data-a="own-go">Empezar</button><button class="btn sec" data-a="close">Seguir viendo el ejemplo</button>`;}
+
+// ---------- Sesión y escucha ----------
+function vSession(){const s=ui.session;const e=evById(s.ev);const left=Math.max(0,s.total-s.elapsed());const pct=1-left/s.total;const C=2*Math.PI*104;
+  return `<div class="full"><div class="in"><div class="top"><span>Sesión de estudio</span><button data-a="sess-exit" style="color:inherit;font-weight:600">Salir</button></div>
+  <h2 style="font-size:20px">${esc(e?e.course:'')}</h2><span class="small" style="opacity:.7">Para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</span>
+  <div class="ring"><svg viewBox="0 0 230 230"><circle cx="115" cy="115" r="104" stroke="rgba(255,255,255,.12)" stroke-width="12" fill="none"/><circle id="ringp" cx="115" cy="115" r="104" stroke="#8B8AFF" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}"/></svg>
+   <div class="c"><b class="tnum" id="clock">${clk(left)}</b><span class="small" style="opacity:.6">${s.running?'quedan de '+hrs(s.total/60000):'en pausa'}</span></div></div>
+  <div class="glass">${AV(32)}<span class="small" style="opacity:.85">Modo concentración: deja el celular boca abajo. Cuando termines, toca “Terminé” y Lía actualiza tu avance.</span></div>
+  <div style="flex:1"></div>
+  <div class="two" style="width:100%"><button class="btn light" data-a="sess-pause">${s.running?'Pausar':'Seguir'}</button><button class="btn pri" data-a="sess-done">Terminé</button></div></div></div>`;}
+const clk=ms=>{const t=Math.ceil(ms/1000);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return h?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;};
+function vListen(){return `<div class="full"><div class="in"><div class="top"><button data-a="listen-cancel" style="color:inherit">Cancelar</button><button data-a="listen-type" style="color:inherit">Prefiero escribir</button></div>
+  <div style="flex:1"></div><div class="halo">${AV(80)}</div><span class="eyebrow" style="color:#B9B8FF">Lía te escucha…</span>
+  <div class="transcript" id="live">${esc(ui.listen.text||'Habla ahora')}</div><div style="flex:1"></div>
+  <button class="stopb" data-a="listen-stop" aria-label="Terminar"><i></i></button><span class="small" style="opacity:.6">Toca para terminar</span></div></div>`;}
+
+// ---------- Render ----------
+const TABS=[['hoy','Hoy','sun'],['semana','Semana','cal'],['lia','Lía',null],['evals','Evaluaciones','list'],['perfil','Perfil','user']];
+function render(){const v=document.getElementById('view'),tabs=document.getElementById('tabs');
+  const inOb=ui.welcome||!state.onboarded;
+  tabs.hidden=inOb;
+  if(ui.welcome)v.innerHTML=vWelcome();
+  else if(!state.onboarded)v.innerHTML=vOnboarding();
+  else v.innerHTML={hoy:vHoy,semana:vSemana,lia:vLia,evals:vEvals,perfil:vPerfil}[ui.tab]();
+  document.body.classList.toggle('wm',!!ui.welcome);v.style.paddingTop=ui.welcome?'0':'';v.style.paddingBottom=ui.welcome?'0':'';
+  tabs.innerHTML=TABS.map(([k,l,ic])=>`<button class="tab" data-a="tab" data-t="${k}" ${ui.tab===k?'aria-current="page"':''}>${ic?I[ic]:AV(40)}<span>${l}</span></button>`).join('');
+  const L=document.getElementById('layer');
+  if(ui.session)L.innerHTML=vSession();
+  else if(ui.listen)L.innerHTML=vListen();
+  else if(ui.sheet)L.innerHTML=`<div class="scrim" data-a="scrim"><div class="sheet" role="dialog" aria-modal="true">${ui.sheet}</div></div>`;
+  else L.innerHTML='';
+  if(ui.tab==='lia'&&!inOb){const c=document.getElementById('view');c.scrollTop=c.scrollHeight;}}
+function rerenderKeepScroll(){const v=document.getElementById('view');const y=v.scrollTop;render();v.scrollTop=y;}
+let toastT;
+function toast(msg,withUndo){const b=document.getElementById('toastbox');b.innerHTML=`<div class="toast" role="status"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>{b.innerHTML='';},withUndo?6000:3200);}
+
+// ---------- Acciones ----------
+function blockOf(ds){return{ev:ds.ev,d:ds.d,s:+ds.s,e:+ds.e};}
+function moveBlock(b){const before=P().blocks.filter(x=>x.evalId===b.ev).map(x=>x.date+x.s);snapshot();
+  state.exceptions.push({id:uid(),date:b.d,start:fmt(b.s),end:fmt(b.e),label:'No disponible'});save();
+  const after=P();const nb=after.blocks.find(x=>x.evalId===b.ev&&!before.includes(x.date+x.s));const e=evById(b.ev);
+  const msg=nb?`Moví ${e.course} a ${nb.date===b.d?'las':fechaCorta(nb.date)+','} ${fmt(nb.s)}.`:after.unmet[b.ev]>0?`No encontré otro hueco para ${e.course}: te faltan ${hrs(after.unmet[b.ev])}.`:`Reorganicé ${e.course}: ya está cubierto en otros bloques.`;
+  ui.sheet=null;rerenderKeepScroll();toast(msg,true);return msg;}
+function applyItems(items){snapshot();for(const it of items){if(it.kind==='eval')state.evals.push({id:uid(),type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});
+  else state.commitments.push({id:uid(),name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}save();}
+function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();}
+function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interpret(q,state,n);
+  if(from==='chat')state.chat.push({from:'me',text:q});
+  const kindOnly=from==='commit'?'commit':from==='eval'?'eval':null;
+  if(r.intent==='add'){let items=r.items;const errs=items.filter(i=>i.error);const ok=items.filter(i=>!i.error);
+    if(kindOnly&&ok.some(i=>i.kind!==kindOnly)&&!ok.some(i=>i.kind===kindOnly)){}
+    if(errs.length&&!ok.length){if(from==='chat'){liaSay(errs[0].error);render();}else toast(errs[0].error);return;}
+    if(from==='chat'&&state.settings.autonomy==='ask'){ui.pending={items:ok};save();render();return;}
+    if(from==='chat'){ui.pending={items:ok};save();render();return;}
+    applyItems(ok);const p=P();const ex=ok.filter(i=>i.kind==='eval');
+    toast(`Lía agregó: ${ok.map(i=>i.kind==='eval'?i.course:i.name).join(', ')}${ex.length?` · ${hrs(p.blocks.filter(b=>ex.some(i=>evById(b.evalId)&&evById(b.evalId).course===i.course)).reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas`:''}`,true);
+    const inp=document.getElementById('dict-'+from);rerenderKeepScroll();return;}
+  if(from!=='chat'){toast(from==='commit'?'No te entendí. Prueba: “clases de lunes a viernes de 8 a 1”.':'No te entendí. Prueba: “parcial de Química el viernes a las 10”.');return;}
+  if(r.intent==='except'){const ex=r.ex;
+    if(state.settings.autonomy==='ask'){ui.pending={ex};render();return;}
+    applyException(ex);return;}
+  if(r.intent==='agenda'){const p=P();const it=agendaFor(state,p,r.date);
+    liaSay(it.length?`${cap(fechaLarga(r.date))}:\n${it.map(x=>`${fmt(x.s)}–${fmt(x.e)}  ${x.label}`).join('\n')}\nDuermes a las ${state.settings.sleep}.`:`${cap(fechaLarga(r.date))} lo tienes libre.`);render();return;}
+  if(r.intent==='progress'){const p=P();const up=state.evals.filter(e=>e.date>=ymd(n));
+    liaSay(up.length?up.map(e=>{const d=doneFor(state,e.id),need=e.hours*60;return `${e.course}: ${hrs(d)} de ${hrs(need)}${p.unmet[e.id]>0?` (faltan ${hrs(p.unmet[e.id])} sin hueco)`:''}`;}).join('\n'):'No tienes evaluaciones próximas. ¿Me dices cuándo es la siguiente?');render();return;}
+  if(r.intent==='next'){const e=state.evals.filter(e=>e.date>=ymd(n)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+    liaSay(e?`Tu próxima evaluación es ${EVAL_TYPES[e.type].label.toLowerCase()} de ${e.course}, el ${fechaLarga(e.date)} a las ${e.time}.`:'No tienes evaluaciones registradas.');render();return;}
+  if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
+  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “¿Qué tengo mañana?”');render();}
+function applyException(ex){const p0=P();snapshot();state.exceptions.push({id:uid(),...ex});save();const p1=P();
+  const moved=p1.blocks.filter(b=>b.date===ex.date&&!p0.blocks.some(x=>x.date===b.date&&x.s===b.s&&x.evalId===b.evalId));
+  const lost=p0.blocks.filter(b=>b.date===ex.date&&b.s<toMin(ex.end)&&b.e>toMin(ex.start));
+  let msg=`Anotado: ${ex.label.toLowerCase()} el ${fechaCorta(ex.date)} de ${ex.start} a ${ex.end}.`;
+  if(lost.length){const g={};for(const b of moved){const c=evById(b.evalId).course;(g[c]=g[c]||[]).push(fmt(b.s));}
+    msg+=moved.length?` Moví ${Object.entries(g).map(([c,ts])=>`${c} a las ${ts.join(' y ')}`).join('; ')}.`:` Reacomodé tus bloques en otros días.`;}
+  else msg+=' No chocaba con tu estudio.';
+  msg+=` Igual duermes a las ${state.settings.sleep}.`;liaSay(msg,{undo:true});ui.pending=null;render();}
+
+const A={
+ tab:d=>{ui.tab=d.t;ui.sheet=null;render();document.getElementById('view').scrollTop=0;},
+ 'see-example':()=>{state=exampleState(now());save();ui.welcome=false;ui.tab='hoy';ui.sheet=null;render();},
+ 'start-own':()=>{if(state.mode==='example'&&!ui.welcome){ui.sheet=sheetOwn();render();return;}A['own-go']();},
+ 'own-go':()=>{state=emptyState();save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
+ 'ob-back':()=>{if(ui.ob<=1){ui.welcome=true;}else ui.ob--;render();},
+ 'ob-next':()=>{ui.ob++;render();document.getElementById('view').scrollTop=0;},
+ 'ob-finish':()=>{state.onboarded=true;save();ui.tab='semana';ui.sel=null;render();},
+ 'add-commit':()=>{ui.sheet=sheetCommit();render();},
+ 'edit-commit':d=>{ui.sheet=sheetCommit(d.id);render();},
+ 'del-commit':d=>{snapshot();state.commitments=state.commitments.filter(c=>c.id!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Compromiso eliminado.',true);},
+ 'add-eval':()=>{ui.sheet=sheetEval();render();},
+ 'edit-eval':d=>{ui.sheet=sheetEval(d.id);render();},
+ 'del-eval':d=>{snapshot();state.evals=state.evals.filter(e=>e.id!==d.id);state.done=state.done.filter(x=>x.evalId!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Evaluación eliminada.',true);},
+ 'del-ex':d=>{snapshot();state.exceptions=state.exceptions.filter(x=>x.id!==d.id);save();rerenderKeepScroll();toast('Quité ese bloqueo y reorganicé.',true);},
+ block:d=>{ui.sheet=sheetBlock(d);render();},
+ move:d=>{const b=blockOf(d);if(state.settings.autonomy==='ask'){ui.sheet=`<div class="grab"></div><h2>¿Muevo este bloque?</h2><p class="muted" style="margin:0">Lía buscará otro hueco libre antes de tu evaluación.</p><button class="btn pri" data-a="move-ok" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, muévelo</button><button class="btn sec" data-a="close">No</button>`;render();return;}moveBlock(b);},
+ 'move-ok':d=>moveBlock(blockOf(d)),
+ 'done-block':d=>{snapshot();state.done.push({id:uid(),evalId:d.ev,date:d.d,start:fmt(+d.s),min:+d.e-+d.s});save();ui.sheet=null;rerenderKeepScroll();toast(`Bien. Sumé ${hrs(+d.e-+d.s)} a ${evById(d.ev).course}.`,true);},
+ start:d=>{const total=(+d.e-+d.s)*60000;ui.sheet=null;ui.session={ev:d.ev,d:d.d,s:+d.s,total,acc:0,since:Date.now(),running:true,elapsed(){return this.acc+(this.running?Date.now()-this.since:0);}};render();tick();try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}},
+ 'sess-pause':()=>{const s=ui.session;if(s.running){s.acc+=Date.now()-s.since;s.running=false;}else{s.since=Date.now();s.running=true;}render();},
+ 'sess-done':()=>{const s=ui.session;const min=Math.max(5,Math.round(s.elapsed()/60000/5)*5);const nm=now();snapshot();
+   state.done.push({id:uid(),evalId:s.ev,date:ymd(nm),start:fmt(Math.max(0,nm.getHours()*60+nm.getMinutes()-min)),min});save();ui.session=null;try{ui.wl&&ui.wl.release();}catch(e){}render();toast(`Registré ${hrs(min)} de ${evById(s.ev).course}. Lía ajustó lo que falta.`,true);},
+ 'sess-exit':()=>{ui.session=null;try{ui.wl&&ui.wl.release();}catch(e){}render();},
+ wk:d=>{ui.weekOffset+=+d.v;ui.sel=null;render();},
+ sel:d=>{ui.sel=d.d;rerenderKeepScroll();},
+ chip:d=>{handleText(d.q,'chat');},
+ confirm:()=>{const p=ui.pending;ui.pending=null;if(p.ex){applyException(p.ex);return;}applyItems(p.items);const P1=P();
+   liaSay(`Listo, agregué ${p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ')}. Ahora tienes ${hrs(P1.blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio repartidas en tus horas libres.`,{undo:true});render();},
+ cancel:()=>{ui.pending=null;liaSay('Ok, no guardé nada. Dímelo de nuevo con más detalle o agrégalo a mano en Evaluaciones o Perfil.');render();},
+ undo:()=>undo(),
+ close:()=>{ui.sheet=null;render();},
+ scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;render();}},
+ 'ask-reset':()=>{ui.sheet=sheetReset();render();},
+ reset:()=>{try{localStorage.removeItem(KEY);}catch(e){}state=exampleState(now());ui.welcome=true;ui.sheet=null;ui.tab='hoy';render();},
+ mic:d=>startMic(d.target),
+ 'listen-stop':()=>{stopMic(true);},
+ 'listen-cancel':()=>{stopMic(false);},
+ 'listen-type':()=>{const t=ui.listen&&ui.listen.target;stopMic(false);const el=document.getElementById(t);if(el){el.focus();}},
+};
+document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;const f=A[el.dataset.a];if(!f)return;
+  if(el.dataset.a==='scrim'){f(el.dataset,el,ev);return;}ev.preventDefault();f(el.dataset,el,ev);});
+document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();const fd=new FormData(f);
+  if(f.dataset.form==='chat'||f.dataset.form==='dictar'){const q=fd.get('q')||'';handleText(String(q),f.dataset.form==='chat'?'chat':f.dataset.kind);return;}
+  if(f.dataset.form==='commit'){const days=fd.getAll('d').map(Number);if(!days.length){toast('Elige al menos un día.');return;}
+    if(toMin(fd.get('end'))<=toMin(fd.get('start'))){toast('La hora de fin debe ser después del inicio.');return;}
+    snapshot();const o={name:String(fd.get('name')).trim(),type:fd.get('type'),days,start:fd.get('start'),end:fd.get('end')};
+    if(f.dataset.id){Object.assign(state.commitments.find(c=>c.id===f.dataset.id),o);}else state.commitments.push({id:uid(),...o});
+    save();ui.sheet=null;rerenderKeepScroll();toast('Guardado. Lía reorganizó tu semana.',true);return;}
+  if(f.dataset.form==='eval'){snapshot();const o={type:fd.get('type'),course:String(fd.get('course')).trim(),date:fd.get('date'),time:fd.get('time'),hours:Math.max(.5,+fd.get('hours')||1)};
+    if(f.dataset.id){Object.assign(state.evals.find(e=>e.id===f.dataset.id),o);}else state.evals.push({id:uid(),...o});
+    save();ui.sheet=null;const p=P();const e=state.evals.find(x=>x.course===o.course&&x.date===o.date);rerenderKeepScroll();
+    toast(e&&p.unmet[e.id]>0?`Guardado, pero faltan ${hrs(p.unmet[e.id])} sin hueco libre.`:'Guardado. Lía repartió tus horas de estudio.',true);}});
+document.addEventListener('change',ev=>{const el=ev.target;
+  if(el.id==='e-type'){const h=document.getElementById('e-hours');if(h)h.value=EVAL_TYPES[el.value].h;return;}
+  const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
+  if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;save();
+  if(k!=='name')toast('Ajuste guardado. Lía reorganizó tu horario.');});
+function tick(){if(!ui.session)return;const s=ui.session;const left=Math.max(0,s.total-s.elapsed());const c=document.getElementById('clock');const r=document.getElementById('ringp');
+  if(c)c.textContent=clk(left);if(r){const C=2*Math.PI*104;r.setAttribute('stroke-dashoffset',C*(left/s.total));}
+  if(left<=0&&s.running){A['sess-done']();return;}setTimeout(tick,500);}
+
+// ---------- Voz ----------
+let rec=null;
+function startMic(target){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const fallback=()=>{ui.listen=null;render();const el=document.getElementById(target);if(el)el.focus();toast('Para dictar, toca el micrófono de tu teclado y habla.');};
+  if(!SR){fallback();return;}
+  try{rec=new SR();rec.lang='es-PE';rec.interimResults=true;rec.continuous=false;ui.listen={target,text:''};render();
+    rec.onresult=e=>{ui.listen&&(ui.listen.text=Array.from(e.results).map(r=>r[0].transcript).join(''));const l=document.getElementById('live');if(l&&ui.listen)l.textContent=ui.listen.text;};
+    rec.onerror=e=>{rec=null;if(e.error==='no-speech'){ui.listen=null;render();toast('No te escuché. Inténtalo de nuevo.');}else fallback();};
+    rec.onend=()=>{if(ui.listen){const t=ui.listen.text,tg=ui.listen.target;ui.listen=null;render();if(t)submitVoice(tg,t);}};
+    rec.start();}catch(e){fallback();}}
+function stopMic(useIt){if(!ui.listen)return;const t=ui.listen.text,tg=ui.listen.target;ui.listen=null;try{rec&&(rec.onend=null,rec.stop());}catch(e){}rec=null;render();if(useIt&&t)submitVoice(tg,t);}
+function submitVoice(target,text){const from=target==='chat-in'?'chat':target==='dict-commit'?'commit':'eval';handleText(text,from);}
+
+// ---------- App instalable ----------
+const APP_VERSION='0.1.0';
+let installEvt=null;
+const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
+const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function calm(){const a=document.activeElement;return !ui.sheet&&!ui.session&&!ui.listen&&!(a&&a.matches('input,select'));}
+function installCard(){const base='Todo se guarda solo en este teléfono, en este navegador.';
+  if(isStandalone())return `<div class="card small muted">Todo se guarda solo en este teléfono, dentro de la app. Si la desinstalas o borras los datos del navegador, se pierde.</div>`;
+  if(installEvt)return `<div class="card stack"><span class="small muted">${base} Instálala para abrirla como app, incluso sin internet.</span><button class="btn pri" data-a="install">Instalar LIA</button></div>`;
+  if(isIOS())return `<div class="card small muted">${base} Para usarla como app, en Safari abre <b>Compartir</b> y elige <b>Agregar a inicio</b>. Instalada, Safari no borra tus datos aunque pases días sin abrirla.</div>`;
+  return `<div class="card small muted">${base} Para usarla como app, busca en el menú del navegador <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.</div>`;}
+A.install=async()=>{const e=installEvt;if(!e)return;installEvt=null;try{await e.prompt();await e.userChoice;}catch(err){}rerenderKeepScroll();};
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(ui.tab==='perfil'&&calm())rerenderKeepScroll();});
+window.addEventListener('appinstalled',()=>{installEvt=null;toast('Listo: LIA quedó instalada.');if(ui.tab==='perfil'&&calm())rerenderKeepScroll();});
+if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+
+render();
+setInterval(()=>{if(!ui.session&&!ui.sheet&&!ui.listen&&!document.activeElement.matches('input,select'))rerenderKeepScroll();},60000);
+</script>
+</body>
+</html>

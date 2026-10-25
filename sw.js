@@ -1,0 +1,80 @@
+// LIA · service worker
+// Guarda una copia de la app para abrirla sin internet. Con conexión, siempre pide la versión
+// más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
+
+const VERSION = '0.1.0';
+const CACHE = `lia-${VERSION}`;
+const SHELL = [
+  './index.html',
+  './manifest.webmanifest',
+  './fonts/inter-latin-wght-normal.woff2',
+  './icons/favicon.svg',
+  './icons/favicon-32.png',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/maskable-512.png',
+  './icons/apple-touch-icon.png',
+];
+const WAIT_MS = 4000; // si la red tarda más, se usa la copia guardada
+const APP = new URL('./index.html', self.location).href;
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('lia-') && k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  const scope = self.registration.scope;
+  const path = url.origin + url.pathname;
+  if (req.mode === 'navigate') {
+    // Solo la app; cualquier otra página del sitio va directo a la red.
+    if (path !== scope && path !== APP) return;
+    event.respondWith(networkFirst(event, new Request(APP, { cache: 'no-cache', credentials: 'same-origin' }), APP));
+    return;
+  }
+  event.respondWith(networkFirst(event, req, req));
+});
+
+async function networkFirst(event, req, key) {
+  const cache = await caches.open(CACHE);
+  const network = fetch(req).then(async (res) => {
+    if (res.ok && res.type === 'basic') await cache.put(key, res.clone());
+    return res;
+  });
+  event.waitUntil(network.then(() => {}, () => {}));
+  try {
+    const res = await withTimeout(network, WAIT_MS);
+    // Una respuesta que vino de una redirección no puede usarse para abrir la página.
+    return res.redirected
+      ? new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers })
+      : res;
+  } catch (err) {
+    const saved = await cache.match(key, { ignoreSearch: true });
+    return saved || network;
+  }
+}
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('tiempo de espera')), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
