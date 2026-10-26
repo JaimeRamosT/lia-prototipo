@@ -104,7 +104,7 @@ h2{font-size:17px;margin:0;font-weight:600}
 .night .sub{opacity:.75;font-size:13px}
 .demo{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface);border:1px dashed var(--pri);border-radius:14px;padding:10px 12px;font-size:13px}
 /* buttons */
-.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;border-radius:14px;font-weight:600;font-size:16px;padding:0 18px;width:100%}
+.btn{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;min-height:52px;border-radius:14px;font-weight:600;font-size:16px;padding:0 18px;width:100%}
 .btn.pri{background:var(--pri-fill);color:var(--pri-ink)}
 .btn.light{background:var(--surface);color:var(--pri)}
 .btn.sec{background:var(--surface);color:var(--pri);border:1.5px solid var(--line)}
@@ -178,7 +178,10 @@ h2{font-size:17px;margin:0;font-weight:600}
 .inbar .mic svg{width:22px;height:22px}
 /* forms */
 label.f,div.f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
-label.f input,label.f select{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;font-weight:400;color:var(--ink);font-size:16px;width:100%;min-width:0}
+label.f input,label.f select,.clave input{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;font-weight:400;color:var(--ink);font-size:16px;width:100%;min-width:0}
+.clave{position:relative;display:block}
+.clave input{padding-right:88px}
+.clave .ver{position:absolute;right:4px;top:50%;transform:translateY(-50%);min-height:44px;padding:0 12px;font-size:13px;font-weight:600;color:var(--pri);border-radius:10px}
 .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 @media (max-width:340px){.two:has(input[type=time]){grid-template-columns:minmax(0,1fr)}}
 .dpick{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
@@ -1033,7 +1036,6 @@ function planCard(){const s=state.sub;
 // Modo pruebas (?pruebas=1): herramientas del equipo, como simular el fin del periodo. Se recuerda en este navegador; ?pruebas=0 lo apaga.
 function modoPruebas(){try{const q=new URLSearchParams(location.search).get('pruebas');if(q==='1')localStorage.setItem('lia.pruebas','1');else if(q==='0')localStorage.removeItem('lia.pruebas');
   return localStorage.getItem('lia.pruebas')==='1';}catch(e){return false;}}
-
 function freeBanner(){if(isPro()||!state.frozen)return '';
   if(state.frozen.week<mondayOf(now()))return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Arma tu semana</b><br>Empezó una semana nueva. Lía reparte tu estudio en tus horas libres.<div style="margin-top:8px"><button class="pill solid" data-a="arm">Armar mi semana</button></div></div></div>`;
   if(!planStale())return '';
@@ -1257,8 +1259,8 @@ const A={
    liaSay('Ok, no guardé nada. Corrige tu mensaje y envíalo otra vez.');render();
    const i=document.getElementById('chat-in');if(i&&p&&p.q){i.value=p.q;i.focus();}},
  undo:()=>undo(),
- close:()=>{ui.sheet=null;render();},
- scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;render();}},
+ close:()=>{ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';render();},  // al cerrar no se guarda la contraseña escrita
+ scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
  reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(KEY_MIOS);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
@@ -1373,59 +1375,98 @@ function setCuenta(user){const nueva={id:user.id,email:user.email||''},cambio=!s
   state.cuenta=nueva;if(cambio)state.sub=freeSub(state.sub&&state.sub.history);save();return cambio;}
 function quitarCuenta(){const era=isPro();state.cuenta=null;state.sub=freeSub(state.sub&&state.sub.history);if(era&&state.onboarded)armWeek(true);save();}
 function refrescarPlan(avisar){return sbRpc('mi_suscripcion').then(f=>{aplicarFila(f,avisar);if(calm())rerenderKeepScroll();return f;});}
-// Cambios de sesión que no inició un formulario: al abrir la app, al volver del correo de confirmación o al vencer la sesión.
-function alCambiarSesion(ev,session){if(ui.authBusy)return;
-  if(session&&session.user){const nueva=setCuenta(session.user);
+// Cambios de sesión que no inició un formulario: al abrir la app, al volver de un enlace del correo o al vencer la sesión.
+function alCambiarSesion(ev,session){if(ui.authBusy)return;const u=session&&session.user;
+  if(u&&(ui.desdeRecuperar||ev==='PASSWORD_RECOVERY')){ui.desdeRecuperar=false;setCuenta(u);refrescarPlan(false).catch(()=>{});  // enlace para crear una contraseña nueva
+    if(!(ui.cuentaForm&&ui.cuentaForm.modo==='nueva-clave')){ui.cuentaForm={modo:'nueva-clave',paraPro:false,error:null,cargando:false,email:u.email||''};pintarCuenta();}
+    return;}
+  if(u){const nueva=setCuenta(u),correo=nueva&&ui.desdeCorreo;if(correo)ui.desdeCorreo=false;
     if(nueva||ev==='INITIAL_SESSION')refrescarPlan(true).catch(()=>{});
-    if(nueva&&ui.desdeCorreo){ui.desdeCorreo=false;toast('Listo, confirmaste tu correo y ya iniciaste sesión.');}
+    if(correo)toast('Listo, confirmaste tu correo y ya iniciaste sesión.');
     if(nueva&&calm())rerenderKeepScroll();}
   else if(state.cuenta&&(ev==='SIGNED_OUT'||ev==='INITIAL_SESSION')){quitarCuenta();if(calm())rerenderKeepScroll();}}
 function iniciarCuentas(){if(!cuentasActivas())return;
-  const h=location.hash||'';ui.desdeCorreo=/access_token=/.test(h);const err=/error_description=/.test(h);
-  if(!state.cuenta&&!ui.desdeCorreo&&!err)return;
-  sb().then(()=>{if(err)toast('El enlace ya venció o no es válido. Inicia sesión o crea tu cuenta otra vez.');
-      if(ui.desdeCorreo||err)history.replaceState(null,'',location.pathname+location.search);})
+  const h=location.hash||'',token=/access_token=/.test(h),err=/error_description=/.test(h);
+  ui.desdeRecuperar=token&&/type=recovery/.test(h);ui.desdeCorreo=token&&!ui.desdeRecuperar;
+  if(!state.cuenta&&!token&&!err)return;
+  sb().then(()=>{if(err){abrirCuenta('ingreso',false);ui.cuentaForm.error='El enlace ya venció o ya se usó. Inicia sesión; si hace falta, desde ahí puedes pedir otro.';pintarCuenta();}
+      if(token||err)history.replaceState(null,'',location.pathname+location.search);})
     .catch(()=>{});}
-function abrirCuenta(modo,paraPro){const prev=ui.cuentaForm;ui.cuentaForm={modo,paraPro:!!paraPro,error:null,cargando:false,email:(prev&&prev.email)||''};ui.sheet=sheetCuenta();render();}
-function sheetCuenta(){const f=ui.cuentaForm,reg=f.modo==='registro',pro=f.paraPro?'1':'0';
+function abrirCuenta(modo,paraPro){const prev=ui.cuentaForm,vivo=document.getElementById('cu-email');
+  ui.cuentaForm={modo,paraPro:!!paraPro,error:null,cargando:false,email:(vivo&&vivo.value.trim())||(prev&&prev.email)||''};pintarCuenta();}
+// Vuelve a pintar la hoja de cuenta sin perder la contraseña escrita; al terminar la espera, reactiva «Reenviar».
+function pintarCuenta(){const f=ui.cuentaForm;if(!f)return;ui.sheet=sheetCuenta();render();const i=document.getElementById('cu-pass');if(i&&f.pass)i.value=f.pass;
+  clearTimeout(f.reloj);if(f.esperaHasta>Date.now())f.reloj=setTimeout(()=>finEspera(f),f.esperaHasta-Date.now()+50);}
+function finEspera(f){if(ui.cuentaForm!==f||!ui.sheet)return;ui.sheet=sheetCuenta();const b=document.querySelector('.sheet [data-a="cuenta-reenviar"]');
+  if(b){b.disabled=false;b.textContent=f.modo==='confirmar'?'Reenviar el correo':'Reenviar el correo de confirmación';}}
+// Contraseña con «Mostrar»: el nombre del botón incluye su texto visible (WCAG 2.5.3).
+function campoClave(f,nueva){return `<div class="f"><label for="cu-pass">${f.modo==='nueva-clave'?'Contraseña nueva':'Contraseña'}</label><span class="clave"><input id="cu-pass" name="password" type="${f.ver?'text':'password'}" autocomplete="${nueva?'new-password':'current-password'}" required${nueva?' minlength="8" aria-describedby="cu-ayuda"':''}><button type="button" class="ver" data-a="ver-clave" aria-controls="cu-pass" aria-label="${f.ver?'Ocultar':'Mostrar'} contraseña">${f.ver?'Ocultar':'Mostrar'}</button></span>${nueva?'<span id="cu-ayuda" class="small muted" style="font-weight:400">Al menos 8 caracteres.</span>':''}</div>`;}
+function avisosCuenta(f){const espera=f.esperaHasta>Date.now();
+  return `${f.error?`<p class="ferr" role="alert">${esc(f.error)}</p>`:''}${f.aviso?`<p class="small" role="status" style="margin:0;color:var(--ok-ink);font-weight:600">${esc(f.aviso)}</p>`:''}${f.noConfirmado?`<button class="btn sec sm" type="button" data-a="cuenta-reenviar" ${espera?'disabled':''}>${espera?'Podrás reenviarlo en un minuto':'Reenviar el correo de confirmación'}</button>`:''}`;}
+function sheetCuenta(){const f=ui.cuentaForm,reg=f.modo==='registro',pro=f.paraPro?'1':'0',espera=f.esperaHasta>Date.now();
+  const correo=`<label class="f">Correo<input id="cu-email" name="email" type="email" inputmode="email" autocomplete="email" required value="${esc(f.email)}"></label>`;
+  const enviar=t=>`<button class="btn pri" type="submit" ${f.cargando?'disabled':''}>${f.cargando?'Un momento…':t}</button>`;
+  const spam='<p class="small muted" style="margin:0;text-align:center">¿No te llegó? Revisa la carpeta de spam o de promociones.</p>';
   if(f.modo==='sin-config')return `<div class="grab"></div><h2>Las cuentas aún no están listas</h2><p class="muted" style="margin:0">Para pasarte a Pro necesitas una cuenta, y esta versión de LIA todavía no las tiene activadas. Puedes seguir usando LIA Gratis.</p><button class="btn sec" data-a="close">Entendido</button>`;
-  if(f.modo==='confirmar')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Te enviamos un enlace a <b>${esc(f.email)}</b>. Ábrelo en este dispositivo para activar tu cuenta.</p><button class="btn sec" data-a="cuenta-ingresar" data-pro="${pro}">Ya lo confirmé: iniciar sesión</button><button class="btn sec" data-a="close">Cerrar</button>`;
+  if(f.modo==='confirmar')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Te enviamos un enlace a <b>${esc(f.email)}</b>. Ábrelo en este dispositivo para activar tu cuenta.</p>${spam}${avisosCuenta({...f,noConfirmado:false})}
+   <button class="btn sec" data-a="cuenta-ingresar" data-pro="${pro}">Ya lo confirmé: iniciar sesión</button><button class="btn sec" data-a="cuenta-reenviar" ${espera||f.cargando?'disabled':''}>${espera?'Podrás reenviarlo en un minuto':'Reenviar el correo'}</button><button class="btn sec" data-a="close">Cerrar</button>`;
+  if(f.modo==='enlace-enviado')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Si hay una cuenta con <b>${esc(f.email)}</b>, te llegará un enlace para crear una contraseña nueva. Ábrelo en este dispositivo.</p>${spam}
+   <button class="btn sec" data-a="cuenta-ingresar" data-pro="${pro}">Volver a iniciar sesión</button><button class="btn sec" data-a="close">Cerrar</button>`;
+  if(f.modo==='recuperar')return `<form class="stack" data-form="cuenta" style="gap:14px" novalidate><div class="grab"></div><h2>Recupera tu contraseña</h2>
+   <p class="muted small" style="margin:0">Te enviaremos un enlace para crear una contraseña nueva. Ábrelo en este dispositivo.</p>${correo}${avisosCuenta(f)}${enviar('Enviar enlace')}
+   <button class="btn sec" type="button" data-a="cuenta-ingresar" data-pro="${pro}">Volver a iniciar sesión</button></form>`;
+  if(f.modo==='nueva-clave')return `<form class="stack" data-form="cuenta" style="gap:14px" novalidate><div class="grab"></div><h2>Crea tu nueva contraseña</h2>
+   <p class="muted small" style="margin:0">Para tu cuenta <b>${esc(f.email)}</b>.</p>${campoClave(f,true)}${avisosCuenta(f)}${enviar('Guardar contraseña')}
+   <button class="btn sec" type="button" data-a="close">Ahora no</button></form>`;
   return `<form class="stack" data-form="cuenta" style="gap:14px" novalidate><div class="grab"></div>
    <h2>${reg?(f.paraPro?'Crea tu cuenta para pasarte a Pro':'Crea tu cuenta'):'Inicia sesión'}</h2>
    <p class="muted small" style="margin:0">${reg?'Con una cuenta, tu plan Pro te acompaña en cualquier dispositivo. Tus horarios siguen guardados solo en este teléfono.':'Entra con el correo y la contraseña de tu cuenta de LIA.'}</p>
-   <label class="f">Correo<input id="cu-email" name="email" type="email" inputmode="email" autocomplete="email" required value="${esc(f.email)}"></label>
-   <label class="f">Contraseña<input id="cu-pass" name="password" type="password" autocomplete="${reg?'new-password':'current-password'}" required${reg?' minlength="8" aria-describedby="cu-ayuda"':''}></label>
-   ${reg?'<span id="cu-ayuda" class="small muted" style="margin-top:-8px">Al menos 8 caracteres.</span>':''}
-   ${f.error?`<p class="ferr" role="alert">${esc(f.error)}</p>`:''}
-   <button class="btn pri" type="submit" ${f.cargando?'disabled':''}>${f.cargando?'Un momento…':reg?'Crear cuenta':'Iniciar sesión'}</button>
+   ${correo}${campoClave(f,reg)}
+   ${reg?'':'<button class="linkbtn" type="button" data-a="cuenta-recuperar" style="align-self:flex-start;margin-top:-10px">¿Olvidaste tu contraseña?</button>'}
+   ${avisosCuenta(f)}${enviar(reg?'Crear cuenta':'Iniciar sesión')}
    <button class="btn sec" type="button" data-a="${reg?'cuenta-ingresar':'cuenta-registrar'}" data-pro="${pro}">${reg?'Ya tengo cuenta':'Crear una cuenta nueva'}</button>
    <button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
-function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return;f.email=email;const reg=f.modo==='registro';
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){f.error='Escribe un correo válido, por ejemplo nombre@correo.com.';ui.sheet=sheetCuenta();render();return;}
-  if(!pass||(reg&&pass.length<8)){f.error=reg?'La contraseña debe tener al menos 8 caracteres.':'Escribe tu contraseña.';ui.sheet=sheetCuenta();render();return;}
-  f.error=null;f.cargando=true;ui.sheet=sheetCuenta();render();ui.authBusy=true;
+function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return;const modo=f.modo,reg=modo==='registro',clave=reg||modo==='nueva-clave';
+  if(modo!=='nueva-clave')f.email=email;f.pass=pass;f.error=null;f.aviso=null;f.noConfirmado=false;
+  const mal=t=>{f.error=t;pintarCuenta();};
+  if(modo!=='nueva-clave'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return mal('Escribe un correo válido, por ejemplo nombre@correo.com.');
+  if(modo!=='recuperar'&&(!pass||(clave&&pass.length<8)))return mal(clave?'La contraseña debe tener al menos 8 caracteres.':'Escribe tu contraseña.');
+  f.cargando=true;pintarCuenta();ui.authBusy=true;
   const listo=()=>{ui.authBusy=false;f.cargando=false;};
   const abierta=()=>ui.cuentaForm===f&&!!ui.sheet;  // si la cerró mientras esperaba, no se vuelve a abrir
-  sb().then(c=>reg?c.auth.signUp({email,password:pass,options:{emailRedirectTo:location.origin+location.pathname}}):c.auth.signInWithPassword({email,password:pass}))
+  const fallo=e=>{listo();f.error=mensajeError(e);f.noConfirmado=modo==='ingreso'&&/confirma tu correo/.test(f.error);if(abierta())pintarCuenta();else toast(f.error);};
+  const volver=location.origin+location.pathname;
+  if(modo==='recuperar'){sb().then(c=>c.auth.resetPasswordForEmail(email,{redirectTo:volver})).then(({error})=>{if(error)throw error;listo();f.modo='enlace-enviado';
+      if(abierta())pintarCuenta();else toast('Te enviamos un enlace para crear una contraseña nueva.');}).catch(fallo);return;}
+  if(modo==='nueva-clave'){sb().then(c=>c.auth.updateUser({password:pass})).then(({data,error})=>{if(error)throw error;listo();ui.cuentaForm=null;ui.sheet=null;
+      if(data&&data.user)setCuenta(data.user);rerenderKeepScroll();toast('Listo, cambiaste tu contraseña.');}).catch(fallo);return;}
+  sb().then(c=>reg?c.auth.signUp({email,password:pass,options:{emailRedirectTo:volver}}):c.auth.signInWithPassword({email,password:pass}))
     .then(({data,error})=>{if(error)throw error;
-      if(!data.session){listo();
+      if(!data.session){listo();f.pass='';
         // Con la confirmación activada, Auth no dice que el correo ya tiene cuenta: responde sin identidades y no envía nada.
-        if(reg&&data.user&&Array.isArray(data.user.identities)&&!data.user.identities.length){f.modo='ingreso';f.error='Ya hay una cuenta con ese correo. Inicia sesión.';if(abierta()){ui.sheet=sheetCuenta();render();}else toast(f.error);return;}
-        f.modo='confirmar';if(abierta()){ui.sheet=sheetCuenta();render();}else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
+        if(reg&&data.user&&Array.isArray(data.user.identities)&&!data.user.identities.length){f.modo='ingreso';f.error='Ya hay una cuenta con ese correo. Inicia sesión o, si no recuerdas la contraseña, recupérala.';if(abierta())pintarCuenta();else toast(f.error);return;}
+        f.modo='confirmar';f.esperaHasta=Date.now()+60000;if(abierta())pintarCuenta();else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
       setCuenta(data.session.user);
       return refrescarPlan(false).catch(()=>null).then(()=>{const seguia=abierta();listo();
-        const p=ui.pay;
-        if(f.paraPro&&p&&isPro()){ui.cuentaForm=null;ui.pay=null;ui.sheet=null;rerenderKeepScroll();toast('Tu cuenta ya tiene LIA Pro.');resumeAfterPay(p);return;}
+        const p=ui.pay,paraPro=f.paraPro;
+        if(paraPro&&p&&isPro()){ui.cuentaForm=null;ui.pay=null;ui.sheet=null;rerenderKeepScroll();toast('Tu cuenta ya tiene LIA Pro.');resumeAfterPay(p);return;}
         toast(reg?'Listo, creaste tu cuenta.':'Listo, iniciaste sesión.');
-        if(f.paraPro&&p&&seguia){ui.cuentaForm=null;ui.sheet=sheetCheckout();render();}
+        if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;ui.sheet=sheetCheckout();render();}
         else{ui.cuentaForm=null;ui.sheet=null;rerenderKeepScroll();}});})
-    .catch(e=>{listo();f.error=mensajeError(e);if(abierta()){ui.sheet=sheetCuenta();render();}else toast(f.error);});}
+    .catch(fallo);}
 function cuentaCard(){if(!cuentasActivas())return '';
   if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este teléfono. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
   return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este teléfono</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
  'cuenta-ingresar':d=>abrirCuenta('ingreso',d.pro==='1'),
+ 'cuenta-recuperar':()=>{const f=ui.cuentaForm;abrirCuenta('recuperar',!!(f&&f.paraPro));},
+ 'cuenta-reenviar':()=>{const f=ui.cuentaForm;if(!f||f.cargando||f.esperaHasta>Date.now())return;f.error=null;f.aviso=null;f.cargando=true;
+   sb().then(c=>c.auth.resend({type:'signup',email:f.email,options:{emailRedirectTo:location.origin+location.pathname}})).then(({error})=>{if(error)throw error;
+       f.cargando=false;f.esperaHasta=Date.now()+60000;f.aviso='Te lo volvimos a enviar. Si no llega en unos minutos, revisa la carpeta de spam.';if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();})
+     .catch(e=>{f.cargando=false;f.error=mensajeError(e);if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();});},
+ 'ver-clave':(d,el)=>{const i=document.getElementById('cu-pass'),f=ui.cuentaForm;if(!i)return;const ver=i.type==='password';i.type=ver?'text':'password';
+   el.textContent=ver?'Ocultar':'Mostrar';el.setAttribute('aria-label',`${ver?'Ocultar':'Mostrar'} contraseña`);if(f){f.ver=ver;f.pass=i.value;ui.sheet=sheetCuenta();}},
  'cuenta-salir':()=>{ui.sheet=`<div class="grab"></div><h2>¿Cerrar sesión?</h2><p class="muted" style="margin:0">En este dispositivo vuelves a LIA Gratis. Tus horarios y evaluaciones no se borran${isPro()?', y tu plan Pro sigue en tu cuenta':''}.</p><button class="btn pri" data-a="cuenta-salir-ok">Cerrar sesión</button><button class="btn sec" data-a="close">Cancelar</button>`;render();},
  'cuenta-salir-ok':()=>{ui.sheet=null;render();ui.authBusy=true;
    const fin=()=>{ui.authBusy=false;try{localStorage.removeItem('lia.auth');}catch(e){}quitarCuenta();rerenderKeepScroll();toast('Cerraste sesión. Estás en LIA Gratis.');};
