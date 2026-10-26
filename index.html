@@ -265,27 +265,42 @@ const fechaLarga=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()]} ${d.getDate(
 const fechaCorta=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()].slice(0,3)} ${d.getDate()} ${MESES[d.getMonth()].slice(0,3)}`;};
 
 function subtract(wins,s,e){const out=[];for(const w of wins){if(e<=w.s||s>=w.e){out.push(w);continue;}if(s>w.s)out.push({s:w.s,e:s});if(e<w.e)out.push({s:e,e:w.e});}return out;}
-function busyFor(state,date){const wd=fromYmd(date).getDay();const b=[];
-  for(const c of state.commitments)if(c.days.includes(wd))b.push({s:toMin(c.start),e:toMin(c.end),kind:c.type,label:c.name,ref:c.id});
-  for(const x of state.exceptions)if(x.date===date)b.push({s:toMin(x.start),e:toMin(x.end),kind:'excepcion',label:x.label,ref:x.id});
+// Un día de estudio va de la hora de despertar a la de dormir. Si se duerme después de medianoche (00:30),
+// el día termina en el minuto 1470; un horario que termina al día siguiente (22:00–06:00) funciona igual.
+function finDelDia(S){const w=toMin(S.wake);let s=toMin(S.sleep);if(s<=w)s+=1440;return s;}
+function intervalo(start,end){const s=toMin(start);let e=toMin(end);if(e<s)e+=1440;return{s,e};}
+function busyFor(state,date){const wd=fromYmd(date).getDay(),ayer=(wd+6)%7,prev=ymd(addDays(fromYmd(date),-1));const b=[];
+  for(const c of state.commitments){const r=intervalo(c.start,c.end);
+    if(c.days.includes(wd))b.push({s:r.s,e:r.e,kind:c.type,label:c.name,ref:c.id});
+    if(r.e>1440&&c.days.includes(ayer))b.push({s:0,e:r.e-1440,kind:c.type,label:c.name,ref:c.id,cola:true});}  // sigue desde anoche
+  for(const x of state.exceptions){const r=intervalo(x.start,x.end);
+    if(x.date===date)b.push({s:r.s,e:r.e,kind:'excepcion',label:x.label,ref:x.id});
+    else if(x.date===prev&&r.e>1440)b.push({s:0,e:r.e-1440,kind:'excepcion',label:x.label,ref:x.id,cola:true});}
   return b;}
+// Todo lo ocupado dentro de un día de estudio, incluida la madrugada siguiente cuando se duerme después de medianoche.
+function ocupadoMarco(state,date,fin){const o=busyFor(state,date).map(b=>[b.s,b.e]);
+  for(const x of state.done)if(x.date===date)o.push([toMin(x.start),toMin(x.start)+x.min]);
+  for(const e of state.evals)if(e.date===date)o.push([toMin(e.time)-30,toMin(e.time)+120]);
+  if(fin>1440){const m=ymd(addDays(fromYmd(date),1));
+    for(const b of busyFor(state,m))if(!b.cola)o.push([b.s+1440,b.e+1440]);
+    for(const x of state.done)if(x.date===m)o.push([toMin(x.start)+1440,toMin(x.start)+1440+x.min]);
+    for(const e of state.evals)if(e.date===m)o.push([toMin(e.time)+1410,toMin(e.time)+1560]);}
+  return o;}
 function evalDeadline(ev,S){const t=EVAL_TYPES[ev.type]||EVAL_TYPES.parcial;
-  if(t.exam)return{date:ymd(addDays(fromYmd(ev.date),-1)),end:toMin(S.sleep)};
-  return{date:ev.date,end:Math.min(toMin(ev.time)-60,toMin(S.sleep))};}
+  if(t.exam)return{date:ymd(addDays(fromYmd(ev.date),-1)),end:finDelDia(S)};
+  return{date:ev.date,end:Math.min(toMin(ev.time)-60,finDelDia(S))};}
 function doneFor(state,id){return state.done.filter(x=>x.evalId===id).reduce((a,x)=>a+x.min,0);}
 
 // Motor de horarios: reparte las horas que pide cada evaluación en los huecos libres reales.
 function plan(state,now){
-  const S=state.settings,wake=toMin(S.wake),sleep=toMin(S.sleep);
+  const S=state.settings,wake=toMin(S.wake),sleep=finDelDia(S);
   const today=ymd(now),nowMin=now.getHours()*60+now.getMinutes();
   const evs=state.evals.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
   let last=ymd(addDays(now,6));for(const e of evs)if(e.date>last)last=e.date;
   const nDays=Math.min(dayDiff(today,last),60);const days={};
-  for(let i=0;i<=nDays;i++){const d=ymd(addDays(fromYmd(today),i));let wins=[{s:wake,e:sleep}];
+  for(let i=0;i<=nDays;i++){const d=ymd(addDays(fromYmd(today),i));let wins=wake<sleep?[{s:wake,e:sleep}]:[];
     if(i===0)wins=subtract(wins,0,Math.ceil((nowMin+10)/15)*15);
-    for(const b of busyFor(state,d))wins=subtract(wins,b.s,b.e);
-    for(const x of state.done)if(x.date===d)wins=subtract(wins,toMin(x.start),toMin(x.start)+x.min);
-    for(const e of evs)if(e.date===d)wins=subtract(wins,toMin(e.time)-30,toMin(e.time)+120);
+    for(const [s,e] of ocupadoMarco(state,d,sleep))wins=subtract(wins,s,e);
     days[d]={wins,load:0,free:wins.reduce((a,w)=>a+w.e-w.s,0)};}
   for(const x of state.done)if(days[x.date])days[x.date].load+=x.min;
   const blocks=[],unmet={};
@@ -315,7 +330,7 @@ function plan(state,now){
 }
 function agendaFor(state,P,date){
   const it=[];const ev=id=>state.evals.find(e=>e.id===id);
-  for(const b of busyFor(state,date))it.push({...b});
+  for(const b of busyFor(state,date))it.push(b.cola?{...b,sub:'Sigue desde anoche'}:{...b});
   for(const e of state.evals)if(e.date===date)it.push({s:toMin(e.time),e:toMin(e.time)+120,kind:'examen',label:`${EVAL_TYPES[e.type].label} · ${e.course}`,ref:e.id});
   for(const x of state.done)if(x.date===date){const e=ev(x.evalId);it.push({s:toMin(x.start),e:toMin(x.start)+x.min,kind:'hecho',label:`Estudiaste ${e?e.course:''}`,ref:x.id});}
   for(const b of P.blocks)if(b.date===date){const e=ev(b.evalId);it.push({s:b.s,e:b.e,kind:'estudio',label:`Estudiar ${e?e.course:''}`,sub:e?`Para: ${EVAL_TYPES[e.type].label} ${fechaCorta(e.date)}`:'',ref:b.evalId,block:b});}
@@ -337,17 +352,42 @@ function tokenize(text){
   return toks;}
 const H='(\\d{1,2})(?::(\\d{2}))?(?:\\s*(am|pm))?';
 function partOf(ns){const m=ns.match(/\b(?:en|por|de|a) (?:la|las) (manana|tarde|noche)s?\b/)||ns.match(/\b(tarde|noche)s?\b/);return m?m[1]:null;}
+// Parte del día pegada a una hora: "10 de la noche", "6 de la mañana", "2 de la madrugada", "12 del mediodía".
+const Q='(?:\\s+(?:(?:de|en|por)\\s+la|del)\\s+(manana|tarde|noche|madrugada|mediodia))?';
+const HQ=H+Q;
 function adj(h,m,ap,part){h=+h;m=+m||0;if(ap){if(ap==='pm'&&h<12)h+=12;if(ap==='am'&&h===12)h=0;}
-  else if((part==='tarde'||part==='noche')&&h<12)h+=12;else if(part!=='manana'&&h>=1&&h<=6)h+=12;return h*60+m;}
+  else if(part==='noche'&&h===12)h=0;
+  else if((part==='tarde'||part==='noche'||part==='mediodia')&&h<12)h+=12;
+  else if(part!=='manana'&&part!=='madrugada'&&h>=1&&h<=6)h+=12;return h*60+m;}
+// Lecturas posibles de una hora en minutos: "6" puede ser 06:00 o 18:00; "6 am" o "6 de la mañana", solo 06:00.
+function horasPosibles(h,m,ap,q){h=+h;m=+m||0;if(h>24||m>59)return[];if(h>12)return[h%24*60+m];
+  const am=h%12*60+m,pm=(h%12+12)*60+m;
+  if(ap==='am'||q==='madrugada')return[am];
+  if(q==='manana')return[h===12?720+m:am];
+  if(ap==='pm'||q==='tarde'||q==='mediodia')return[pm];
+  if(q==='noche')return[h===12?m:pm];
+  return h===12?[720+m,m]:[am,pm];}
+// La lectura más probable de un rango: que dure 12 h o menos, que no cruce la medianoche, que no empiece
+// de madrugada y, si empatan, la de siempre (de 1 a 6 sin aclarar es de la tarde). Si cruza, el fin pasa de 1440.
+function rangoProbable(a,b,parte){const pg=a[2]||a[3]||b[2]||b[3]?null:parte;
+  const qa=a[3]||pg,qb=b[3]||pg,hab=adj(a[0],a[1],a[2],qa);let mejor=null;
+  for(const s of horasPosibles(a[0],a[1],a[2],qa))for(const e0 of horasPosibles(b[0],b[1],b[2],qb)){
+    let e=e0===0&&s>0?1440:e0,cruza=false;if(e<=s){e+=1440;cruza=true;}
+    const pen=[e-s>720?1:0,cruza?1:0,s<360?1:0,s===hab?0:1].join();
+    if(!mejor||pen<mejor.pen)mejor={s,e,pen};}
+  return mejor?[mejor.s,mejor.e]:null;}
 function parseTimes(ns){const part=partOf(ns);
-  let m=ns.match(new RegExp(`\\b(?:de|desde|entre)\\s+(?:las\\s+|la\\s+)?${H}\\s+(?:a|hasta|y)\\s+(?:las\\s+|la\\s+)?${H}`));
-  if(!m)m=ns.match(new RegExp(`\\b(\\d{1,2}):(\\d{2})(?:\\s*(am|pm))?\\s*(?:-|a|hasta)\\s*(\\d{1,2})(?::(\\d{2}))?(?:\\s*(am|pm))?`));
-  if(m){let s=adj(m[1],m[2],m[3]||(m[6]==='pm'&&+m[1]<+m[4]?'pm':null),part),e=adj(m[4],m[5],m[6],part);
-    if(e<=s&&e<720)e+=720;if(e>s)return{range:[s,e],part};}
-  m=ns.match(new RegExp(`\\b(?:hasta(?:\\s+las|\\s+la)?|salgo\\b.{0,25}?\\ba(?:\\s+las|\\s+la)?)\\s+${H}`));
-  if(m)return{until:adj(m[1],m[2],m[3],part),part};
-  m=ns.match(new RegExp(`\\b(?:a las|a la|las)\\s+${H}`))||ns.match(/\b(\d{1,2}):(\d{2})(?:\s*(am|pm))?/)||ns.match(/\b(\d{1,2})\s*(am|pm)\b/);
-  if(m){if(m.length===3)return{at:adj(m[1],0,m[2],part),part};return{at:adj(m[1],m[2],m[3],part),part};}
+  let m=ns.match(new RegExp(`\\b(?:de|desde|entre)\\s+(?:las\\s+|la\\s+)?${HQ}\\s+(?:a|hasta|y)\\s+(?:las\\s+|la\\s+)?${HQ}`));
+  if(!m)m=ns.match(new RegExp(`\\b(\\d{1,2}):(\\d{2})(?:\\s*(am|pm))?${Q}\\s*(?:-|a|hasta)\\s*${HQ}`));
+  if(m){const r=rangoProbable(m.slice(1,5),m.slice(5,9),part);if(r)return{range:r,part};}
+  m=ns.match(new RegExp(`\\b(?:hasta(?:\\s+las|\\s+la)?|salgo\\b.{0,25}?\\ba(?:\\s+las|\\s+la)?)\\s+${HQ}`));
+  if(m)return{until:adj(m[1],m[2],m[3],m[4]||part),part,crudo:m.slice(1,5)};
+  m=ns.match(new RegExp(`\\b(?:a las|a la|las)\\s+${HQ}`));
+  if(m)return{at:adj(m[1],m[2],m[3],m[4]||part),part,crudo:m.slice(1,5)};
+  m=ns.match(/\b(\d{1,2}):(\d{2})(?:\s*(am|pm))?/);
+  if(m)return{at:adj(m[1],m[2],m[3],part),part,crudo:[m[1],m[2],m[3],null]};
+  m=ns.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  if(m)return{at:adj(m[1],0,m[2],part),part,crudo:[m[1],null,m[2],null]};
   return{part};}
 function nextWeekday(now,wd,allowToday){let d=(wd-now.getDay()+7)%7;if(d===0&&!allowToday)d=7;return ymd(addDays(now,d));}
 function parseDate(ns,now){
@@ -424,7 +464,7 @@ function interpret(text,state,now){
   const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|cancelaron|no voy a poder|no podre)\b/;
   const hasEval=toks.some(t=>EVAL_KW[t.n]);
   if(busyWords.test(ns)&&!hasEval){
-    const date=parseDate(ns,now)||ymd(now);const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=toMin(S.sleep);
+    const date=parseDate(ns,now)||ymd(now);const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=finDelDia(S);
     const nowMin=date===ymd(now)?now.getHours()*60+now.getMinutes():wake;
     let s,e,label='No disponible';
     if(tm.range){[s,e]=tm.range;}
@@ -435,7 +475,7 @@ function interpret(text,state,now){
     else if(tm.at!=null){s=tm.at;e=tm.at+60;}
     else{s=wake;e=sleep;label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
     if(!(e>s))return{intent:'help'};
-    return{intent:'except',ex:{date,start:fmt(s),end:fmt(Math.min(e,24*60-1)),label}};}
+    return{intent:'except',ex:{date,start:fmt(s),end:fmt(e),label}};}  // si e pasa de 1440, termina al día siguiente
   const clauses=splitClauses(toks);let prev=null;const items=[];
   for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
   if(items.length)return{intent:'add',items};
@@ -618,7 +658,10 @@ function dictar(kind,ph){return `<form class="dashed" data-form="dictar" data-ki
    <input id="dict-${kind}" name="q" placeholder="${esc(ph)}" autocomplete="off" style="flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 0;font-weight:500">
    <button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="dict-${kind}" aria-label="${isPro()?'Dictar por voz':'Dictar por voz (LIA Pro)'}">${I.mic}</button>
    <button type="submit" class="mic" aria-label="Agregar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
-function commitItem(c){return `<button class="item" data-a="edit-commit" data-id="${c.id}"><span class="sw k-${c.type}">${COMMIT_TYPES[c.type][0]}</span><span class="grow"><b>${esc(c.name)}</b><br><span class="small muted">${diasTxt(c.days)} · ${c.start} – ${c.end}</span></span><span class="tag muted">${hrs(c.days.length*(toMin(c.end)-toMin(c.start)))}</span></button>`;}
+// "22:00 – 06:00 del día siguiente" cuando el horario cruza la medianoche.
+function horario(c){return `${c.start} – ${c.end}${toMin(c.end)<toMin(c.start)?' del día siguiente':''}`;}
+function duracion(c){const r=intervalo(c.start,c.end);return r.e-r.s;}
+function commitItem(c){return `<button class="item" data-a="edit-commit" data-id="${c.id}"><span class="sw k-${c.type}">${COMMIT_TYPES[c.type][0]}</span><span class="grow"><b>${esc(c.name)}</b><br><span class="small muted">${diasTxt(c.days)} · ${horario(c)}</span></span><span class="tag muted">${hrs(c.days.length*duracion(c))}</span></button>`;}
 function diasTxt(ds){const s=[...ds].sort((a,b)=>((a+6)%7)-((b+6)%7));const k=s.join();
   if(k==='1,2,3,4,5')return'Lun a Vie';if(k==='1,2,3,4,5,6')return'Lun a Sáb';if(s.length===7)return'Todos los días';if(k==='6,0')return'Fines de semana';
   return s.map(d=>cap(DIAS[d].slice(0,3))).join(', ');}
@@ -679,8 +722,8 @@ function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class
   const ctaB=m.cta&&!isPro()?`<button class="pill solid" data-a="paywall" data-why="${esc(m.cta)}">Ver LIA Pro</button>`:'';
   return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
-  return `${it.name} — ${diasTxt(it.days)} · ${it.start} – ${it.end}`;}
-function pendingHTML(){const it=ui.pending.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${i.start} – ${i.end}`)}</small></div>`).join('')}
+  return `${it.name} — ${diasTxt(it.days)} · ${horario(it)}`;}
+function pendingHTML(){const it=ui.pending.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
    <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;}
 
 function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter(e=>e.date>=ymd(now())&&!p.unmet[e.id]).length,up=state.evals.filter(e=>e.date>=ymd(now())).length;
@@ -711,7 +754,8 @@ function sheetCommit(id){const c=state.commitments.find(x=>x.id===id)||{id:'',na
   <label class="f">Nombre<input id="c-name" name="name" required value="${esc(c.name)}" placeholder="Trabajo, Clases, Gimnasio…"></label>
   <label class="f">Tipo<select id="c-type" name="type">${Object.entries(COMMIT_TYPES).map(([k,v])=>`<option value="${k}" ${c.type===k?'selected':''}>${v}</option>`).join('')}</select></label>
   <div class="f">Días<div class="dpick">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="d" value="${d}" ${c.days.includes(d)?'checked':''}><span>${DIAS_C[d]}</span></label>`).join('')}</div></div>
-  <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}"></label></div>
+  <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}" aria-describedby="c-noche"></label></div>
+  <p class="small muted" id="c-noche" style="margin:-6px 0 0"${toMin(c.end)<toMin(c.start)?'':' hidden'}>Termina al día siguiente.</p>
   <button class="btn pri" type="submit">Guardar</button>${c.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${c.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
 function sheetEval(id){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:5};
   return `<form class="stack" data-form="eval" data-id="${e.id}" style="gap:14px"><div class="grab"></div><h2>${e.id?'Editar evaluación':'Nueva evaluación'}</h2>
@@ -1014,7 +1058,7 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
   if(f.dataset.form==='cuenta'){enviarCuenta(String(fd.get('email')||'').trim(),String(fd.get('password')||''));return;}
   if(f.dataset.form==='chat'||f.dataset.form==='dictar'){const q=fd.get('q')||'';handleText(String(q),f.dataset.form==='chat'?'chat':f.dataset.kind);return;}
   if(f.dataset.form==='commit'){const days=fd.getAll('d').map(Number);if(!days.length){toast('Elige al menos un día.');return;}
-    if(toMin(fd.get('end'))<=toMin(fd.get('start'))){toast('La hora de fin debe ser después del inicio.');return;}
+    if(toMin(fd.get('end'))===toMin(fd.get('start'))){toast('El inicio y el fin no pueden ser a la misma hora.');return;}
     snapshot();const o={name:String(fd.get('name')).trim(),type:fd.get('type'),days,start:fd.get('start'),end:fd.get('end')};
     const cur=f.dataset.id&&state.commitments.find(c=>c.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.commitments.push({id:uid(),...o});
     save();ui.sheet=null;rerenderKeepScroll();toast(P().frozen?'Guardado. Tu horario Gratis se actualiza cuando rearmes tu semana.':'Guardado. Lía reorganizó tu semana.',true);return;}
@@ -1028,6 +1072,8 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     toast(p.frozen?'Guardado. Entra a tu horario cuando rearmes tu semana.':e&&p.unmet[e.id]>0?`Guardado, pero faltan ${hrs(p.unmet[e.id])} sin hueco libre.`:'Guardado. Lía repartió tus horas de estudio.',true);}});
 document.addEventListener('change',ev=>{const el=ev.target;
   if(el.id==='e-type'){const h=document.getElementById('e-hours');if(h)h.value=EVAL_TYPES[el.value].h;return;}
+  if(el.id==='c-start'||el.id==='c-end'){const s=document.getElementById('c-start').value,e=document.getElementById('c-end').value,n=document.getElementById('c-noche');
+    if(n)n.hidden=!(s&&e&&toMin(e)<toMin(s));return;}
   const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
   if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;save();
   if(k==='autonomy')toast('Ajuste guardado.');
