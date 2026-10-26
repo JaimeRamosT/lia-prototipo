@@ -874,7 +874,7 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
   ${freeWeekLine()}<div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
     const que=hasE&&hasS?', con evaluación y estudio':hasE?', con evaluación':hasS?', con estudio':'';
     return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}" aria-label="${cap(DIAS[dt.getDay()])} ${dt.getDate()}${d===t?', hoy':''}${que}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
-  <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>evaluaciones esta semana</span></div></div>
+  <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>${exams===1?'evaluación':'evaluaciones'} esta semana</span></div></div>
   <div class="between"><h2>${cap(fechaLarga(ui.sel))}</h2><span class="small" style="color:var(--pri);font-weight:600">${selStudy?hrs(selStudy)+' de estudio':''}</span></div>
   ${agendaHTML(ui.sel,p)}`;}
 
