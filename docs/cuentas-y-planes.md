@@ -71,7 +71,7 @@ P2: sincronizar el estado del horario por cuenta, webhook de Culqi en lugar de `
 ## Diseño técnico
 
 ```
-Navegador (PWA en GitHub Pages)
+Navegador (PWA servida por Cloudflare, solo archivos estáticos)
   index.html ─ localStorage: horario (lia.app.v1) y sesión (lia.auth)
   config.js  ─ URL y clave publicable (públicas)
   vendor/supabase.js ─ se carga solo al usar cuentas
@@ -109,7 +109,7 @@ Supabase
 - **Precios duplicados a propósito.** Están en la migración (`precio()`) y en `index.html` (`PRICES`): si cambian, cambia ambos.
 - **Avisos esperados de los asesores de Supabase.** El de seguridad marca (WARN 0029) que una cuenta con sesión puede ejecutar cuatro funciones `SECURITY DEFINER`: `mi_suscripcion`, `simular_pago`, `cambiar_renovacion` y `simular_fin_periodo`. Es a propósito: son la única vía para cambiar el plan, y cada una solo toca la fila de quien llama. Los avisos de `simular_*` desaparecen cuando se quiten para el cobro real. El de rendimiento sobre `pagos_user_id_idx` (índice sin uso) es normal en una tabla nueva: el índice sirve a la política RLS y al borrado en cascada.
 
-**Qué revisar al crecer:** sincronizar el horario por cuenta (tabla con el estado en `jsonb`), mover el cobro a una función de servidor con Culqi y quitar `simular_pago`/`simular_fin_periodo`, y llevar el hosting a un servicio que permita uso comercial antes de cobrar.
+**Qué revisar al crecer:** sincronizar el horario por cuenta (tabla con el estado en `jsonb`), y mover el cobro a una función de servidor con Culqi y quitar `simular_pago`/`simular_fin_periodo`. El hosting ya está en Cloudflare, que sí permite uso comercial; al cobrar, la tarjeta se escribe en la página de pago de Culqi (el plan gratuito de Cloudflare no permite recibirla en la página de LIA) y Culqi se agrega a la CSP de `_headers`.
 
 ## Puesta en marcha
 
@@ -118,7 +118,7 @@ Supabase
    - **A mano:** copia el contenido de `supabase/migrations/20261026005847_cuentas_y_suscripciones.sql` en Supabase → SQL Editor y ejecútalo.
 2. **Conectar la app.** `config.js` ya apunta al proyecto del equipo. Para otro proyecto, pega ahí la *Project URL* y la clave *publishable* (o la *anon* heredada) de Supabase → Project Settings → API Keys.
 3. **Ajustar Auth** en Supabase → Authentication:
-   - *URL Configuration*: *Site URL* con tu dirección de GitHub Pages y, en *Redirect URLs*, `http://localhost:8000/` y `https://jaimeramost.github.io/lia-prototipo/`.
+   - *URL Configuration*: *Site URL* con la dirección de producción (`https://lia-prototipo.<subdominio>.workers.dev/`) y, en *Redirect URLs*, esa misma dirección, la de las vistas previas (`https://*-lia-prototipo.<subdominio>.workers.dev/**`) y las de prueba en tu computadora (`http://localhost:8000/` y `http://localhost:8787/`).
    - *Sign In / Providers → Email*: para probar rápido, desactiva *Confirm email*; si lo dejas activo, el correo integrado solo llega a miembros del equipo del proyecto.
    - Contraseña mínima de 8 caracteres, igual que en la app.
 4. **Crear la cuenta Pro de prueba.** Abre la app (`python3 -m http.server 8000`), ve a Perfil → *Crear cuenta*, y luego:
@@ -141,6 +141,7 @@ Supabase
 
 - **El registro falla con "Database error saving new user":** quita el trigger con `drop trigger if exists al_crear_cuenta on auth.users;`. Las cuentas siguen funcionando, porque `mi_suscripcion()` crea la fila que falte.
 - **Las cuentas fallan en la app:** deja vacíos `url` y `key` en `config.js` e integra ese cambio en `main`. La app deja de ofrecer cuentas y sigue en Gratis sin borrar horarios; quien ya tenía Pro en un dispositivo lo conserva ahí hasta su fecha de fin.
+- **La versión publicada falla:** vuelve a la anterior en Cloudflare (*Deployments* → *Rollback*, ver el [README](../README.md#dónde-se-publica)) y revierte el commit en `main`.
 - **Deshacer la base de datos:** borra el trigger `al_crear_cuenta`, las funciones de la migración y las tablas `pagos` y `suscripciones`. Se pierden los planes y el historial de pagos de prueba.
 
 ## Piloto con estudiantes
@@ -149,7 +150,7 @@ Antes de invitar a los 15 a 20 estudiantes:
 
 1. **SMTP propio.** En Supabase → Authentication → Emails → *SMTP Settings*, conecta el correo de un proveedor de correo transaccional con un remitente del equipo. Sin esto, los correos de confirmación y de recuperación solo llegan a miembros del proyecto y como máximo 2 por hora; la app lo explica («Por ahora, solo el equipo de LIA puede crear cuentas»).
 2. **Límite de envíos.** En Authentication → *Rate Limits*, sube *Emails sent per hour* según el proveedor (por ejemplo, 30). Auth exige además un minuto entre dos correos a la misma persona; la app lo respeta.
-3. **Direcciones de regreso.** En Authentication → *URL Configuration*, la *Site URL* y las *Redirect URLs* deben incluir la dirección de GitHub Pages (`https://jaimeramost.github.io/lia-prototipo/`). Los enlaces de confirmación y de recuperación vuelven a la dirección desde la que se pidieron; si no está en la lista, Auth los manda a la *Site URL*.
+3. **Direcciones de regreso.** En Authentication → *URL Configuration*, la *Site URL* debe ser la dirección de producción en Cloudflare (`https://lia-prototipo.<subdominio>.workers.dev/`), y las *Redirect URLs* deben incluirla junto con la de las vistas previas (`https://*-lia-prototipo.<subdominio>.workers.dev/**`). Los enlaces de confirmación y de recuperación vuelven a la dirección desde la que se pidieron; si no está en la lista, Auth los manda a la *Site URL*.
 4. **Correos en español.** En Authentication → Emails → *Templates*, traduce *Confirm signup* («Confirma tu cuenta de LIA») y *Reset password* («Crea una contraseña nueva para LIA»). Deja el enlace `{{ .ConfirmationURL }}` tal cual.
 5. **Confirmación activada.** En *Sign In / Providers → Email*, deja *Confirm email* activado.
 6. **Modo pruebas solo para el equipo.** Comparte la dirección sin `?pruebas=1`. Quien la abra con `?pruebas=1` ve *Simular el fin del periodo*; `?pruebas=0` lo apaga en ese navegador.

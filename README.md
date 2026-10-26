@@ -4,20 +4,26 @@ LIA arma un horario de estudio en las horas libres de universitarios que estudia
 
 > **Prototipo de prueba.** Sin cuenta se usa LIA Gratis. LIA Pro necesita una cuenta en Supabase; el pago es de prueba y no cobra nada. Los horarios de cada persona se guardan solo en su dispositivo.
 
-## Publicarlo en GitHub Pages
+## Dónde se publica
 
-1. En el repositorio, entra a **Settings → Pages**.
-2. En **Build and deployment → Source**, elige **Deploy from a branch**.
-3. Elige la rama `main` y la carpeta `/ (root)`, y pulsa **Save**.
-4. Espera unos minutos. La dirección aparece arriba de esa misma página y tiene la forma `https://TU-USUARIO.github.io/lia-prototipo/`.
+LIA se publica en Cloudflare, en el plan gratuito, como un Worker que solo sirve archivos: no tiene código de servidor. El Worker `lia-prototipo` está conectado a este repositorio con Workers Builds.
 
-En el plan gratuito de GitHub, Pages solo publica repositorios públicos.
+- **Producción.** Cada cambio que llega a `main` se publica solo en `https://lia-prototipo.<subdominio>.workers.dev/`. Quien ya tenga la app instalada recibe la versión nueva la próxima vez que la abre con internet.
+- **Vistas previas.** Cada push a otra rama arma una vista previa con su propia dirección (`https://<rama>-lia-prototipo.<subdominio>.workers.dev/`), y Cloudflare la deja como comentario en el pull request. Pruébala en el celular antes de integrar. Las vistas previas usan la misma base de datos de Supabase que producción: crea solo cuentas de prueba.
 
-## Actualizarlo
+Tres archivos controlan la publicación:
 
-Cada cambio que llega a la rama `main` se publica solo. Quien ya tenga la app instalada recibe la versión nueva la próxima vez que la abre con internet.
+| Archivo | Qué hace |
+|---|---|
+| `wrangler.jsonc` | Nombre del Worker y carpeta que se publica (la raíz del repositorio). El nombre debe ser igual al del Worker en Cloudflare; si no coincide, el build falla. |
+| `.assetsignore` | Lo que no se publica: documentación, pruebas, Supabase y configuración. |
+| `_headers` | Cabeceras de seguridad. Su política de contenido (CSP) solo deja que la app se conecte con Supabase. |
 
-Si agregas un archivo nuevo que la app necesite sin internet, súmalo a la lista `SHELL` de `sw.js` y sube el número de `VERSION` en ese mismo archivo.
+Si agregas un archivo nuevo que la app necesite sin internet, súmalo a la lista `SHELL` de `sw.js` y sube el número de `VERSION` en ese mismo archivo. Si la app empieza a usar otro servicio, por ejemplo el pago con Culqi, agrégalo a la CSP de `_headers`: si no, el navegador lo bloquea.
+
+**Volver a la versión anterior.** En Cloudflare → Workers & Pages → `lia-prototipo` → *Deployments*, abre el menú de la versión buena (los tres puntos) y elige *Rollback*. Después revierte el commit en `main`, para que el siguiente despliegue no traiga el problema de vuelta.
+
+**Configurarlo desde cero.** En Cloudflare → Workers & Pages → *Create* → *Import a repository*, elige `JaimeRamosT/lia-prototipo` y ponle el nombre `lia-prototipo`. En *Settings → Builds*, deja `main` como rama de producción, sin comando de build, con el comando de deploy `npx wrangler deploy` y con las vistas previas activadas. Luego agrega las direcciones nuevas en Supabase (ver [Piloto con estudiantes](docs/cuentas-y-planes.md#piloto-con-estudiantes)).
 
 ## Probarlo en tu computadora
 
@@ -28,6 +34,14 @@ python3 -m http.server 8000
 ```
 
 Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con doble clic, la app también funciona, pero no se puede instalar ni usar sin internet.
+
+Para probarla tal como la sirve Cloudflare, con las cabeceras de `_headers` y sin los archivos de `.assetsignore`, usa Node.js 22 o más nuevo:
+
+```
+npx wrangler dev
+```
+
+y abre <http://localhost:8787>. Si la consola del navegador muestra «Content Security Policy», la CSP de `_headers` está bloqueando algo.
 
 Para ver las herramientas del equipo, como *simular el fin del periodo* de Pro, abre la app con `?pruebas=1`. `?pruebas=0` las vuelve a ocultar en ese navegador.
 
@@ -59,7 +73,8 @@ Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al pr
 | `supabase/` | Configuración de la CLI de Supabase y migraciones de la base de datos. |
 | `docs/` | Especificación y diseño de cuentas y planes. |
 | `pruebas/` | Pruebas del motor de horarios, del plan de Gratis y de la lectura de frases (`node --test`). |
-| `.nojekyll` | Le indica a GitHub Pages que publique los archivos tal cual. |
+| `wrangler.jsonc`, `.assetsignore`, `_headers` | Publicación en Cloudflare (ver [Dónde se publica](#dónde-se-publica)). |
+| `.gitignore` | Deja fuera de Git lo que crea `npx wrangler dev` en tu computadora. |
 | `.gitattributes` | Guarda los archivos de `vendor/` sin cambiar sus fines de línea. |
 
 ## Qué funciona y qué no
