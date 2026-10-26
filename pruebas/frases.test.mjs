@@ -155,3 +155,26 @@ for (const [frase, fecha, ini, fin, nombre] of [
   });
 }
 
+// Estudio que ya hiciste
+for (const [frase, evalId, fecha, min] of [
+  ['ayer estudié 2 horas de cálculo', 'e0', '2026-10-25', 120],
+  ['hoy repasé media hora de física', 'e1', '2026-10-26', 30],
+  ['estudié una hora y media de cálculo', 'e0', '2026-10-26', 90],
+  ['ayer estudié 45 minutos de Física II', 'e1', '2026-10-25', 45],
+]) {
+  test(`estudio hecho: «${frase}» → ${min} min`, () => {
+    const r = L.interpret(frase, EJEMPLO(), ahora());
+    assert.equal(r.intent, 'log');
+    assert.deepEqual([r.evalId, r.date, r.min, r.error], [evalId, fecha, min, undefined]);
+  });
+}
+test('«ayer estudié 2 horas» sin decir de qué pregunta por la evaluación', () => {
+  const r = L.interpret('ayer estudié 2 horas', EJEMPLO(), ahora());
+  assert.equal(r.intent, 'log');
+  assert.match(r.error, /Cálculo II/);
+});
+test('«estudié para el parcial de cálculo» sin decir cuánto pregunta el tiempo (no crea otro parcial)', () => {
+  const r = L.interpret('estudié para el parcial de cálculo', EJEMPLO(), ahora());
+  assert.equal(r.intent, 'log');
+  assert.match(r.error, /Cuánto tiempo estudiaste/);
+});

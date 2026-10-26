@@ -479,6 +479,23 @@ function nombreEvento(toks,w){const i=toks.findIndex(t=>t.n===w);if(i<0)return c
   return cap(toks[i].o.toLowerCase()+(sig&&/^(medica|medico|familiar)$/.test(sig.n)?' '+sig.o.toLowerCase():''));}
 // "No tengo clases", "cancelaron mi clase", "hoy no voy a trabajar": ese compromiso no va ese día.
 const NO_VA=/\b(cancelaron|cancelo|suspendieron|suspendio|no hay|no tengo|no tendre|no voy a (?:ir|tener|trabajar)|no voy al?|no ire|no trabajo|no entro)\b/;
+const ESTUDIE=/\b(estudie|repase|avance|practique|adelante)\b/;
+function minutosDichos(ns){let m=ns.match(/\b(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hora|horas)\b(\s*y\s*media)?/);
+  if(m)return Math.round(parseFloat(m[1].replace(',','.'))*60)+(m[2]?30:0);
+  m=ns.match(/\b(\d+)\s*(?:min|mins|minuto|minutos)\b/);if(m)return +m[1];
+  if(/\b(una|un)\s+hora\s+y\s+media\b|\bhora y media\b/.test(ns))return 90;
+  if(/\bmedia hora\b/.test(ns))return 30;
+  m=ns.match(/\b(una|un|dos|tres|cuatro|cinco)\s+horas?\b(\s+y\s+media)?/);if(m)return(m[1]==='un'?1:NUMW[m[1]])*60+(m[2]?30:0);
+  return null;}
+function fechaPasada(ns,now){if(/\banteayer\b/.test(ns))return ymd(addDays(now,-2));if(/\bayer\b/.test(ns))return ymd(addDays(now,-1));
+  for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns))return ymd(addDays(now,-((now.getDay()-wd+7)%7)));
+  return ymd(now);}
+// La evaluación que menciona la frase: por su nombre completo o por su primera palabra ("cálculo" → "Cálculo II").
+function evalMencionada(ns,state,now){const t=ymd(now);let mejor=null,peso=0;
+  const orden=state.evals.slice().sort((a,b)=>(a.date<t)-(b.date<t)||a.date.localeCompare(b.date));
+  for(const e of orden){const c=norm(e.course).replace(/[^a-z0-9 ]/g,' ').trim();const w=c.split(/\s+/).find(x=>x.length>2);
+    const p=c&&new RegExp(`\\b${c}\\b`).test(ns)?2:w&&new RegExp(`\\b${w}\\b`).test(ns)?1:0;if(p>peso){mejor=e;peso=p;}}
+  return mejor;}
 // Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'help'}…
 function interpret(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
@@ -487,6 +504,13 @@ function interpret(text,state,now){
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
   const hasEval=toks.some(t=>EVAL_KW[t.n]);
+  // Estudio que ya hiciste: "ayer estudié 2 horas de cálculo".
+  if(ESTUDIE.test(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns);
+    if(!min)return{intent:'log',error:'¿Cuánto tiempo estudiaste? Dime, por ejemplo: “ayer estudié 2 horas de Cálculo”.'};
+    const date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
+    if(!e){const op=state.evals.filter(x=>x.date>=ymd(now)).map(x=>x.course);
+      return{intent:'log',min,date,error:op.length?`¿De qué evaluación? Dime, por ejemplo: “ayer estudié ${hrs(min)} de ${op[0]}”. Tienes: ${op.join(', ')}.`:'Todavía no tienes evaluaciones. Agrega una y luego anotamos lo que estudiaste.'};}
+    return{intent:'log',evalId:e.id,course:e.course,date,min};}
   // Un compromiso que ese día no va: "mañana no tengo clases", "cancelaron mi clase", "hoy no voy a trabajar".
   const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
   if(NO_VA.test(ns)&&!hasEval&&iC>=0){const date=parseDate(ns,now)||ymd(now),tipo=COMMIT_KW[toks[iC].n],palabra=toks[iC].n;
@@ -991,6 +1015,11 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();return;}
     const m=aplicarCambio(exs);liaSay(m.texto,m.opts);ui.pending=null;render();return;}
   if(r.intent==='aviso'){liaSay(r.texto);render();return;}
+  if(r.intent==='log'){if(r.error){liaSay(r.error);render();return;}
+    const e=evById(r.evalId),hoy=r.date===ymd(n);snapshot();
+    state.done.push({id:uid(),evalId:e.id,date:r.date,start:hoy?fmt(Math.max(0,n.getHours()*60+n.getMinutes()-r.min)):'20:00',min:r.min});save();
+    const falta=Math.max(0,Math.round(e.hours*60)-doneFor(state,e.id));
+    liaSay(`Anoté ${hrs(r.min)} de ${e.course} (${hoy?'hoy':fechaCorta(r.date)}). ${falta?`Te faltan ${hrs(falta)}.`:'Ya completaste las horas que pedía.'}`,{undo:true});render();return;}
   if(r.intent==='agenda'){const p=P();const it=agendaFor(state,p,r.date);
     liaSay(it.length?`${cap(fechaLarga(r.date))}:\n${it.map(x=>`${fmt(x.s)}–${fmt(x.e)}  ${x.label}`).join('\n')}\nDuermes a las ${state.settings.sleep}.`:`${cap(fechaLarga(r.date))} lo tienes libre.`);render();return;}
   if(r.intent==='progress'){const p=P();const up=state.evals.filter(e=>e.date>=ymd(n));
