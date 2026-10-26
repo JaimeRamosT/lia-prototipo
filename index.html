@@ -1358,10 +1358,16 @@ function mensajeError(e){const m=String((e&&(e.message||e.error_description||e.m
   if(code==='invalid_credentials'||/Invalid login credentials/i.test(m))return 'El correo o la contraseña no coinciden.';
   if(code==='user_already_exists'||/already registered/i.test(m))return 'Ya hay una cuenta con ese correo. Inicia sesión.';
   if(code==='email_not_confirmed'||/Email not confirmed/i.test(m))return 'Primero confirma tu correo con el enlace que te enviamos.';
+  if(code==='same_password'||/different from the old password/i.test(m))return 'Esa ya es tu contraseña. Elige una distinta.';
   if(code==='weak_password'||/password should/i.test(m))return 'Esa contraseña es muy débil. Usa al menos 8 caracteres.';
+  const espera=m.match(/after (\d+) seconds?/i);if(espera)return `Espera ${espera[1]} segundos antes de pedir otro correo.`;
   if(code==='over_email_send_rate_limit'||/rate limit/i.test(m))return 'Se enviaron demasiados correos. Espera unos minutos e inténtalo otra vez.';
-  if(/not authorized/i.test(m))return 'No pudimos enviarte el correo de confirmación. Por ahora, solo el equipo de LIA puede crear cuentas.';
-  if(code==='42501'||/iniciar sesión|JWT/i.test(m))return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if(code==='email_address_invalid'||/Email address .*invalid|invalid format/i.test(m))return 'Ese correo no es válido. Revísalo o usa otro.';
+  if(code==='email_address_not_authorized'||/not authorized/i.test(m))return 'No pudimos enviarte el correo. Por ahora, solo el equipo de LIA puede crear cuentas.';
+  if(/Error sending .*email/i.test(m))return 'No pudimos enviarte el correo. Inténtalo otra vez en unos minutos.';
+  if(code==='signup_disabled'||/Signups not allowed/i.test(m))return 'Por ahora no se pueden crear cuentas nuevas.';
+  if(code==='session_not_found'||code==='bad_jwt'||code==='42501'||/iniciar sesión|JWT|session/i.test(m))return 'Tu sesión venció. Vuelve a iniciar sesión.';
+  if(code==='otp_expired'||/link is invalid or has expired/i.test(m))return 'El enlace ya venció. Pide uno nuevo.';
   return 'No pudimos completar la acción. Inténtalo otra vez.';}
 function setCuenta(user){const nueva={id:user.id,email:user.email||''},cambio=!state.cuenta||state.cuenta.id!==nueva.id;
   state.cuenta=nueva;if(cambio)state.sub=freeSub(state.sub&&state.sub.history);save();return cambio;}
@@ -1402,7 +1408,10 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
   const abierta=()=>ui.cuentaForm===f&&!!ui.sheet;  // si la cerró mientras esperaba, no se vuelve a abrir
   sb().then(c=>reg?c.auth.signUp({email,password:pass,options:{emailRedirectTo:location.origin+location.pathname}}):c.auth.signInWithPassword({email,password:pass}))
     .then(({data,error})=>{if(error)throw error;
-      if(!data.session){listo();f.modo='confirmar';if(abierta()){ui.sheet=sheetCuenta();render();}else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
+      if(!data.session){listo();
+        // Con la confirmación activada, Auth no dice que el correo ya tiene cuenta: responde sin identidades y no envía nada.
+        if(reg&&data.user&&Array.isArray(data.user.identities)&&!data.user.identities.length){f.modo='ingreso';f.error='Ya hay una cuenta con ese correo. Inicia sesión.';if(abierta()){ui.sheet=sheetCuenta();render();}else toast(f.error);return;}
+        f.modo='confirmar';if(abierta()){ui.sheet=sheetCuenta();render();}else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
       setCuenta(data.session.user);
       return refrescarPlan(false).catch(()=>null).then(()=>{const seguia=abierta();listo();
         const p=ui.pay;
