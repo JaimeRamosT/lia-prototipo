@@ -1,0 +1,4 @@
+# Lo que crea Wrangler al probar la app en tu computadora (npx wrangler dev).
+.wrangler/
+.dev.vars*
+node_modules/
