@@ -48,6 +48,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 
 ## Supabase
 
+- Proyecto del equipo: `lvtthltugrpbqjezwnsd` (us-east-1). Su URL y su clave publicable están en `config.js`.
 - La base de datos se define en `supabase/migrations/`. Cada cambio es una migración nueva que se pueda aplicar dos veces sin error; no edites migraciones que ya llegaron a `main`.
 - La integración con GitHub aplica las migraciones a producción al integrar en `main`: antes, usa `engineering:deploy-checklist`.
 - Si aplicas una migración con el MCP de Supabase (`apply_migration`), Supabase la registra con la hora en que se aplicó. Renombra el archivo local con esa versión (`list_migrations`) antes de integrar en `main`, para que la integración no falle ni la repita.

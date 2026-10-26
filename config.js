@@ -4,6 +4,6 @@
 // Nunca pongas aquí la clave secreta ni la "service_role".
 // Si se dejan vacíos, LIA funciona solo en Gratis y no ofrece cuentas.
 window.LIA_SUPABASE = {
-  url: '',
-  key: ''
+  url: 'https://lvtthltugrpbqjezwnsd.supabase.co',
+  key: 'sb_publishable_tQAkluYgD-6d3LzTwbv3NQ_Crxpn7xj'
 };

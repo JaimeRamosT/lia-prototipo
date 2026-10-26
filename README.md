@@ -31,7 +31,7 @@ Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con do
 
 ## Cuentas con Supabase
 
-Las cuentas y el plan de cada una viven en Supabase. Para conectar el proyecto, crear las tablas y una cuenta Pro de prueba, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Mientras `config.js` esté vacío, la app funciona solo en Gratis.
+Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis.
 
 ## Qué hay aquí
 
