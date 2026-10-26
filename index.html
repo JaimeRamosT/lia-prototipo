@@ -1089,7 +1089,8 @@ function render(){ensureState();const L=document.getElementById('layer'),a=docum
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
   const destino=hay?(enCapa&&!L.querySelector('[data-foco]')?clave:null):(habia?abridor:clave);if(!hay&&habia)abridor=null;
   let el=destino&&(hay?L:app).querySelector(destino);
-  if(!el&&habia&&!hay){el=app.querySelector('main h1');if(el)el.setAttribute('tabindex','-1');}  // lo que abrió la hoja ya no está
+  if(el&&habia&&!hay&&el.matches('input,textarea,select'))el=null;  // al cerrar una hoja no se reabre el teclado del celular
+  else if(!el&&habia&&!hay){el=app.querySelector('main h1');if(el)el.setAttribute('tabindex','-1');}  // lo que abrió la hoja ya no está
   if(el&&el!==document.activeElement)el.focus({preventScroll:true});}
 function dibujar(){const v=document.getElementById('view'),tabs=document.getElementById('tabs');
   const inOb=ui.welcome||!state.onboarded;
