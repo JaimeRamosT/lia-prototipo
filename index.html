@@ -210,6 +210,9 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .steps{display:flex;gap:6px}.steps i{flex:1;height:6px;border-radius:3px;background:var(--line)}.steps i.on{background:var(--pri)}
 .check{width:24px;height:24px;border-radius:50%;background:var(--ok-soft);color:var(--ok);display:grid;place-items:center;flex:none}
 .check svg{width:14px;height:14px}
+.check.no{background:var(--exam-soft);color:var(--exam-ink)}
+.tip{margin:0;font-size:13px;color:var(--mute);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.tip b{color:var(--ink)}
 /* toast */
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 14px;display:flex;gap:14px;align-items:center;width:min(408px,calc(100% - 32px));font-size:14px;box-shadow:0 8px 24px var(--shadow)}
 .toast button{color:var(--pri-sub);font-weight:700;white-space:nowrap}
@@ -726,31 +729,35 @@ function vWelcome(){return `<section class="welcome">
 function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
   if(s===1)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 1 de 2</span></div>
    <div class="stack"><h1>Tu semana fija</h1><p class="muted" style="margin:0">¿Cuándo <b>no</b> puedes estudiar? Clases, trabajo, traslados. Lo registras una vez y se repite cada semana.</p></div>
-   ${dictar('commit','Dímelo: “trabajo de lunes a viernes de 3 a 7”')}
+   ${dictar('commit','“trabajo de lunes a viernes de 3 a 7”')}
    <div class="stack">${state.commitments.map(commitItem).join('')||'<p class="muted small" style="margin:0">Aún no hay compromisos.</p>'}
-   <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button></div>
+   <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
+   ${state.commitments.length&&!state.commitments.some(c=>c.type==='traslado')?'<p class="tip"><b>¿Te demoras en llegar a la U o al trabajo?</b> Agrega también tus traslados y tu almuerzo, para que Lía no te ponga a estudiar en esas horas.</p>':''}</div>
    <div class="card stack"><span class="eyebrow">Tu sueño</span><div class="two"><label class="f">Me despierto<input type="time" id="ob-wake" data-set="wake" value="${state.settings.wake}"></label><label class="f">Me duermo<input type="time" id="ob-sleep" data-set="sleep" value="${state.settings.sleep}"></label></div></div>
    <button class="btn pri" data-a="ob-next" ${state.commitments.length?'':'disabled style="opacity:.5"'}>Siguiente</button>`;
   if(s===2)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 2 de 2</span></div>
    <div class="stack"><h1>Tus evaluaciones</h1><p class="muted" style="margin:0">Exámenes y entregas que se vienen. Lía calcula cuántas horas necesitas para cada uno.</p></div>
-   ${dictar('eval','Dímelo: “parcial de Cálculo el jueves a las 9”')}
+   ${dictar('eval','“parcial de Cálculo el jueves a las 9”')}
    <div class="stack">${state.evals.map(evalItem).join('')||'<p class="muted small" style="margin:0">Aún no hay evaluaciones.</p>'}
-   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button></div>
+   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
+   ${isPro()?'':`<p class="small muted" style="margin:0">${evalRoom()>0?`En Gratis puedes tener hasta ${FREE_EVALS} evaluaciones próximas: te ${evalRoom()===1?'queda':'quedan'} ${evalRoom()}.`:`Ya tienes ${FREE_EVALS} evaluaciones próximas, el máximo de Gratis. Con LIA Pro no hay límite.`}</p>`}</div>
    <button class="btn pri" data-a="ob-next" ${state.evals.length?'':'disabled style="opacity:.5"'}>Armar mi horario</button>`;
   // paso 3: resumen
   const p=P();const tot=p.blocks.reduce((a,b)=>a+b.e-b.s,0);const free=Object.values(p.days).slice(0,7).reduce((a,d)=>a+d.free,0);
   const falt=state.evals.filter(e=>p.unmet[e.id]>0);
-  const li=t=>`<div class="row-h"><span class="check">${I.check}</span><span>${t}</span></div>`;
-  return `<div class="stack" style="align-items:center;text-align:center;margin-top:12px">${AV(72)}<h1>Lía armó tu semana</h1><p class="muted" style="margin:0">Esto es lo que hizo por ti:</p></div>
-   <div class="card stack">${li(`Registré ${state.commitments.length} compromisos fijos`)}${li(`Ordené ${state.evals.length} evaluaciones por fecha`)}${li(`Ubiqué ${hrs(tot)} de estudio en tus horas libres`)}${li(`Respeté tu trabajo, tus clases y tu sueño (${state.settings.sleep} – ${state.settings.wake})`)}${li('Nada de estudio la noche antes de un examen: a esa hora duermes')}</div>
+  const li=(t,bien=true)=>`<div class="row-h"><span class="check${bien?'':' no'}">${bien?I.check:I.alert}</span><span>${t}</span></div>`;
+  const nC=state.commitments.length,nE=state.evals.length,hayEx=state.evals.some(e=>(EVAL_TYPES[e.type]||{}).exam),hayEnt=state.evals.some(e=>!(EVAL_TYPES[e.type]||{exam:true}).exam);
+  return `<div class="stack" style="align-items:center;text-align:center;margin-top:12px">${AV(72)}<h1>${tot?'Lía armó tu semana':'No encontré horas para estudiar'}</h1><p class="muted" style="margin:0">${tot?'Esto es lo que hizo por ti:':'Revisa tus horarios y tu sueño. Esto es lo que vi:'}</p></div>
+   <div class="card stack">${li(`Registré ${nC} ${nC===1?'compromiso fijo':'compromisos fijos'}`)}${li(`Ordené ${nE} ${nE===1?'evaluación':'evaluaciones'} por fecha`)}${tot?li(`Ubiqué ${hrs(tot)} de estudio en tus horas libres`,!falt.length):li('No encontré horas libres para estudiar',false)}${li(`Respeté tus compromisos y tus horas de sueño (de ${state.settings.sleep} a ${state.settings.wake})`)}${hayEx?li('Terminas de estudiar el día antes de cada examen, sin quitarle horas al sueño'):''}${hayEnt?li('Para cada entrega, terminas de estudiar una hora antes'):''}</div>
    ${falt.length?`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>No me alcanza el tiempo para todo.</b><br>Me faltan ${falt.map(e=>`${hrs(p.unmet[e.id])} para ${esc(e.course)}`).join(', ')}. Puedes liberar horas o subir el máximo de estudio por día en Perfil.</div></div>`:''}
    <p class="muted small" style="text-align:center;margin:0">Tienes ${hrs(free)} libres en los próximos 7 días. ${isPro()?'¿Algo cambió? Solo dímelo y lo reorganizo.':'En Gratis tu horario se arma una vez por semana. Con LIA Pro lo reorganizo cuando algo cambia.'}</p>
    <button class="btn pri" data-a="ob-finish">Ver mi semana</button>`;}
 
-function dictar(kind,ph){return `<form class="dashed" data-form="dictar" data-kind="${kind}" style="padding:6px 6px 6px 14px">
-   <input id="dict-${kind}" name="q" placeholder="${esc(ph)}" autocomplete="off" style="flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 0;font-weight:500">
+// Campo para escribirle (o dictarle) a Lía. El ejemplo va debajo, a la vista: no desaparece al empezar a escribir.
+function dictar(kind,ej){const ev=kind==='eval';return `<div class="stack" style="gap:6px"><form class="dashed" data-form="dictar" data-kind="${kind}" style="padding:6px 6px 6px 14px">
+   <input id="dict-${kind}" name="q" placeholder="${ev?'Escribe una evaluación':'Escribe un horario'}" aria-label="${ev?'Escríbele a Lía una evaluación':'Escríbele a Lía un horario'}" aria-describedby="dict-${kind}-ej" autocomplete="off" style="flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 0;font-weight:500">
    <button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="dict-${kind}" aria-label="${isPro()?'Dictar por voz':'Dictar por voz (LIA Pro)'}">${I.mic}</button>
-   <button type="submit" class="mic" aria-label="Agregar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
+   <button type="submit" class="mic" aria-label="Agregar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form><p class="small muted" id="dict-${kind}-ej" style="margin:0 4px">Por ejemplo: ${esc(ej)}</p></div>`;}
 // "22:00 – 06:00 del día siguiente" cuando el horario cruza la medianoche.
 function horario(c){return `${c.start} – ${c.end}${toMin(c.end)<toMin(c.start)?' del día siguiente':''}`;}
 function duracion(c){const r=intervalo(c.start,c.end);return r.e-r.s;}
@@ -844,7 +851,7 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
 
 function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const past=state.evals.filter(e=>e.date<t);
   return `${demoBanner()}<div><div class="kicker">Exámenes y entregas</div><h1>Evaluaciones</h1></div>
-  ${dictar('eval','Dímelo: “entrego el informe el viernes”')}
+  ${dictar('eval','“entrego el informe el viernes”')}
   <div class="stack">${up.map(evalItem).join('')||'<div class="card muted small">No tienes evaluaciones próximas.</div>'}
   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar evaluación</span></button></div>
   ${past.length?`<h2>Pasadas</h2><div class="stack past">${past.map(evalItem).join('')}</div>`:''}`;}
