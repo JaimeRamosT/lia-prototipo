@@ -227,6 +227,7 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .tip b{color:var(--ink)}
 /* toast */
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 14px;display:flex;gap:14px;align-items:center;width:min(408px,calc(100% - 32px));font-size:14px;box-shadow:0 8px 24px var(--shadow)}
+.toast.arriba{top:calc(12px + env(safe-area-inset-top,0px));bottom:auto}
 .toast button{color:var(--toast-link);font-weight:700;white-space:nowrap}
 /* planes: LIA Gratis y LIA Pro */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -1112,7 +1113,12 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
   if(ui.sheet&&!document.querySelector('.sheet .spin')){e.preventDefault();A.close();}});
 function rerenderKeepScroll(){const v=document.getElementById('view');const y=v.scrollTop;render();v.scrollTop=y;}
 let toastT;
-function toast(msg,withUndo){const b=document.getElementById('toastbox');b.innerHTML=`<div class="toast"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>{b.innerHTML='';},withUndo?6000:3200);}
+// Avisos: van arriba cuando abajo hay botones que no deben taparse (bienvenida, registro, hojas y sesión),
+// duran según lo que dicen y no se cierran mientras tienen el foco (para alcanzar «Deshacer» con el teclado).
+function toast(msg,withUndo){const b=document.getElementById('toastbox'),arriba=!!(ui.sheet||ui.welcome||!state.onboarded||ui.session||ui.listen);
+  b.innerHTML=`<div class="toast${arriba?' arriba':''}"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;
+  const ms=Math.min(10000,Math.max(withUndo?7000:4000,String(msg).length*65));clearTimeout(toastT);
+  const cerrar=()=>{if(b.contains(document.activeElement)){toastT=setTimeout(cerrar,1500);return;}b.innerHTML='';};toastT=setTimeout(cerrar,ms);}
 
 // ---------- Acciones ----------
 function blockOf(ds){return{ev:ds.ev,d:ds.d,s:+ds.s,e:+ds.e};}
