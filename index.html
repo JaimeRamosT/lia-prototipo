@@ -194,6 +194,8 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
   padding-block:20px max(24px,env(safe-area-inset-bottom,0px));padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px;animation:up .22s ease-out}
 @keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
 .grab{width:40px;height:5px;border-radius:3px;background:var(--line);align-self:center}
+/* En una hoja larga, nada se encoge para caber: la hoja se desplaza (antes la tabla de planes quedaba debajo de los botones). */
+.sheet>*{flex-shrink:0}
 /* full overlays */
 .full{position:fixed;inset:0;z-index:40;background:var(--night);color:var(--night-ink);display:flex;justify-content:center}
 .full .in{width:100%;max-width:440px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
