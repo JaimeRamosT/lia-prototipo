@@ -52,6 +52,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - La base de datos se define en `supabase/migrations/`. Cada cambio es una migración nueva que se pueda aplicar dos veces sin error; no edites migraciones que ya llegaron a `main`.
 - La integración con GitHub aplica las migraciones a producción al integrar en `main`: antes, usa `engineering:deploy-checklist`.
 - Si aplicas una migración con el MCP de Supabase (`apply_migration`), Supabase la registra con la hora en que se aplicó. Renombra el archivo local con esa versión (`list_migrations`) antes de integrar en `main`, para que la integración no falle ni la repita.
+- Después de cada migración, corre los asesores de seguridad y de rendimiento. Los avisos 0029 de las cuatro funciones que usan las cuentas son esperados: no les quites el permiso (ver `docs/cuentas-y-planes.md`).
 - El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.

@@ -99,6 +99,7 @@ Supabase
 - **Solo hay claves públicas en el repositorio.** La URL y la clave publicable son públicas por diseño; la seguridad la dan RLS y los permisos de las funciones. La clave secreta y la `service_role` nunca van al repositorio ni a la app.
 - **El cliente de Supabase está en el repositorio** (`vendor/`, versión 2.118.0, licencia MIT) y no en un CDN: funciona sin internet y no depende de terceros. Pesa 218 KB (56 KB comprimido) y solo lo descarga quien usa cuentas.
 - **Precios duplicados a propósito.** Están en la migración (`precio()`) y en `index.html` (`PRICES`): si cambian, cambia ambos.
+- **Avisos esperados de los asesores de Supabase.** El de seguridad marca (WARN 0029) que una cuenta con sesión puede ejecutar cuatro funciones `SECURITY DEFINER`: `mi_suscripcion`, `simular_pago`, `cambiar_renovacion` y `simular_fin_periodo`. Es a propósito: son la única vía para cambiar el plan, y cada una solo toca la fila de quien llama. Los avisos de `simular_*` desaparecen cuando se quiten para el cobro real. El de rendimiento sobre `pagos_user_id_idx` (índice sin uso) es normal en una tabla nueva: el índice sirve a la política RLS y al borrado en cascada.
 
 **Qué revisar al crecer:** sincronizar el horario por cuenta (tabla con el estado en `jsonb`), mover el cobro a una función de servidor con Culqi y quitar `simular_pago`/`simular_fin_periodo`, y llevar el hosting a un servicio que permita uso comercial antes de cobrar.
 
@@ -124,3 +125,9 @@ Supabase
 - [ ] *Modo demo: simular el fin del periodo* → vuelve a Gratis.
 - [ ] Cerrar sesión e iniciarla en otro navegador o teléfono: el plan acompaña a la cuenta.
 - [ ] `otorgar_pro('otro-correo')` y luego iniciar sesión con esa cuenta: Pro de cortesía.
+
+### Si algo falla
+
+- **El registro falla con "Database error saving new user":** quita el trigger con `drop trigger if exists al_crear_cuenta on auth.users;`. Las cuentas siguen funcionando, porque `mi_suscripcion()` crea la fila que falte.
+- **Las cuentas fallan en la app:** deja vacíos `url` y `key` en `config.js` e integra ese cambio en `main`. La app deja de ofrecer cuentas y sigue en Gratis sin borrar horarios; quien ya tenía Pro en un dispositivo lo conserva ahí hasta su fecha de fin.
+- **Deshacer la base de datos:** borra el trigger `al_crear_cuenta`, las funciones de la migración y las tablas `pagos` y `suscripciones`. Se pierden los planes y el historial de pagos de prueba.
