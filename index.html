@@ -781,16 +781,18 @@ function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).s
   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar evaluación</span></button></div>
   ${past.length?`<h2>Pasadas</h2><div class="stack past">${past.map(evalItem).join('')}</div>`:''}`;}
 
-function vLia(){const ph='Escribe o toca el micrófono…';
+function vLia(){const ph='Escríbele a Lía…';
   const sug=['¿Qué tengo mañana?','Hoy salgo del trabajo a las 9','Parcial de Estadística el viernes a las 10','Libera mi sábado','¿Cuánto me falta?'];
   return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok)">Tu secretaria · versión sin IA (entiende frases simples)</div></div></div>
   <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}</div>
   <div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
-  <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off"><button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="chat-in" aria-label="${isPro()?'Hablar con Lía':'Hablar con Lía (LIA Pro)'}">${I.mic}</button></form>`;}
+  <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off" aria-label="Mensaje para Lía"><button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="chat-in" aria-label="${isPro()?'Hablar con Lía':'Hablar con Lía (LIA Pro)'}">${I.mic}</button><button type="submit" class="mic" aria-label="Enviar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
 function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class="bub">${esc(m.text)}</div></div>`;
   const undoB=m.undo&&last&&undoStack?'<button class="pill ghost" data-a="undo">Deshacer</button>':'';
   const ctaB=m.cta&&!isPro()?`<button class="pill solid" data-a="paywall" data-why="${esc(m.cta)}">Ver LIA Pro</button>`:'';
   return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
+// "Trabajo, Lun a Vie, 22:00 – 06:00 del día siguiente" o "Parcial de Cálculo, jue 29 oct a las 09:00".
+function resumenItem(i){return i.kind==='eval'?`${EVAL_TYPES[i.type].label} de ${i.course}, ${fechaCorta(i.date)} a las ${i.time}`:`${i.name}, ${diasTxt(i.days)}, ${horario(i)}`;}
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
   return `${it.name} — ${diasTxt(it.days)} · ${horario(it)}`;}
 function pendingHTML(){const pe=ui.pending;
@@ -822,7 +824,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   <p class="small muted" style="margin:0;text-align:center">LIA ${APP_VERSION} · prototipo de prueba</p>`;}
 
 // ---------- Hojas (formularios) ----------
-function sheetCommit(id){const c=state.commitments.find(x=>x.id===id)||{id:'',name:'',type:'trabajo',days:[1,2,3,4,5],start:'15:00',end:'19:00'};
+function sheetCommit(id,pre){const c=state.commitments.find(x=>x.id===id)||{id:'',name:'',type:'trabajo',days:[1,2,3,4,5],start:'15:00',end:'19:00',...(pre?{name:pre.name,type:pre.type,days:pre.days,start:pre.start,end:pre.end}:{})};
   return `<form class="stack" data-form="commit" data-id="${c.id}" style="gap:14px"><div class="grab"></div><h2>${c.id?'Editar compromiso':'Nuevo compromiso'}</h2>
   <label class="f">Nombre<input id="c-name" name="name" required value="${esc(c.name)}" placeholder="Trabajo, Clases, Gimnasio…"></label>
   <label class="f">Tipo<select id="c-type" name="type">${Object.entries(COMMIT_TYPES).map(([k,v])=>`<option value="${k}" ${c.type===k?'selected':''}>${v}</option>`).join('')}</select></label>
@@ -830,7 +832,7 @@ function sheetCommit(id){const c=state.commitments.find(x=>x.id===id)||{id:'',na
   <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}" aria-describedby="c-noche"></label></div>
   <p class="small muted" id="c-noche" style="margin:-6px 0 0"${toMin(c.end)<toMin(c.start)?'':' hidden'}>Termina al día siguiente.</p>
   <button class="btn pri" type="submit">Guardar</button>${c.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${c.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
-function sheetEval(id){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:5};
+function sheetEval(id,pre){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:5,...(pre?{type:pre.type,course:pre.course,date:pre.date||t,time:pre.time,hours:pre.hours}:{})};
   return `<form class="stack" data-form="eval" data-id="${e.id}" style="gap:14px"><div class="grab"></div><h2>${e.id?'Editar evaluación':'Nueva evaluación'}</h2>
   <div class="two"><label class="f">Tipo<select id="e-type" name="type" data-a-change="etype">${Object.entries(EVAL_TYPES).map(([k,v])=>`<option value="${k}" ${e.type===k?'selected':''}>${v.label}</option>`).join('')}</select></label>
   <label class="f">Horas de estudio<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" value="${e.hours}"></label></div>
@@ -1005,11 +1007,11 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     if(kindOnly&&ok.some(i=>i.kind!==kindOnly)&&!ok.some(i=>i.kind===kindOnly)){}
     if(errs.length&&!ok.length){if(from==='chat'){liaSay(errs[0].error);render();}else toast(errs[0].error);return;}
     if(newEvalCount(ok)>evalRoom()){ui.blockedItems=ok;if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else openPaywall('evals',{items:ok});return;}
-    if(from==='chat'&&state.settings.autonomy==='ask'){ui.pending={items:ok};save();render();return;}
-    if(from==='chat'){ui.pending={items:ok};save();render();return;}
-    applyItems(ok);const p=P();const ex=ok.filter(i=>i.kind==='eval');
-    toast(`Lía agregó: ${ok.map(i=>i.kind==='eval'?i.course:i.name).join(', ')}${ex.length?(p.frozen?' · entra a tu horario cuando rearmes tu semana':` · ${hrs(p.blocks.filter(b=>ex.some(i=>evById(b.evalId)&&evById(b.evalId).course===i.course)).reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas`):''}`,true);
-    const inp=document.getElementById('dict-'+from);rerenderKeepScroll();return;}
+    if(from==='chat'){ui.pending={items:ok,q};save();render();return;}
+    applyItems(ok);const p=P();const evs=ok.filter(i=>i.kind==='eval');
+    const agendado=p.frozen?0:p.blocks.filter(b=>{const e=evById(b.evalId);return e&&evs.some(i=>i.course===e.course&&i.date===e.date);}).reduce((a,b)=>a+b.e-b.s,0);
+    const fin=!evs.length?'':p.frozen?' Entra a tu horario cuando rearmes tu semana.':agendado?` Agendé ${hrs(agendado)} de estudio.`:' Todavía no encontré horas libres para estudiar.';
+    toast(`Lía agregó: ${ok.map(resumenItem).join('; ')}.${fin}`,true);rerenderKeepScroll();return;}
   if(from!=='chat'){toast(from==='commit'?'No te entendí. Prueba: “clases de lunes a viernes de 8 a 1”.':'No te entendí. Prueba: “parcial de Química el viernes a las 10”.');return;}
   if(r.intent==='except'){const exs=r.exs;
     if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();return;}
@@ -1031,7 +1033,7 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     else liaSay(`Ya armaste tu semana. En Gratis puedes volver a armarla desde el ${fechaLarga(nextArmDate())}. Con LIA Pro la reorganizo cuando quieras.`,{cta:'rearm'});
     render();return;}
   if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
-  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “¿Qué tengo mañana?”');render();}
+  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.');render();}
 // Aplica cambios de un día (algo que ocupa o algo que se libera) y devuelve qué decirle a la persona.
 function aplicarCambio(exs){const p0=P();snapshot();for(const ex of exs)state.exceptions.push({id:uid(),...ex});save();
   const p1=P(),ex=exs[0],r=intervalo(ex.start,ex.end),dia=fechaCorta(ex.date);
@@ -1101,7 +1103,11 @@ const A={
    if(newEvalCount(p.items)>evalRoom()){ui.blockedItems=p.items;liaSay(limitMsg(),{cta:'evals'});render();return;}
    applyItems(p.items);const P1=P();const what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
    liaSay(P1.frozen?`Listo, agregué ${what}. En Gratis entra a tu horario cuando rearmes tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`:`Listo, agregué ${what}. Ahora tienes ${hrs(P1.blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio repartidas en tus horas libres.`,{undo:true});render();},
- cancel:()=>{ui.pending=null;liaSay('Ok, no guardé nada. Dímelo de nuevo con más detalle o agrégalo a mano en Evaluaciones o Perfil.');render();},
+ cancel:()=>{const p=ui.pending;ui.pending=null;
+   // Corregir: si entendió una sola cosa, abre el formulario ya lleno; si no, devuelve la frase para editarla.
+   if(p&&p.items&&p.items.length===1){const it=p.items[0];ui.sheet=it.kind==='eval'?sheetEval(null,it):sheetCommit(null,it);render();return;}
+   liaSay('Ok, no guardé nada. Corrige tu mensaje y envíalo otra vez.');render();
+   const i=document.getElementById('chat-in');if(i&&p&&p.q){i.value=p.q;i.focus();}},
  undo:()=>undo(),
  close:()=>{ui.sheet=null;render();},
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;render();}},
