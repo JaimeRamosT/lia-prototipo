@@ -29,6 +29,8 @@ python3 -m http.server 8000
 
 Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con doble clic, la app también funciona, pero no se puede instalar ni usar sin internet.
 
+Para ver las herramientas del equipo, como *simular el fin del periodo* de Pro, abre la app con `?pruebas=1`. `?pruebas=0` las vuelve a ocultar en ese navegador.
+
 ### Pruebas automáticas
 
 Con Node.js 18 o más nuevo, ejecuta en esta carpeta:

@@ -1029,7 +1029,11 @@ function planCard(){const s=state.sub;
   return `<div class="card stack"><div class="between"><span class="eyebrow">Tu plan</span><span class="pro" aria-hidden="true">PRO</span></div>
    <div><b>LIA Pro · ${PRICES[s.period].name.toLowerCase()}</b><div class="small muted">${st}</div></div>
    <div class="row-h" style="flex-wrap:wrap">${act}<button class="btn sec sm" data-a="plans">Comparar planes</button></div>
-   <button class="linkbtn" style="color:var(--mute);text-align:left;font-weight:500" data-a="sub-expire">Modo demo: simular el fin del periodo</button></div>`;}
+   ${modoPruebas()?'<button class="linkbtn" style="color:var(--mute);text-align:left;font-weight:500" data-a="sub-expire">Pruebas: simular el fin del periodo</button>':''}</div>`;}
+// Modo pruebas (?pruebas=1): herramientas del equipo, como simular el fin del periodo. Se recuerda en este navegador; ?pruebas=0 lo apaga.
+function modoPruebas(){try{const q=new URLSearchParams(location.search).get('pruebas');if(q==='1')localStorage.setItem('lia.pruebas','1');else if(q==='0')localStorage.removeItem('lia.pruebas');
+  return localStorage.getItem('lia.pruebas')==='1';}catch(e){return false;}}
+
 function freeBanner(){if(isPro()||!state.frozen)return '';
   if(state.frozen.week<mondayOf(now()))return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Arma tu semana</b><br>Empezó una semana nueva. Lía reparte tu estudio en tus horas libres.<div style="margin-top:8px"><button class="pill solid" data-a="arm">Armar mi semana</button></div></div></div>`;
   if(!planStale())return '';
@@ -1287,7 +1291,7 @@ Object.assign(A,{
  'sub-cancel-ok':()=>{ui.sheet=null;render();sbRpc('cambiar_renovacion',{p_activa:false}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast(`Listo. Tienes Pro hasta el ${fechaCorta(state.sub.until)}.`);}).catch(e=>toast(mensajeError(e)));},
  'sub-resume':()=>{sbRpc('cambiar_renovacion',{p_activa:true}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast('Renovación automática activada.');}).catch(e=>toast(mensajeError(e)));},
  'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};ui.sheet=sheetCheckout();render();},
- 'sub-expire':()=>{if(!isPro())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
+ 'sub-expire':()=>{if(!isPro()||!modoPruebas())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
    toast(sigue?'LIA Pro se renovó por un mes más (demo: sin cobro real).':'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');}).catch(e=>toast(mensajeError(e)));},
 });
 document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;const f=A[el.dataset.a];if(!f)return;
