@@ -3,7 +3,7 @@
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
 // El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const CACHE = `lia-${VERSION}`;
 const SHELL = [
   './index.html',
