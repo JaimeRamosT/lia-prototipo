@@ -1,12 +1,14 @@
 // LIA · service worker
 // Guarda una copia de la app para abrirla sin internet. Con conexión, siempre pide la versión
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
+// El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.1.0';
+const VERSION = '0.3.0';
 const CACHE = `lia-${VERSION}`;
 const SHELL = [
   './index.html',
   './manifest.webmanifest',
+  './config.js',
   './fonts/inter-latin-wght-normal.woff2',
   './icons/favicon.svg',
   './icons/favicon-32.png',

@@ -1,0 +1,2 @@
+# Archivos de terceros: se guardan tal cual, sin convertir fines de línea.
+vendor/** -text
