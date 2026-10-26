@@ -772,16 +772,20 @@ function sinHorario(p){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes(),
 function faltaTxt(m){return `${m>=60&&m<120?'falta':'faltan'} ${hrs(m)}`;}
 // «sin hueco»: Lía no encontró horas libres; «sin agendar»: en Gratis, se agregó después de armar la semana.
 function motivo(pend){const a=pend.filter(x=>x.agendar).length;return !a?'sin hueco':a===pend.length?'sin agendar':'sin horario';}
-// Por qué falta tiempo y qué se puede hacer, según el plan.
-function consejoFalta(pend){const varias=pend.length>1;
-  if(isPro())return{txt:`No encontré horas libres antes de ${varias?'tus evaluaciones':'tu evaluación'}. Sube tu máximo de estudio por día en Perfil o libera un compromiso con Lía.`,btn:'<button class="btn light" data-a="tab" data-t="perfil">Ir a mis ajustes</button>'};
-  const por=pend.some(x=>x.agendar)?'En Gratis, lo que agregas a mitad de semana entra cuando rearmas tu horario.':'En Gratis tu horario no se reacomoda solo.';
-  if(canArm())return{txt:`${por} Rearma tu semana para que Lía busque horas.`,btn:'<button class="btn light" data-a="arm">Rearmar mi semana</button>'};
-  return{txt:`${por} Podrás rearmarlo desde el ${fechaLarga(nextArmDate())}. Si estudias por tu cuenta, anótalo para que cuente.`,btn:'<button class="btn light" data-a="anotar">Anotar lo que estudié</button>'};}
+// Por qué falta tiempo y qué se puede hacer. En Gratis, rearmar solo se sugiere si de verdad ubicaría más horas.
+function consejoFalta(pend){const ante=`antes de ${pend.length>1?'tus evaluaciones':'tu evaluación'}`;
+  if(isPro())return{txt:`No encontré horas libres ${ante}. Sube tu máximo de estudio por día en Perfil o libera un compromiso con Lía.`,a:'tab',t:'perfil',btn:'Ir a mis ajustes'};
+  const falta=pend.reduce((s,x)=>s+x.min,0),nuevo=plan(state,now()),gana=falta-pend.reduce((s,x)=>s+(nuevo.unmet[x.e.id]||0),0);
+  if(gana>=10){if(canArm())return{txt:`Si rearmas tu semana, Lía puede ubicar ${hrs(gana)} más.`,a:'arm',btn:'Rearmar mi semana'};
+    const por=pend.some(x=>x.agendar)?'En Gratis, lo que agregas a mitad de semana entra cuando rearmas tu horario':'En Gratis tu horario no se reacomoda solo';
+    return{txt:`${por}: podrás rearmarlo desde el ${fechaLarga(nextArmDate())}. Si estudias por tu cuenta, anótalo para que cuente.`,a:'anotar',btn:'Anotar lo que estudié'};}
+  if(canArm())return{txt:`No encontré horas libres ${ante}. Sube tu máximo de estudio por día o libera un compromiso, y luego rearma tu semana.`,a:'tab',t:'perfil',btn:'Ir a mis ajustes'};
+  return{txt:`No encontré horas libres ${ante}. Si estudias por tu cuenta, anótalo para que cuente.`,a:'anotar',btn:'Anotar lo que estudié'};}
+const accionHTML=(c,cls)=>`<button class="${cls}" data-a="${c.a}"${c.t?` data-t="${c.t}"`:''}>${c.btn}</button>`;
 function heroFalta(pend){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
   const titulo=pend.length===1?`${cap(faltaTxt(tot))} de estudio para ${esc(pend[0].e.course)}.`:`${cap(faltaTxt(tot))} de estudio para ${pend.length} evaluaciones.`;
   const lista=pend.length>1?`<span style="opacity:.9">${pend.map(x=>`${esc(x.e.course)}: ${hrs(x.min)}`).join(' · ')}</span>`:'';
-  return `<section class="hero"><span class="eyebrow">${motivo(pend)==='sin agendar'?'Sin agendar':'Falta tiempo'}</span><span class="hero-t">${titulo}</span>${lista}<span style="opacity:.85">${esc(c.txt)}</span><div style="height:6px"></div>${c.btn}</section>`;}
+  return `<section class="hero"><span class="eyebrow">${motivo(pend)==='sin agendar'?'Sin agendar':'Falta tiempo'}</span><span class="hero-t">${titulo}</span>${lista}<span style="opacity:.85">${esc(c.txt)}</span><div style="height:6px"></div>${accionHTML(c,'btn light')}</section>`;}
 // El día de una evaluación, eso va primero en Hoy.
 function evalHoyHTML(e,nm){const ini=toMin(e.time),need=e.hours*60,done=doneFor(state,e.id),tipo=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,ent=e.type==='entrega',exp=e.type==='exposicion';
   const cuando=ent?`Hasta las ${e.time}${ini>nm?` · quedan ${hrs(ini-nm)}`:''}`:ini>nm?`A las ${e.time} · en ${hrs(ini-nm)}`:`Empezó a las ${e.time}`;
@@ -800,8 +804,8 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   else if(state.evals.some(e=>e.date>=t))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.85">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   else hero=`<section class="hero"><span class="eyebrow">Sin evaluaciones próximas</span><span class="hero-t">No tienes exámenes ni entregas por ahora.</span><span style="opacity:.85">Agrega la próxima y Lía reparte tus horas de estudio.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   // Si hay un bloque próximo pero algo no entró, se avisa aparte (después de preguntar por los bloques sin marcar).
-  let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0);
-    faltaH=`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>${pend.length===1?`${cap(faltaTxt(tot))} ${motivo(pend)} para ${esc(pend[0].e.course)}`:`${cap(faltaTxt(tot))} de estudio ${motivo(pend)}`}</b><br>${pend.length>1?esc(pend.map(x=>`${x.e.course}: ${hrs(x.min)}`).join(' · '))+'. ':''}${esc(consejoFalta(pend).txt)}</div></div>`;}
+  let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
+    faltaH=`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>${pend.length===1?`${cap(faltaTxt(tot))} ${motivo(pend)} para ${esc(pend[0].e.course)}`:`${cap(faltaTxt(tot))} de estudio ${motivo(pend)}`}</b><br>${pend.length>1?esc(pend.map(x=>`${x.e.course}: ${hrs(x.min)}`).join(' · '))+'.<br>':''}${esc(c.txt)}<div style="margin-top:8px">${accionHTML(c,'pill ghost')}</div></div></div>`;}
   const prox=state.evals.filter(e=>vigente(e)&&e!==evHoy).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
   let pc='';if(prox){const need=prox.hours*60,done=doneFor(state,prox.id),x=pend.find(y=>y.e.id===prox.id),dl=evalDeadline(prox,state.settings);
     const listo=need-done<10,vencido=dl.date<t||(dl.date===t&&dl.end<=nm);  // vencido: ya no queda tiempo para estudiar antes de la evaluación
