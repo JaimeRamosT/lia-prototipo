@@ -62,6 +62,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15p
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0;text-align:inherit}
 :focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:8px}
+/* Los títulos que reciben el foco por código (al abrir una hoja) no son controles: sin contorno. */
+h1[tabindex="-1"]:focus-visible,h2[tabindex="-1"]:focus-visible,[data-foco]:focus-visible{outline:none}
 .app{max-width:440px;height:100%;margin:0 auto;display:flex;flex-direction:column;position:relative;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 main{flex:1;overflow-y:auto;overflow-x:hidden;padding-block:16px 24px;display:flex;flex-direction:column;gap:16px;scrollbar-width:none}
