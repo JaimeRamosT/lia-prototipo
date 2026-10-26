@@ -1282,7 +1282,7 @@ Object.assign(A,{
    pay.error=null;ui.sheet=sheetProcessing();render();
    const tarea=ok?sbRpc('simular_pago',{p_periodo:pay.period,p_medio:MEDIO_DB[pay.method]}):Promise.resolve(null);
    Promise.all([tarea,new Promise(r=>setTimeout(r,900))]).then(([fila])=>{if(ui.pay!==pay)return;
-       if(ok){aplicarFila(fila);ui.blockedItems=null;ui.sheet=sheetSuccess();}else ui.sheet=sheetFail();render();})
+       if(ok){aplicarFila(fila);ui.blockedItems=null;ui.sheet=sheetSuccess();try{localStorage.removeItem(KEY_PAGO);}catch(e){}}else ui.sheet=sheetFail();render();})
      .catch(e=>{if(ui.pay!==pay)return;pay.error=mensajeError(e);ui.sheet=sheetFail();render();});},
  'pay-retry':()=>{if(ui.pay)ui.pay.error=null;ui.sheet=sheetCheckout();render();},
  'pay-done':()=>{const p=ui.pay;ui.pay=null;ui.sheet=null;render();resumeAfterPay(p);},
@@ -1375,14 +1375,22 @@ function setCuenta(user){const nueva={id:user.id,email:user.email||''},cambio=!s
   state.cuenta=nueva;if(cambio)state.sub=freeSub(state.sub&&state.sub.history);save();return cambio;}
 function quitarCuenta(){const era=isPro();state.cuenta=null;state.sub=freeSub(state.sub&&state.sub.history);if(era&&state.onboarded)armWeek(true);save();}
 function refrescarPlan(avisar){return sbRpc('mi_suscripcion').then(f=>{aplicarFila(f,avisar);if(calm())rerenderKeepScroll();return f;});}
+// Si la cuenta se creó desde el muro de pago, el pago sigue después de confirmar el correo, aunque la página se recargue.
+const KEY_PAGO='lia.alConfirmar';
+function guardarPagoPendiente(p){try{localStorage.setItem(KEY_PAGO,JSON.stringify({why:p.why,ctx:p.ctx||null,period:p.period,method:p.method,t:Date.now()}));}catch(e){}}
+function tomarPagoPendiente(){let p=null;try{p=JSON.parse(localStorage.getItem(KEY_PAGO));localStorage.removeItem(KEY_PAGO);}catch(e){p=null;}
+  if(!p||!PRICES[p.period]||!(Date.now()-p.t<3*864e5))return null;
+  return{why:p.why||'plans',ctx:p.ctx||null,period:p.period,method:METHODS[p.method]?p.method:'yape'};}
+function alConfirmarCorreo(){const p=tomarPagoPendiente();
+  if(p&&!isPro()&&!ui.sheet&&!ui.session&&!ui.listen){ui.pay=p;ui.sheet=sheetCheckout();render();toast('Listo, confirmaste tu correo. Sigue con tu pago.');}
+  else toast('Listo, confirmaste tu correo y ya iniciaste sesión.');}
 // Cambios de sesión que no inició un formulario: al abrir la app, al volver de un enlace del correo o al vencer la sesión.
 function alCambiarSesion(ev,session){if(ui.authBusy)return;const u=session&&session.user;
   if(u&&(ui.desdeRecuperar||ev==='PASSWORD_RECOVERY')){ui.desdeRecuperar=false;setCuenta(u);refrescarPlan(false).catch(()=>{});  // enlace para crear una contraseña nueva
     if(!(ui.cuentaForm&&ui.cuentaForm.modo==='nueva-clave')){ui.cuentaForm={modo:'nueva-clave',paraPro:false,error:null,cargando:false,email:u.email||''};pintarCuenta();}
     return;}
   if(u){const nueva=setCuenta(u),correo=nueva&&ui.desdeCorreo;if(correo)ui.desdeCorreo=false;
-    if(nueva||ev==='INITIAL_SESSION')refrescarPlan(true).catch(()=>{});
-    if(correo)toast('Listo, confirmaste tu correo y ya iniciaste sesión.');
+    if(nueva||ev==='INITIAL_SESSION')refrescarPlan(true).catch(()=>{}).then(()=>{if(correo)alConfirmarCorreo();});
     if(nueva&&calm())rerenderKeepScroll();}
   else if(state.cuenta&&(ev==='SIGNED_OUT'||ev==='INITIAL_SESSION')){quitarCuenta();if(calm())rerenderKeepScroll();}}
 function iniciarCuentas(){if(!cuentasActivas())return;
@@ -1408,7 +1416,7 @@ function sheetCuenta(){const f=ui.cuentaForm,reg=f.modo==='registro',pro=f.paraP
   const enviar=t=>`<button class="btn pri" type="submit" ${f.cargando?'disabled':''}>${f.cargando?'Un momento…':t}</button>`;
   const spam='<p class="small muted" style="margin:0;text-align:center">¿No te llegó? Revisa la carpeta de spam o de promociones.</p>';
   if(f.modo==='sin-config')return `<div class="grab"></div><h2>Las cuentas aún no están listas</h2><p class="muted" style="margin:0">Para pasarte a Pro necesitas una cuenta, y esta versión de LIA todavía no las tiene activadas. Puedes seguir usando LIA Gratis.</p><button class="btn sec" data-a="close">Entendido</button>`;
-  if(f.modo==='confirmar')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Te enviamos un enlace a <b>${esc(f.email)}</b>. Ábrelo en este dispositivo para activar tu cuenta.</p>${spam}${avisosCuenta({...f,noConfirmado:false})}
+  if(f.modo==='confirmar')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Te enviamos un enlace a <b>${esc(f.email)}</b>. Ábrelo en este dispositivo para activar tu cuenta${f.paraPro?'; luego seguimos con tu pago':''}.</p>${spam}${avisosCuenta({...f,noConfirmado:false})}
    <button class="btn sec" data-a="cuenta-ingresar" data-pro="${pro}">Ya lo confirmé: iniciar sesión</button><button class="btn sec" data-a="cuenta-reenviar" ${espera||f.cargando?'disabled':''}>${espera?'Podrás reenviarlo en un minuto':'Reenviar el correo'}</button><button class="btn sec" data-a="close">Cerrar</button>`;
   if(f.modo==='enlace-enviado')return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center">Revisa tu correo</h2><p class="muted" style="margin:0;text-align:center">Si hay una cuenta con <b>${esc(f.email)}</b>, te llegará un enlace para crear una contraseña nueva. Ábrelo en este dispositivo.</p>${spam}
    <button class="btn sec" data-a="cuenta-ingresar" data-pro="${pro}">Volver a iniciar sesión</button><button class="btn sec" data-a="close">Cerrar</button>`;
@@ -1440,6 +1448,7 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
       if(abierta())pintarCuenta();else toast('Te enviamos un enlace para crear una contraseña nueva.');}).catch(fallo);return;}
   if(modo==='nueva-clave'){sb().then(c=>c.auth.updateUser({password:pass})).then(({data,error})=>{if(error)throw error;listo();ui.cuentaForm=null;ui.sheet=null;
       if(data&&data.user)setCuenta(data.user);rerenderKeepScroll();toast('Listo, cambiaste tu contraseña.');}).catch(fallo);return;}
+  if(reg&&f.paraPro&&ui.pay)guardarPagoPendiente(ui.pay);
   sb().then(c=>reg?c.auth.signUp({email,password:pass,options:{emailRedirectTo:volver}}):c.auth.signInWithPassword({email,password:pass}))
     .then(({data,error})=>{if(error)throw error;
       if(!data.session){listo();f.pass='';
@@ -1448,7 +1457,7 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
         f.modo='confirmar';f.esperaHasta=Date.now()+60000;if(abierta())pintarCuenta();else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
       setCuenta(data.session.user);
       return refrescarPlan(false).catch(()=>null).then(()=>{const seguia=abierta();listo();
-        const p=ui.pay,paraPro=f.paraPro;
+        const pend=tomarPagoPendiente(),p=ui.pay||pend,paraPro=f.paraPro||!!pend;
         if(paraPro&&p&&isPro()){ui.cuentaForm=null;ui.pay=null;ui.sheet=null;rerenderKeepScroll();toast('Tu cuenta ya tiene LIA Pro.');resumeAfterPay(p);return;}
         toast(reg?'Listo, creaste tu cuenta.':'Listo, iniciaste sesión.');
         if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;ui.sheet=sheetCheckout();render();}
