@@ -43,7 +43,7 @@ Prueban el motor de horarios, el plan semanal de Gratis y la lectura de frases (
 
 ## Cuentas con Supabase
 
-Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis.
+Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis. Antes de invitar estudiantes, sigue la [guía del piloto](docs/cuentas-y-planes.md#piloto-con-estudiantes).
 
 ## Qué hay aquí
 

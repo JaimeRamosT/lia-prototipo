@@ -45,7 +45,16 @@ Con la bandera `pagos`, la diferencia entre Gratis y Pro no se podía probar com
 - [x] Si Supabase no está configurado, la app funciona en Gratis y explica que las cuentas aún no están listas.
 - [x] Quien no usa cuentas no descarga el cliente de Supabase.
 
-P1: recuperar contraseña, reenviar el correo de confirmación, borrar la cuenta, SMTP propio para escribir a estudiantes.
+### Requisitos P1 (rama `fix/cuentas-y-correos`)
+
+- [x] **Recuperar la contraseña.** *¿Olvidaste tu contraseña?* envía un enlace sin revelar si la cuenta existe. Al abrirlo en el mismo dispositivo, la app pide la contraseña nueva y deja la sesión iniciada. Si el enlace venció o ya se usó, la app lo explica y abre *Inicia sesión*.
+- [x] **Reenviar el correo de confirmación** desde *Revisa tu correo* y desde el error de iniciar sesión sin haber confirmado. Entre un envío y otro se espera un minuto, como exige Auth.
+- [x] **Mostrar la contraseña** en todos los campos de contraseña. Si hay un error, lo escrito no se pierde.
+- [x] **Mensajes claros** para correo no válido, envío fallido, correo no autorizado (correo integrado de Supabase), límite de envíos, espera entre correos, contraseña repetida y correo que ya tiene cuenta. Con la confirmación activada, Auth no dice que un correo ya existe: responde un usuario sin identidades y no envía nada. La app lo detecta y pasa a *Inicia sesión*.
+- [x] **Seguir al pago después de confirmar el correo.** Si la cuenta se creó desde el muro de pago, al volver del enlace se abre el pago con el plan elegido, aunque la página se haya recargado. El pago pendiente se guarda en `lia.alConfirmar` y vence a los 3 días.
+- [x] **Herramientas del equipo solo en modo pruebas.** *Simular el fin del periodo* aparece solo al abrir la app con `?pruebas=1`. El modo se recuerda en ese navegador (`lia.pruebas`) y `?pruebas=0` lo apaga.
+
+Queda para después: borrar la cuenta y cambiar la contraseña desde Perfil.
 P2: sincronizar el estado del horario por cuenta, webhook de Culqi en lugar de `simular_pago`, inicio de sesión con Google.
 
 ### Cómo sabremos si funciona (en la prueba con 15 a 20 estudiantes)
@@ -56,8 +65,7 @@ P2: sincronizar el estado del horario por cuenta, webhook de Culqi en lugar de `
 
 ### Preguntas abiertas
 
-- **Equipo:** ¿confirmación de correo activada? El correo integrado de Supabase solo escribe a miembros del equipo y como máximo 2 veces por hora.
-- **Equipo:** configurar un SMTP propio antes de invitar estudiantes.
+- **Equipo:** ¿confirmación de correo activada? Para el piloto, sí, con un SMTP propio (ver [Piloto con estudiantes](#piloto-con-estudiantes)). El correo integrado de Supabase solo escribe a miembros del equipo y como máximo 2 veces por hora: en las pruebas del equipo ya devolvió errores 429 (demasiados correos).
 - **Abogado:** los correos se guardan en Supabase, fuera del Perú (Ley 29733, flujo transfronterizo).
 
 ## Diseño técnico
@@ -122,7 +130,10 @@ Supabase
 - [ ] Sin cuenta: la 4.ª evaluación abre el muro de pago.
 - [ ] Crear cuenta → checkout → *Simular pago aprobado* → Pro; en el SQL Editor, `select * from suscripciones;` muestra la fila en `pro`.
 - [ ] Recargar la página: sigue en Pro.
-- [ ] *Modo demo: simular el fin del periodo* → vuelve a Gratis.
+- [ ] Abrir la app con `?pruebas=1` → Perfil → *Pruebas: simular el fin del periodo* → vuelve a Gratis. Sin `?pruebas=1`, ese enlace no aparece.
+- [ ] *Iniciar sesión* → *¿Olvidaste tu contraseña?* → abrir el enlace del correo en el mismo dispositivo → guardar una contraseña nueva → iniciar sesión con ella.
+- [ ] Crear una cuenta con la confirmación activada → *Reenviar el correo* (después de un minuto) → llega un segundo correo.
+- [ ] Desde el muro de pago, crear una cuenta → abrir el enlace de confirmación → se abre el pago con el plan elegido.
 - [ ] Cerrar sesión e iniciarla en otro navegador o teléfono: el plan acompaña a la cuenta.
 - [ ] `otorgar_pro('otro-correo')` y luego iniciar sesión con esa cuenta: Pro de cortesía.
 
@@ -131,3 +142,21 @@ Supabase
 - **El registro falla con "Database error saving new user":** quita el trigger con `drop trigger if exists al_crear_cuenta on auth.users;`. Las cuentas siguen funcionando, porque `mi_suscripcion()` crea la fila que falte.
 - **Las cuentas fallan en la app:** deja vacíos `url` y `key` en `config.js` e integra ese cambio en `main`. La app deja de ofrecer cuentas y sigue en Gratis sin borrar horarios; quien ya tenía Pro en un dispositivo lo conserva ahí hasta su fecha de fin.
 - **Deshacer la base de datos:** borra el trigger `al_crear_cuenta`, las funciones de la migración y las tablas `pagos` y `suscripciones`. Se pierden los planes y el historial de pagos de prueba.
+
+## Piloto con estudiantes
+
+Antes de invitar a los 15 a 20 estudiantes:
+
+1. **SMTP propio.** En Supabase → Authentication → Emails → *SMTP Settings*, conecta el correo de un proveedor de correo transaccional con un remitente del equipo. Sin esto, los correos de confirmación y de recuperación solo llegan a miembros del proyecto y como máximo 2 por hora; la app lo explica («Por ahora, solo el equipo de LIA puede crear cuentas»).
+2. **Límite de envíos.** En Authentication → *Rate Limits*, sube *Emails sent per hour* según el proveedor (por ejemplo, 30). Auth exige además un minuto entre dos correos a la misma persona; la app lo respeta.
+3. **Direcciones de regreso.** En Authentication → *URL Configuration*, la *Site URL* y las *Redirect URLs* deben incluir la dirección de GitHub Pages (`https://jaimeramost.github.io/lia-prototipo/`). Los enlaces de confirmación y de recuperación vuelven a la dirección desde la que se pidieron; si no está en la lista, Auth los manda a la *Site URL*.
+4. **Correos en español.** En Authentication → Emails → *Templates*, traduce *Confirm signup* («Confirma tu cuenta de LIA») y *Reset password* («Crea una contraseña nueva para LIA»). Deja el enlace `{{ .ConfirmationURL }}` tal cual.
+5. **Confirmación activada.** En *Sign In / Providers → Email*, deja *Confirm email* activado.
+6. **Modo pruebas solo para el equipo.** Comparte la dirección sin `?pruebas=1`. Quien la abra con `?pruebas=1` ve *Simular el fin del periodo*; `?pruebas=0` lo apaga en ese navegador.
+
+**Si alguien no puede entrar:**
+
+- *No le llegó el correo:* que revise spam y promociones, y use *Reenviar el correo*. Si sigue sin llegar, en Authentication → Users se puede confirmar la cuenta a mano.
+- *Olvidó la contraseña:* *Iniciar sesión* → *¿Olvidaste tu contraseña?*. El enlace se abre en el mismo teléfono donde usa LIA.
+- *El enlace venció o ya se usó:* la app abre *Inicia sesión* y lo explica; desde ahí se pide otro.
+- *Pagó en una cuenta y abrió otra:* el plan es de la cuenta, no del teléfono; que inicie sesión con la cuenta correcta.
