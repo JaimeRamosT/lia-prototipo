@@ -693,7 +693,9 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 
 // ---------- Utilidades de vista ----------
 function now(){return new Date();}
-function P(){return isPro()||!state.onboarded||!state.frozen?plan(state,now()):frozenPlan();}
+// Durante un dibujo el plan se calcula una sola vez: las vistas lo piden muchas veces (una por evaluación).
+let dibujando=false,planDibujo=null;
+function P(){if(dibujando&&planDibujo)return planDibujo;const p=isPro()||!state.onboarded||!state.frozen?plan(state,now()):frozenPlan();if(dibujando)planDibujo=p;return p;}
 function evById(id){return state.evals.find(e=>e.id===id);}
 function enDias(date){const n=dayDiff(ymd(now()),date);return n<0?'Pasó':n===0?'Hoy':n===1?'Mañana':`En ${n} días`;}
 function tagColor(date){const n=dayDiff(ymd(now()),date);return n<=1?'var(--exam-ink)':n<=3?'var(--trabajo-ink)':'var(--pri)';}
@@ -1048,7 +1050,8 @@ function vListen(){return `<div class="full"><div class="in"><div class="top"><b
 
 // ---------- Render ----------
 const TABS=[['hoy','Hoy','sun'],['semana','Semana','cal'],['lia','Lía',null],['evals','Evaluaciones','list'],['perfil','Perfil','user']];
-function render(){ensureState();const v=document.getElementById('view'),tabs=document.getElementById('tabs');
+function render(){ensureState();dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}}
+function dibujar(){const v=document.getElementById('view'),tabs=document.getElementById('tabs');
   const inOb=ui.welcome||!state.onboarded;
   tabs.hidden=inOb;
   if(ui.welcome)v.innerHTML=vWelcome();
