@@ -798,7 +798,8 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   let hero;
   if(next){const e=evById(next.evalId);const when=next.date===t?(next.s>nm?`En ${hrs(next.s-nm)}`:'Ahora'):cap(fechaLarga(next.date));
     hero=`<section class="hero"><span class="eyebrow">Tu próximo bloque · ${esc(when)}</span><span class="big tnum">${fmt(next.s)} – ${fmt(next.e)}</span><span style="opacity:.9;font-weight:500">${esc(e.course)} · para tu ${EVAL_TYPES[e.type].label.toLowerCase()} del ${fechaCorta(e.date)}</span>
-     <div style="height:6px"></div><button class="btn light" data-a="start" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Empezar a estudiar${isPro()?'':PRO_TAG}</button>
+     <div style="height:6px"></div>${isPro()?`<button class="btn light" data-a="start" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Empezar a estudiar</button>`
+       :`<button class="btn light" data-a="done-block" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Ya lo estudié</button>`}
      <button class="small" style="color:var(--pri-ink);opacity:.85;text-align:center;padding:6px" data-a="move" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">¿No puedes a esa hora? Lía lo mueve${isPro()?'':PRO_TAG}</button></section>`;}
   else if(pend.length)hero=heroFalta(pend);
   else if(state.evals.some(e=>e.date>=t))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.85">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
