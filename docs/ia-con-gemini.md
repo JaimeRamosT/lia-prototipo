@@ -196,11 +196,11 @@ El asesor de seguridad marcará `usar_ia()` con el aviso 0029, igual que las cua
 | Capa | Qué se prueba | Herramienta |
 |---|---|---|
 | Lógica (unitarias) | `validarIA()`: cada campo, rangos, identificadores que no existen, textos largos o con HTML; cuándo se usa la IA y cuándo las reglas; que el contexto no lleve correo ni nombre; que los tipos coincidan con `EVAL_TYPES` y `COMMIT_TYPES` | `node --test` en `pruebas/` |
-| Función | Respuesta correcta, JSON roto, 429 y 5xx de Gemini, tiempo agotado, sin cupo, sin sesión, origen no permitido, pedido demasiado grande | `deno test` con Gemini simulado |
+| Función | Respuesta correcta, JSON roto, 429 y 5xx de Gemini, tiempo agotado, sin cupo, sin sesión, origen no permitido, pedido demasiado grande | `node --test` con Gemini simulado (`pruebas/ia-funcion.test.mjs`; la lógica de la función está en `logica.js`, sin nada propio de Deno) |
 | Navegador | Chat con IA (pensando, propuesta, confirmar, deshacer), sin internet → reglas, sin cupo, error → reglas, Gratis nunca llama a la función, sin bloqueos de la CSP | Playwright con la función simulada |
-| Modelo real | Set de 60 a 100 frases (las de la auditoría, expresiones peruanas, frases ambiguas, temas ajenos e intentos de dar órdenes al modelo): exactitud por campo, JSON válido, tiempo y costo; se compara con las reglas | `pruebas/ia/frases.json` y `pruebas/ia/evaluar.mjs` |
+| Modelo real | Set de 60 a 100 frases (las de la auditoría, expresiones peruanas, frases ambiguas, temas ajenos e intentos de dar órdenes al modelo): exactitud por campo, JSON válido, tiempo y tokens; se compara con las reglas | `pruebas/ia/frases.json` (77 frases) y `pruebas/ia/evaluar.mjs`; `pruebas/ia-evaluar.test.mjs` revisa el set y la forma de calificar |
 
-La evaluación con el modelo real se corre cada vez que cambian las instrucciones, el esquema o el modelo. Ni el contenedor de Claude ni la VM de la computadora llegan a Google ni a Supabase, así que la corre Coconut en su computadora (`node pruebas/ia/evaluar.mjs`, con una cuenta Pro de prueba). Otra opción es que Claude la corra desde el navegador integrado de la app de escritorio, con permiso de Coconut.
+La evaluación con el modelo real se corre cada vez que cambian las instrucciones, el esquema o el modelo. Ni el contenedor de Claude ni la VM de la computadora llegan a Google ni a Supabase, así que la corre Coconut en su computadora con su clave de Google AI Studio en la variable `GEMINI_API_KEY` (ver el README). Llama a Gemini directamente, con las mismas instrucciones, esquema y revisión que la función y la app: así no gasta el cupo de 25 mensajes de una cuenta. La meta se mide con lo que vería la persona (la IA, y las reglas cuando la IA no sirve), y el informe también muestra la IA sola, las reglas solas y las frases en las que la IA empeora lo que hacían las reglas.
 
 ## Plan por fases
 
