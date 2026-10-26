@@ -820,9 +820,24 @@ function vSession(){const s=ui.session;const e=evById(s.ev);const left=Math.max(
   <h2 style="font-size:20px">${esc(e?e.course:'')}</h2><span class="small" style="opacity:.7">Para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</span>
   <div class="ring"><svg viewBox="0 0 230 230"><circle cx="115" cy="115" r="104" stroke="rgba(255,255,255,.12)" stroke-width="12" fill="none"/><circle id="ringp" cx="115" cy="115" r="104" stroke="#8B8AFF" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C*(1-pct)}"/></svg>
    <div class="c"><b class="tnum" id="clock">${clk(left)}</b><span class="small" style="opacity:.6">${s.running?'quedan de '+hrs(s.total/60000):'en pausa'}</span></div></div>
-  <div class="glass">${AV(32)}<span class="small" style="opacity:.85">Modo concentración: deja el celular boca abajo. Cuando termines, toca “Terminé” y Lía actualiza tu avance.</span></div>
+  <div class="glass">${AV(32)}<span class="small" style="opacity:.85">Modo concentración: deja el celular boca abajo. Al acabar el tiempo, vibra y suena. Si terminas antes, toca “Terminé”.</span></div>
   <div style="flex:1"></div>
-  <div class="two" style="width:100%"><button class="btn light" data-a="sess-pause">${s.running?'Pausar':'Seguir'}</button><button class="btn pri" data-a="sess-done">Terminé</button></div></div></div>`;}
+  ${s.preguntar?`<div class="glass" style="flex-direction:column;align-items:stretch;text-align:left;gap:10px" role="group" aria-labelledby="sess-q"><b id="sess-q" data-foco>¿Guardas lo que estudiaste?</b><span class="small" style="opacity:.85">Llevas ${hrs(minutosSesion(s))} de ${esc(e?e.course:'')}.</span>
+   <button class="btn pri" data-a="sess-done">Guardar ${hrs(minutosSesion(s))} y salir</button><button class="btn light" data-a="sess-descartar">Salir sin guardar</button><button class="btn" style="color:inherit;min-height:44px" data-a="sess-seguir">Seguir estudiando</button></div>`
+   :`<div class="two" style="width:100%"><button class="btn light" data-a="sess-pause">${s.running?'Pausar':'Seguir'}</button><button class="btn pri" data-a="sess-done">Terminé</button></div>`}</div></div>`;}
+// La sesión se guarda aparte para sobrevivir a una recarga o a que el teléfono cierre la app.
+const KEY_SES='lia.sesion.v1';
+function nuevaSesion(o){return{...o,elapsed(){return this.acc+(this.running?Date.now()-this.since:0);}};}
+function guardarSesion(){const s=ui.session;try{if(s)localStorage.setItem(KEY_SES,JSON.stringify({ev:s.ev,d:s.d,s:s.s,total:s.total,acc:s.acc,since:s.since,inicio:s.inicio,running:s.running}));else localStorage.removeItem(KEY_SES);}catch(e){}}
+function minutosSesion(s){return Math.floor(Math.min(s.elapsed(),s.total)/60000)||0;}
+function registrarSesion(s,min){const t=new Date(s.inicio||Date.now()-min*60000);snapshot();
+  state.done.push({id:uid(),evalId:s.ev,date:ymd(t),start:fmt(t.getHours()*60+t.getMinutes()),min});save();}
+function pedirPantalla(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}}
+function cerrarSesion(){ui.session=null;guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
+// Aviso al terminar el tiempo: vibra y suena tres tonos (el sonido se habilita al tocar "Empezar").
+function avisarFin(){try{navigator.vibrate&&navigator.vibrate([300,150,300]);}catch(e){}
+  try{const c=ui.audio;if(!c)return;const t=c.currentTime;[660,880,990].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain(),d=t+i*.25;
+    o.frequency.value=f;g.gain.setValueAtTime(.0001,d);g.gain.exponentialRampToValueAtTime(.25,d+.02);g.gain.exponentialRampToValueAtTime(.0001,d+.22);o.connect(g);g.connect(c.destination);o.start(d);o.stop(d+.25);});}catch(e){}}
 const clk=ms=>{const t=Math.ceil(ms/1000);const h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return h?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;};
 function vListen(){return `<div class="full"><div class="in"><div class="top"><button data-a="listen-cancel" style="color:inherit">Cancelar</button><button data-a="listen-type" style="color:inherit">Prefiero escribir</button></div>
   <div style="flex:1"></div><div class="halo">${AV(80)}</div><span class="eyebrow" style="color:#B9B8FF">Lía te escucha…</span>
@@ -849,7 +864,7 @@ function render(){ensureState();const v=document.getElementById('view'),tabs=doc
 // Accesibilidad: con una hoja o pantalla superpuesta abierta, el fondo queda inerte y el foco pasa a ella.
 function focusLayer(L){const open=!!L.firstElementChild;document.getElementById('app').inert=open;
   if(!open)return;const box=L.querySelector('.sheet')||L.querySelector('.full .in');if(!box||box.contains(document.activeElement))return;
-  const t=box.querySelector('h1,h2')||box;t.setAttribute('tabindex','-1');t.focus({preventScroll:true});}
+  const t=box.querySelector('[data-foco]')||box.querySelector('h1,h2')||box;t.setAttribute('tabindex','-1');t.focus({preventScroll:true});}
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
   if(ui.listen){A['listen-cancel']();return;}
   if(ui.sheet&&!document.querySelector('.sheet .spin')){e.preventDefault();A.close();}});
@@ -931,11 +946,17 @@ const A={
  move:d=>{if(!isPro()){openPaywall('reorg',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const b=blockOf(d);if(state.settings.autonomy==='ask'){ui.sheet=`<div class="grab"></div><h2>¿Muevo este bloque?</h2><p class="muted" style="margin:0">Lía buscará otro hueco libre antes de tu evaluación.</p><button class="btn pri" data-a="move-ok" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, muévelo</button><button class="btn sec" data-a="close">No</button>`;render();return;}moveBlock(b);},
  'move-ok':d=>moveBlock(blockOf(d)),
  'done-block':d=>{const e=evById(d.ev);ui.sheet=null;if(!e){rerenderKeepScroll();return;}snapshot();state.done.push({id:uid(),evalId:d.ev,date:d.d,start:fmt(+d.s),min:+d.e-+d.s});save();rerenderKeepScroll();toast(`Bien. Sumé ${hrs(+d.e-+d.s)} a ${e.course}.`,true);},
- start:d=>{if(!isPro()){openPaywall('session',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const total=(+d.e-+d.s)*60000;ui.sheet=null;ui.session={ev:d.ev,d:d.d,s:+d.s,total,acc:0,since:Date.now(),running:true,elapsed(){return this.acc+(this.running?Date.now()-this.since:0);}};render();tick();try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}},
- 'sess-pause':()=>{const s=ui.session;if(s.running){s.acc+=Date.now()-s.since;s.running=false;}else{s.since=Date.now();s.running=true;}render();},
- 'sess-done':()=>{const s=ui.session;const min=Math.max(5,Math.round(s.elapsed()/60000/5)*5);const nm=now();snapshot();
-   state.done.push({id:uid(),evalId:s.ev,date:ymd(nm),start:fmt(Math.max(0,nm.getHours()*60+nm.getMinutes()-min)),min});save();ui.session=null;try{ui.wl&&ui.wl.release();}catch(e){}render();toast(`Registré ${hrs(min)} de ${evById(s.ev).course}. Lía ajustó lo que falta.`,true);},
- 'sess-exit':()=>{ui.session=null;try{ui.wl&&ui.wl.release();}catch(e){}render();},
+ start:d=>{if(!isPro()){openPaywall('session',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const total=(+d.e-+d.s)*60000;ui.sheet=null;
+   try{const AC=window.AudioContext||window.webkitAudioContext;if(AC&&!ui.audio)ui.audio=new AC();if(ui.audio&&ui.audio.resume)ui.audio.resume();}catch(e){}
+   ui.session=nuevaSesion({ev:d.ev,d:d.d,s:+d.s,total,acc:0,since:Date.now(),inicio:Date.now(),running:true});guardarSesion();render();tick();pedirPantalla();},
+ 'sess-pause':()=>{const s=ui.session;if(s.running){s.acc+=Date.now()-s.since;s.running=false;}else{s.since=Date.now();s.running=true;}guardarSesion();render();},
+ 'sess-done':()=>{const s=ui.session;if(!s)return;const min=minutosSesion(s),e=evById(s.ev);cerrarSesion();
+   if(!e){render();toast('Esa evaluación ya no está, así que no registré la sesión.');return;}
+   if(min<1){render();toast('No registré nada: estudiaste menos de un minuto.');return;}
+   registrarSesion(s,min);render();toast(`Registré ${hrs(min)} de ${e.course}. Lía ajustó lo que falta.`,true);},
+ 'sess-exit':()=>{const s=ui.session;if(s&&minutosSesion(s)>=1){s.preguntar=true;render();return;}cerrarSesion();render();},
+ 'sess-descartar':()=>{cerrarSesion();render();toast('Saliste sin registrar la sesión.');},
+ 'sess-seguir':()=>{if(ui.session)ui.session.preguntar=false;render();},
  wk:d=>{ui.weekOffset+=+d.v;ui.sel=null;render();},
  sel:d=>{ui.sel=d.d;rerenderKeepScroll();},
  chip:d=>{handleText(d.q,'chat');},
@@ -1005,7 +1026,7 @@ document.addEventListener('change',ev=>{const el=ev.target;
   else if(k!=='name')toast(P().frozen?'Ajuste guardado. Se aplica cuando rearmes tu semana.':'Ajuste guardado. Lía reorganizó tu horario.');});
 function tick(){if(!ui.session)return;const s=ui.session;const left=Math.max(0,s.total-s.elapsed());const c=document.getElementById('clock');const r=document.getElementById('ringp');
   if(c)c.textContent=clk(left);if(r){const C=2*Math.PI*104;r.setAttribute('stroke-dashoffset',C*(left/s.total));}
-  if(left<=0&&s.running){A['sess-done']();return;}setTimeout(tick,500);}
+  if(left<=0&&s.running){avisarFin();A['sess-done']();return;}setTimeout(tick,500);}
 
 // ---------- Voz ----------
 let rec=null;
@@ -1123,6 +1144,14 @@ window.addEventListener('storage',e=>{if(e.key!==KEY||!e.newValue)return;let nue
   if(!nuevo||nuevo.v!==1)return;state=nuevo;undoStack=null;ensureState();if(calm())rerenderKeepScroll();});
 
 render();
+// Retoma una sesión de estudio que seguía abierta; si el tiempo se acabó con la app cerrada, la registra.
+(function(){let g=null;try{g=JSON.parse(localStorage.getItem(KEY_SES));}catch(e){}if(!g)return;
+  if(!evById(g.ev)||![g.total,g.acc,g.since].every(Number.isFinite)||!(g.total>0)){ui.session=null;guardarSesion();return;}
+  if(!Number.isFinite(g.inicio))delete g.inicio;
+  ui.session=nuevaSesion(g);ui.session.preguntar=false;
+  if(ui.session.running&&ui.session.elapsed()>=ui.session.total){const s=ui.session,e=evById(s.ev),min=minutosSesion(s);cerrarSesion();registrarSesion(s,min);render();
+    toast(`Tu sesión terminó mientras LIA estaba cerrada. Registré ${hrs(min)} de ${e.course}.`,true);return;}
+  render();tick();pedirPantalla();})();
 iniciarCuentas();
 setInterval(()=>{if(!ui.session&&!ui.sheet&&!ui.listen&&!document.activeElement.matches('input,select'))rerenderKeepScroll();},60000);
 </script>
