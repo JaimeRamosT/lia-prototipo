@@ -892,7 +892,7 @@ function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).s
 
 function vLia(){const ph='Escríbele a Lía…';
   const sug=['¿Qué tengo mañana?','Hoy salgo del trabajo a las 9','Parcial de Estadística el viernes a las 10','Libera mi sábado','¿Cuánto me falta?'];
-  return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok)">Tu secretaria · versión sin IA (entiende frases simples)</div></div></div>
+  return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok-ink)">Tu secretaria · versión sin IA (entiende frases simples)</div></div></div>
   <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}</div>
   <div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
   <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off" aria-label="Mensaje para Lía"><button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="chat-in" aria-label="${isPro()?'Hablar con Lía':'Hablar con Lía (LIA Pro)'}">${I.mic}</button><button type="submit" class="mic" aria-label="Enviar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
