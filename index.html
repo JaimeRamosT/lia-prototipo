@@ -27,6 +27,8 @@ img{max-width:100%}
 /* Inter 4 (SIL Open Font License 1.1, ver fonts/OFL.txt), alojada aquí para que la app funcione sin internet. */
 @font-face{font-family:'Inter';font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 /* Layout: one-column phone app (max 440px) — scrolling view + fixed tab bar; sheets slide up from the bottom. */
+/* Colores: --x es el acento (texto, bordes, foco), --x-fill el relleno que lleva texto blanco encima, --x-soft el fondo suave
+   y --x-ink el texto sobre ese fondo. Cada par texto/fondo llega a 4.5:1 en claro y en oscuro (pruebas de contraste). */
 :root{
   --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C1B29; --mute:#6B6A7B; --line:#E6E2D9;
   --pri:#3D3BF3; --pri-ink:#FFFFFF; --pri-soft:#ECEBFF; --pri-sub:#C9C8FF;
@@ -34,22 +36,24 @@ img{max-width:100%}
   --otro:#E4F1EA; --otro-ink:#1F4D33; --exam:#FF5A4E; --exam-soft:#FFEFEC; --exam-ink:#B4271B;
   --ok:#1E9E5A; --ok-soft:#E3F7EC; --ok-ink:#13703F; --pri-strong:#3D3BF3; --night:#16153A; --night-ink:#FFFFFF; --shadow:rgba(28,27,41,.10);
   --badge-bg:#3D3BF3; --badge-ink:#FFFFFF;
+  /* Rellenos con texto blanco encima (4.5:1 o más) y enlace dentro del aviso */
+  --pri-fill:#3D3BF3; --exam-fill:#CF3529; --toast-link:#C9C8FF;
   --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
-  --pri:#7472FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
+  --pri:#8A88FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
   --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
   --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
   --ok:#4CC98A; --ok-soft:#173326; --ok-ink:#4CC98A; --pri-strong:#3D3BF3; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4);
-  --badge-bg:#D3D2FF; --badge-ink:#16153A; color-scheme:dark}}
+  --badge-bg:#D3D2FF; --badge-ink:#16153A; --pri-fill:#5754E8; --exam-fill:#C9372D; --toast-link:#3D3BF3; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
-  --pri:#7472FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
+  --pri:#8A88FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
   --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
   --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
   --ok:#4CC98A; --ok-soft:#173326; --ok-ink:#4CC98A; --pri-strong:#3D3BF3; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4);
-  --badge-bg:#D3D2FF; --badge-ink:#16153A; color-scheme:dark}
+  --badge-bg:#D3D2FF; --badge-ink:#16153A; --pri-fill:#5754E8; --exam-fill:#C9372D; --toast-link:#3D3BF3; color-scheme:dark}
 html,body{height:100%}
 [hidden]{display:none!important}
 body.wm{background:#3D3BF3}
@@ -81,8 +85,8 @@ h2{font-size:17px;margin:0;font-weight:600}
 .grow{flex:1;min-width:0}
 /* surfaces */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px}
-.hero{background:var(--pri);color:var(--pri-ink);border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:6px}
-.hero .eyebrow{color:var(--pri-ink);opacity:.75}
+.hero{background:var(--pri-fill);color:var(--pri-ink);border-radius:24px;padding:20px;display:flex;flex-direction:column;gap:6px}
+.hero .eyebrow{color:var(--pri-ink);opacity:.9}
 .hero .big{font-size:32px;font-weight:700;letter-spacing:-.02em}
 .hero-t{font-size:20px;font-weight:700;line-height:1.25;text-wrap:balance}
 /* La evaluación del día, primero en Hoy */
@@ -99,17 +103,17 @@ h2{font-size:17px;margin:0;font-weight:600}
 .demo{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface);border:1px dashed var(--pri);border-radius:14px;padding:10px 12px;font-size:13px}
 /* buttons */
 .btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;border-radius:14px;font-weight:600;font-size:16px;padding:0 18px;width:100%}
-.btn.pri{background:var(--pri);color:var(--pri-ink)}
+.btn.pri{background:var(--pri-fill);color:var(--pri-ink)}
 .btn.light{background:var(--surface);color:var(--pri)}
 .btn.sec{background:var(--surface);color:var(--pri);border:1.5px solid var(--line)}
 .btn.danger{background:var(--surface);color:var(--exam-ink);border:1.5px solid var(--line)}
 .btn.sm{min-height:44px;font-size:14px;border-radius:12px;width:auto}
 .pill{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;font-size:13px;font-weight:600;background:var(--pri-soft);color:var(--pri)}
-.pill.solid{background:var(--pri);color:var(--pri-ink)}
+.pill.solid{background:var(--pri-fill);color:var(--pri-ink)}
 .pill.ghost{background:var(--surface);border:1px solid var(--line);color:var(--ink)}
 .dashed{display:flex;align-items:center;gap:10px;border:1.5px dashed var(--pri);color:var(--pri);border-radius:16px;padding:10px 12px;font-weight:600;width:100%}
 .dashed .grow{text-align:left}
-.mic{width:36px;height:36px;border-radius:50%;background:var(--pri);color:var(--pri-ink);display:grid;place-items:center;flex:none}
+.mic{width:36px;height:36px;border-radius:50%;background:var(--pri-fill);color:var(--pri-ink);display:grid;place-items:center;flex:none}
 .mic svg{width:18px;height:18px}
 .ico{width:22px;height:22px;flex:none}
 /* avatar */
@@ -121,18 +125,25 @@ h2{font-size:17px;margin:0;font-weight:600}
 .ag .t{font-size:13px;color:var(--mute);font-weight:500;padding-top:12px}
 .blk{border-radius:12px;padding:11px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
 .blk b{font-size:15px;font-weight:600;overflow-wrap:anywhere}
-.blk small{font-size:13px;opacity:.75}
+.blk small{font-size:13px;opacity:.85}
+.k-estudio small,.k-examen small,.k-hecho small,.k-libre small{opacity:1}
 .k-clase{background:var(--clase);color:var(--clase-ink)}
 .k-trabajo{background:var(--trabajo);color:var(--trabajo-ink)}
 .k-traslado,.k-otro{background:var(--otro);color:var(--otro-ink)}
 /* Lo que se liberó solo ese día */
 .k-libre{background:transparent;color:var(--ok-ink);border:1.5px dashed var(--ok)}
 .k-excepcion{background:repeating-linear-gradient(135deg,var(--clase) 0 8px,var(--surface) 8px 16px);color:var(--clase-ink);border:1px solid var(--line)}
-.k-estudio{background:var(--pri);color:var(--pri-ink)}
-.k-hecho{background:var(--ok-soft);color:var(--ok)}
-.k-examen{background:var(--exam);color:#fff}
+.k-estudio{background:var(--pri-fill);color:var(--pri-ink)}
+.k-hecho{background:var(--ok-soft);color:var(--ok-ink)}
+.k-examen{background:var(--exam-fill);color:#fff}
 .k-dormir{background:var(--night);color:var(--night-ink)}
-.past{opacity:.45}
+/* Lo que ya pasó: se ve atenuado sin bajar el contraste del texto (con opacidad quedaba en 2.5:1) */
+.ag.past .blk{background:var(--surface);color:var(--mute);border:1px dashed var(--line)}
+.ag.past .blk small{opacity:1}
+.day.past:not([aria-pressed="true"]) b{color:var(--mute)}
+.stack.past .item{background:transparent;border-style:dashed}
+.stack.past .item b,.stack.past .item .tag{color:var(--mute)!important}
+.stack.past .sw{background:var(--line);color:var(--mute)}
 /* lists */
 .item{display:flex;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;width:100%}
 .sw{width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;font-weight:700;font-size:13px}
@@ -144,8 +155,8 @@ h2{font-size:17px;margin:0;font-weight:600}
 .day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
 .day span{font-size:12px;color:var(--mute);font-weight:500}
 .day b{font-size:17px;font-weight:600}
-.day[aria-pressed="true"]{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
-.day[aria-pressed="true"] span{color:var(--pri-sub)}
+.day[aria-pressed="true"]{background:var(--pri-fill);border-color:var(--pri-fill);color:var(--pri-ink)}
+.day[aria-pressed="true"] span{color:var(--pri-ink);opacity:.9}
 .day .dot{width:5px;height:5px;border-radius:50%;background:var(--pri)}
 .day[aria-pressed="true"] .dot{background:var(--pri-ink)}
 .day .dot.x{background:var(--exam)}
@@ -157,7 +168,7 @@ h2{font-size:17px;margin:0;font-weight:600}
 .msg{display:flex;gap:8px;align-items:flex-start}
 .msg .bub{background:var(--surface);border:1px solid var(--line);border-radius:4px 16px 16px 16px;padding:10px 12px;max-width:84%;white-space:pre-line;display:flex;flex-direction:column;gap:8px}
 .msg.me{justify-content:flex-end}
-.msg.me .bub{background:var(--pri);color:var(--pri-ink);border-color:var(--pri);border-radius:16px 16px 4px 16px}
+.msg.me .bub{background:var(--pri-fill);color:var(--pri-ink);border-color:var(--pri-fill);border-radius:16px 16px 4px 16px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .inbar{display:flex;gap:10px;align-items:center;padding-block:8px}
 .inbar input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:24px;padding:13px 16px}
@@ -172,7 +183,7 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .dpick label{display:grid;place-items:center;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;color:var(--ink)}
 .dpick input{position:absolute;opacity:0;pointer-events:none}
 .dpick input:checked+span{color:var(--pri-ink)}
-.dpick label:has(input:checked){background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+.dpick label:has(input:checked){background:var(--pri-fill);border-color:var(--pri-fill);color:var(--pri-ink)}
 .opt{display:flex;gap:12px;align-items:center;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px}
 .opt:has(input:checked){border-color:var(--pri)}
 .opt input{accent-color:var(--pri);width:20px;height:20px;flex:none}
@@ -215,8 +226,7 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .tip b{color:var(--ink)}
 /* toast */
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:50;background:var(--ink);color:var(--bg);border-radius:14px;padding:12px 14px;display:flex;gap:14px;align-items:center;width:min(408px,calc(100% - 32px));font-size:14px;box-shadow:0 8px 24px var(--shadow)}
-.toast button{color:var(--pri-sub);font-weight:700;white-space:nowrap}
-:root[data-theme="light"] .toast button{color:#C9C8FF}
+.toast button{color:var(--toast-link);font-weight:700;white-space:nowrap}
 /* planes: LIA Gratis y LIA Pro */
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .pro{display:inline-flex;align-items:center;font-size:10px;font-weight:700;letter-spacing:.06em;line-height:1;padding:3px 6px;border-radius:6px;background:var(--badge-bg);color:var(--badge-ink);vertical-align:middle;flex:none}
@@ -728,7 +738,7 @@ function vWelcome(){return `<section class="welcome">
   <p style="margin:0;opacity:.85">Para universitarios que estudian y trabajan: cada semana Lía te arma un horario para estudiar en tus horas libres, para que no te amanezcas antes de cada examen.</p>
   <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button>
   <button class="btn ghostw" data-a="see-example">Ver con datos de ejemplo</button></div>
-  <p class="small" style="margin:0;opacity:.7;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este teléfono.</p></section>`;}
+  <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este teléfono.</p></section>`;}
 
 function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
   if(s===1)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 1 de 2</span></div>
@@ -796,7 +806,7 @@ const accionHTML=(c,cls)=>`<button class="${cls}" data-a="${c.a}"${c.t?` data-t=
 function heroFalta(pend){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
   const titulo=pend.length===1?`${cap(faltaTxt(tot))} de estudio para ${esc(pend[0].e.course)}.`:`${cap(faltaTxt(tot))} de estudio para ${pend.length} evaluaciones.`;
   const lista=pend.length>1?`<span style="opacity:.9">${pend.map(x=>`${esc(x.e.course)}: ${hrs(x.min)}`).join(' · ')}</span>`:'';
-  return `<section class="hero"><span class="eyebrow">${motivo(pend)==='sin agendar'?'Sin agendar':'Falta tiempo'}</span><span class="hero-t">${titulo}</span>${lista}<span style="opacity:.85">${esc(c.txt)}</span><div style="height:6px"></div>${accionHTML(c,'btn light')}</section>`;}
+  return `<section class="hero"><span class="eyebrow">${motivo(pend)==='sin agendar'?'Sin agendar':'Falta tiempo'}</span><span class="hero-t">${titulo}</span>${lista}<span style="opacity:.9">${esc(c.txt)}</span><div style="height:6px"></div>${accionHTML(c,'btn light')}</section>`;}
 // El día de una evaluación, eso va primero en Hoy.
 function evalHoyHTML(e,nm){const ini=toMin(e.time),need=e.hours*60,done=doneFor(state,e.id),tipo=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,ent=e.type==='entrega',exp=e.type==='exposicion';
   const cuando=ent?`Hasta las ${e.time}${ini>nm?` · quedan ${hrs(ini-nm)}`:''}`:ini>nm?`A las ${e.time} · en ${hrs(ini-nm)}`:`Empezó a las ${e.time}`;
@@ -811,11 +821,11 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
     hero=`<section class="hero"><span class="eyebrow">Tu próximo bloque · ${esc(when)}</span><span class="big tnum">${fmt(next.s)} – ${fmt(next.e)}</span><span style="opacity:.9;font-weight:500">${esc(e.course)} · para tu ${EVAL_TYPES[e.type].label.toLowerCase()} del ${fechaCorta(e.date)}</span>
      <div style="height:6px"></div>${isPro()?`<button class="btn light" data-a="start" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Empezar a estudiar</button>`
        :`<button class="btn light" data-a="done-block" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Ya lo estudié</button>`}
-     <button class="small" style="color:var(--pri-ink);opacity:.85;text-align:center;padding:6px" data-a="move" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">¿No puedes a esa hora? Lía lo mueve${isPro()?'':PRO_TAG}</button></section>`;}
+     <button class="small" style="color:var(--pri-ink);opacity:.9;text-align:center;padding:6px" data-a="move" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">¿No puedes a esa hora? Lía lo mueve${isPro()?'':PRO_TAG}</button></section>`;}
   else if(pend.length)hero=heroFalta(pend);
-  else if(state.evals.some(vigente)&&state.evals.filter(vigente).every(e=>e.hours*60-doneFor(state,e.id)<10))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.85">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
+  else if(state.evals.some(vigente)&&state.evals.filter(vigente).every(e=>e.hours*60-doneFor(state,e.id)<10))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.9">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   else if(state.evals.some(vigente))hero='';  // queda estudio, pero ya no hay tiempo antes de la evaluación (p. ej., el día del examen)
-  else hero=`<section class="hero"><span class="eyebrow">Sin evaluaciones próximas</span><span class="hero-t">No tienes exámenes ni entregas por ahora.</span><span style="opacity:.85">Agrega la próxima y Lía reparte tus horas de estudio.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
+  else hero=`<section class="hero"><span class="eyebrow">Sin evaluaciones próximas</span><span class="hero-t">No tienes exámenes ni entregas por ahora.</span><span style="opacity:.9">Agrega la próxima y Lía reparte tus horas de estudio.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   // Si hay un bloque próximo pero algo no entró, se avisa aparte (después de preguntar por los bloques sin marcar).
   let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
     faltaH=`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>${pend.length===1?`${cap(faltaTxt(tot))} ${motivo(pend)} para ${esc(pend[0].e.course)}`:`${cap(faltaTxt(tot))} de estudio ${motivo(pend)}`}</b><br>${pend.length>1?esc(pend.map(x=>`${x.e.course}: ${hrs(x.min)}`).join(' · '))+'.<br>':''}${esc(c.txt)}<div style="margin-top:8px">${accionHTML(c,'pill ghost')}</div></div></div>`;}
