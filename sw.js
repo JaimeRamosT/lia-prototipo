@@ -3,10 +3,12 @@
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
 // El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.3.6';
+const VERSION = '0.3.7';
 const CACHE = `lia-${VERSION}`;
+// La app se guarda y se pide por la raíz del sitio ('./'), no por './index.html': en Cloudflare, /index.html
+// redirige a la raíz, y una copia que viene de una redirección no sirve para abrir la página sin internet.
 const SHELL = [
-  './index.html',
+  './',
   './manifest.webmanifest',
   './config.js',
   './fonts/inter-latin-wght-normal.woff2',
@@ -18,7 +20,8 @@ const SHELL = [
   './icons/apple-touch-icon.png',
 ];
 const WAIT_MS = 4000; // si la red tarda más, se usa la copia guardada
-const APP = new URL('./index.html', self.location).href;
+const APP = new URL('./', self.location).href;
+const INDEX = new URL('./index.html', self.location).href;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -41,11 +44,10 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
-  const scope = self.registration.scope;
   const path = url.origin + url.pathname;
   if (req.mode === 'navigate') {
-    // Solo la app; cualquier otra página del sitio va directo a la red.
-    if (path !== scope && path !== APP) return;
+    // Solo la app (en la raíz o como /index.html); cualquier otra página del sitio va directo a la red.
+    if (path !== APP && path !== INDEX) return;
     event.respondWith(networkFirst(event, new Request(APP, { cache: 'no-cache', credentials: 'same-origin' }), APP));
     return;
   }
@@ -60,15 +62,18 @@ async function networkFirst(event, req, key) {
   });
   event.waitUntil(network.then(() => {}, () => {}));
   try {
-    const res = await withTimeout(network, WAIT_MS);
-    // Una respuesta que vino de una redirección no puede usarse para abrir la página.
-    return res.redirected
-      ? new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers })
-      : res;
+    return sinRedireccion(await withTimeout(network, WAIT_MS));
   } catch (err) {
     const saved = await cache.match(key, { ignoreSearch: true });
-    return saved || network;
+    return saved ? sinRedireccion(saved) : network;
   }
+}
+
+// Una respuesta que vino de una redirección no puede usarse para abrir la página: se entrega una copia sin ese dato.
+function sinRedireccion(res) {
+  return res.redirected
+    ? new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers })
+    : res;
 }
 
 function withTimeout(promise, ms) {

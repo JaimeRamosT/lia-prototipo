@@ -1,0 +1,10 @@
+# Cabeceras HTTP de LIA en Cloudflare. Se aplican a todos los archivos publicados.
+# Si la app empieza a usar otro servicio (por ejemplo, el checkout de Culqi), agrégalo a la Content-Security-Policy.
+# 'unsafe-inline' hace falta porque el código y los estilos de la app están dentro de index.html.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'self' https://lvtthltugrpbqjezwnsd.supabase.co wss://lvtthltugrpbqjezwnsd.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), geolocation=(), usb=(), microphone=(self)
+  Strict-Transport-Security: max-age=31536000

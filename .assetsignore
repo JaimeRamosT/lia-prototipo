@@ -1,0 +1,16 @@
+# Archivos del repositorio que no forman parte de la app publicada (mismo formato que .gitignore).
+# Si agregas un archivo que la app necesita, revisa que no quede excluido aquí.
+.git
+.github
+.wrangler
+node_modules
+.DS_Store
+/.assetsignore
+/.gitattributes
+/.gitignore
+/wrangler.jsonc
+/CLAUDE.md
+/README.md
+/docs/
+/pruebas/
+/supabase/

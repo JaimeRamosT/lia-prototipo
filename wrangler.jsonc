@@ -1,0 +1,16 @@
+// LIA se publica en Cloudflare como un Worker que solo sirve archivos estáticos: no tiene código de servidor.
+// Workers Builds lo despliega desde GitHub: lo que llega a `main` va a producción y cada rama tiene su vista previa.
+// Cómo funciona, cómo volver a una versión anterior y cómo configurarlo desde cero: README.md, «Dónde se publica».
+{
+  // Debe ser igual al nombre del Worker en el panel de Cloudflare; si no coincide, el build falla.
+  "name": "lia-prototipo",
+  "compatibility_date": "2026-10-26",
+  // Producción en https://lia-prototipo.<subdominio>.workers.dev
+  "workers_dev": true,
+  "assets": {
+    // La app vive en la raíz del repositorio. Lo que no se publica está listado en .assetsignore.
+    "directory": "./"
+  },
+  // Vistas previas por rama (Worker Previews). Queda vacío porque la app no usa variables, secretos ni bindings.
+  "previews": {}
+}

@@ -1,6 +1,6 @@
 # LIA · instrucciones para Claude
 
-LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica con GitHub Pages desde `main`. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Responde y escribe en español.
+LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Responde y escribe en español.
 
 ## Skills: llámalos, no los omitas
 
@@ -13,7 +13,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 | Tocas pantallas, componentes, colores o tamaños | `design:accessibility-review` y `design:design-critique` |
 | Escribes o cambias texto que ve la persona (Lía, errores, estados vacíos) | `design:ux-copy`, en español peruano |
 | Vas a hacer un commit | `anthropic-skills:conventional-commit` |
-| Vas a publicar cambios en GitHub Pages | `engineering:deploy-checklist` |
+| Vas a integrar a `main` (se publica en Cloudflare) o cambias `wrangler.jsonc`, `.assetsignore` o `_headers` | `engineering:deploy-checklist` |
 | Vas a construir una función nueva (cuenta, notificaciones, sílabos, Google Calendar) | `product-management:write-spec`, antes de programar |
 | Decides cuentas, sincronización, hosting o dónde vive una clave | `engineering:architecture` o `engineering:system-design` |
 | La app empieza a usar la API de Claude | `product-self-knowledge` |
@@ -36,15 +36,19 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Si cambia el esquema de datos (`v:1`), escribe una migración: hoy cualquier otra versión descarta lo guardado.
 - Cada corrección de `plan()`, `planCongelado()` o `interpret()` lleva su prueba en `pruebas/` (`node --test`).
 - Si agregas un archivo que la app necesita sin internet, súmalo a `SHELL` en `sw.js` y sube `VERSION`.
-- GitHub Pages sirve para el prototipo. No se usa para cobrar: antes de eso hay que mudar el hosting.
+- Cloudflare publica la raíz del repositorio. Si agregas un archivo que no es de la app (documentos, scripts, pruebas), súmalo a `.assetsignore`.
+- En `sw.js`, la app se guarda y se pide por `./`, nunca por `./index.html`: en Cloudflare, `/index.html` redirige a la raíz y la copia redirigida no abre sin internet.
+- La política de contenido (CSP) está en `_headers`. Si la app usa un servicio nuevo (por ejemplo, Culqi), agrégalo ahí y pruébalo con `npx wrangler dev`, mirando la consola del navegador.
+- El `name` de `wrangler.jsonc` debe seguir siendo `lia-prototipo`, igual que el Worker en Cloudflare.
+- El plan gratuito de Cloudflare no permite recibir datos de tarjeta en la página: el cobro real usa la página de pago de Culqi.
 
 ## Flujo de trabajo: trunk-based development (desde el 25 de octubre de 2026)
 
-- `main` es el tronco y siempre debe poder publicarse, porque GitHub Pages despliega todo lo que llega a `main`.
+- `main` es el tronco y siempre debe poder publicarse, porque Cloudflare despliega todo lo que llega a `main`.
 - Cada cambio va en una rama corta que sale de `main` (`feat/…`, `fix/…`, `chore/…`), dura uno o dos días y vuelve pronto a `main`.
 - Commits pequeños. Integra a `main` seguido en vez de acumular cambios.
 - Lo que aún no debe ver el público entra a `main` apagado detrás de una bandera, no en una rama larga.
-- Antes de integrar a `main`, corre las pruebas: `node --test` para la lógica y una revisión en el navegador.
+- Antes de integrar a `main`, corre las pruebas: `node --test` para la lógica y una revisión en la vista previa que Cloudflare comenta en el pull request.
 - En esta carpeta, usa `git -c core.autocrlf=true`: la copia se clonó en Windows y sus archivos tienen fin de línea CRLF.
 
 ## Supabase
