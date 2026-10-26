@@ -29,6 +29,16 @@ python3 -m http.server 8000
 
 Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con doble clic, la app también funciona, pero no se puede instalar ni usar sin internet.
 
+### Pruebas automáticas
+
+Con Node.js 18 o más nuevo, ejecuta en esta carpeta:
+
+```
+node --test
+```
+
+Prueban el motor de horarios y la lectura de frases (carpeta `pruebas/`) sin abrir el navegador. Córrelas antes de integrar un cambio a `main`.
+
 ## Cuentas con Supabase
 
 Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis.
@@ -46,6 +56,7 @@ Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al pr
 | `vendor/` | Cliente de Supabase (2.118.0, licencia MIT). Solo se descarga cuando alguien usa su cuenta. |
 | `supabase/` | Configuración de la CLI de Supabase y migraciones de la base de datos. |
 | `docs/` | Especificación y diseño de cuentas y planes. |
+| `pruebas/` | Pruebas del motor de horarios y de la lectura de frases (`node --test`). |
 | `.nojekyll` | Le indica a GitHub Pages que publique los archivos tal cual. |
 | `.gitattributes` | Guarda los archivos de `vendor/` sin cambiar sus fines de línea. |
 

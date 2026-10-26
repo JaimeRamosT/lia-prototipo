@@ -34,6 +34,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Commits convencionales. No hagas commit ni push sin que te lo pidan.
 - Terminadores de línea LF.
 - Si cambia el esquema de datos (`v:1`), escribe una migración: hoy cualquier otra versión descarta lo guardado.
+- Cada corrección de `plan()` o de `interpret()` lleva su prueba en `pruebas/` (`node --test`).
 - Si agregas un archivo que la app necesita sin internet, súmalo a `SHELL` en `sw.js` y sube `VERSION`.
 - GitHub Pages sirve para el prototipo. No se usa para cobrar: antes de eso hay que mudar el hosting.
 
@@ -43,7 +44,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Cada cambio va en una rama corta que sale de `main` (`feat/…`, `fix/…`, `chore/…`), dura uno o dos días y vuelve pronto a `main`.
 - Commits pequeños. Integra a `main` seguido en vez de acumular cambios.
 - Lo que aún no debe ver el público entra a `main` apagado detrás de una bandera, no en una rama larga.
-- Antes de integrar a `main`, corre las pruebas.
+- Antes de integrar a `main`, corre las pruebas: `node --test` para la lógica y una revisión en el navegador.
 - En esta carpeta, usa `git -c core.autocrlf=true`: la copia se clonó en Windows y sus archivos tienen fin de línea CRLF.
 
 ## Supabase
