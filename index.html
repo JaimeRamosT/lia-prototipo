@@ -259,11 +259,12 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 </head>
 <body>
 <div class="app" id="app">
-  <main id="view" aria-live="polite"></main>
+  <main id="view"></main>
   <nav class="tabs" id="tabs" aria-label="Secciones"></nav>
 </div>
 <div id="layer"></div>
-<div id="toastbox"></div>
+<div id="toastbox" role="status" aria-live="polite"></div>
+<div id="anuncio" class="sr-only" aria-live="polite"></div>
 
 <script src="config.js"></script>
 <script>
@@ -1063,7 +1064,21 @@ function vListen(){return `<div class="full"><div class="in"><div class="top"><b
 
 // ---------- Render ----------
 const TABS=[['hoy','Hoy','sun'],['semana','Semana','cal'],['lia','Lía',null],['evals','Evaluaciones','list'],['perfil','Perfil','user']];
-function render(){ensureState();dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}}
+// Accesibilidad: al volver a dibujar, el foco vuelve al mismo control (o a su equivalente) en vez de perderse,
+// y al cerrar una hoja vuelve al botón que la abrió.
+function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
+  if(el.id)return '#'+CSS.escape(el.id);
+  const d=el.dataset;if(!d.a)return null;
+  return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
+let abridor=null;
+function render(){ensureState();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+  dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
+  const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
+  // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
+  const destino=hay?(enCapa&&!L.querySelector('[data-foco]')?clave:null):(habia?abridor:clave);if(!hay&&habia)abridor=null;
+  let el=destino&&(hay?L:app).querySelector(destino);
+  if(!el&&habia&&!hay){el=app.querySelector('main h1');if(el)el.setAttribute('tabindex','-1');}  // lo que abrió la hoja ya no está
+  if(el&&el!==document.activeElement)el.focus({preventScroll:true});}
 function dibujar(){const v=document.getElementById('view'),tabs=document.getElementById('tabs');
   const inOb=ui.welcome||!state.onboarded;
   tabs.hidden=inOb;
@@ -1088,7 +1103,7 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
   if(ui.sheet&&!document.querySelector('.sheet .spin')){e.preventDefault();A.close();}});
 function rerenderKeepScroll(){const v=document.getElementById('view');const y=v.scrollTop;render();v.scrollTop=y;}
 let toastT;
-function toast(msg,withUndo){const b=document.getElementById('toastbox');b.innerHTML=`<div class="toast" role="status"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>{b.innerHTML='';},withUndo?6000:3200);}
+function toast(msg,withUndo){const b=document.getElementById('toastbox');b.innerHTML=`<div class="toast"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>{b.innerHTML='';},withUndo?6000:3200);}
 
 // ---------- Acciones ----------
 function blockOf(ds){return{ev:ds.ev,d:ds.d,s:+ds.s,e:+ds.e};}
@@ -1099,7 +1114,9 @@ function moveBlock(b){const before=P().blocks.filter(x=>x.evalId===b.ev).map(x=>
   ui.sheet=null;rerenderKeepScroll();toast(msg,true);return msg;}
 function applyItems(items){snapshot();for(const it of items){if(it.kind==='eval')state.evals.push({id:uid(),type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});
   else state.commitments.push({id:uid(),name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}save();}
-function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();}
+function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();anunciar(`Lía: ${text}`);}
+// Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
+function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
 function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interpret(q,state,n);
   if(from==='chat')state.chat.push({from:'me',text:q});
   const kindOnly=from==='commit'?'commit':from==='eval'?'eval':null;
