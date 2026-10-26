@@ -715,7 +715,7 @@ function sheetEval(id){const t=ymd(addDays(now(),3));const e=state.evals.find(x=
   <div class="two"><label class="f">Tipo<select id="e-type" name="type" data-a-change="etype">${Object.entries(EVAL_TYPES).map(([k,v])=>`<option value="${k}" ${e.type===k?'selected':''}>${v.label}</option>`).join('')}</select></label>
   <label class="f">Horas de estudio<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" value="${e.hours}"></label></div>
   <label class="f">Curso<input id="e-course" name="course" required value="${esc(e.course)}" placeholder="Cálculo II"></label>
-  <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
+  <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"${e.id?'':` min="${ymd(now())}"`}></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
   <button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
 function sheetBlock(d){const e=evById(d.ev);return `<div class="grab"></div><span class="eyebrow">Bloque de estudio</span><h2>${esc(e?e.course:'')} · ${fmt(+d.s)} – ${fmt(+d.e)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))} · para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</p>
   <button class="btn pri" data-a="start" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Empezar ahora${isPro()?'':PRO_TAG}</button>
@@ -801,7 +801,9 @@ function freeBanner(){if(isPro()||!state.frozen)return '';
 function freeWeekLine(){if(isPro()||!state.frozen)return '';const ok=canArm();
   return `<div class="between small"><span class="muted">Plan Gratis · armado el ${fechaCorta(state.frozen.at)}${planStale()?' · desactualizado':''}</span><button class="linkbtn" data-a="arm">${ok?'Rearmar ahora':'Rearmar <span class="pro" aria-hidden="true">PRO</span><span class="sr-only"> (LIA Pro)</span>'}</button></div>`;}
 function resumeAfterPay(p){if(!p)return;const c=p.ctx||{};
-  if(p.why==='evals'&&c.items){applyItems(c.items);rerenderKeepScroll();toast(`Lía agregó: ${c.items.map(i=>i.kind==='eval'?i.course:i.name).join(', ')}.`,true);}
+  if(p.why==='evals'&&c.items){const r=c.replace&&evById(c.replace);
+    if(r){snapshot();const it=c.items[0];Object.assign(r,{type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});save();rerenderKeepScroll();toast('Guardé el cambio de tu evaluación.',true);}
+    else{applyItems(c.items);rerenderKeepScroll();toast(`Lía agregó: ${c.items.map(i=>i.kind==='eval'?i.course:i.name).join(', ')}.`,true);}}
   else if(p.why==='evals')A['add-eval']();
   else if(p.why==='voice'&&c.target)startMic(c.target);
   else if(p.why==='session'&&c.ev)A.start(c);
@@ -1013,9 +1015,11 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     const cur=f.dataset.id&&state.commitments.find(c=>c.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.commitments.push({id:uid(),...o});
     save();ui.sheet=null;rerenderKeepScroll();toast(P().frozen?'Guardado. Tu horario Gratis se actualiza cuando rearmes tu semana.':'Guardado. Lía reorganizó tu semana.',true);return;}
   if(f.dataset.form==='eval'){const o={type:fd.get('type'),course:String(fd.get('course')).trim(),date:fd.get('date'),time:fd.get('time'),hours:Math.max(.5,+fd.get('hours')||1)};
-    if(!f.dataset.id&&o.date>=ymd(now())&&evalRoom()<1){ui.sheet=null;openPaywall('evals',{items:[{kind:'eval',...o}]});return;}
+    // Para el límite de Gratis cuenta toda evaluación que pasa a ser próxima: una nueva o una pasada a la que se le cambia la fecha.
+    const cur=f.dataset.id&&state.evals.find(e=>e.id===f.dataset.id),hoy=ymd(now());
+    if(o.date>=hoy&&(!cur||cur.date<hoy)&&evalRoom()<1){ui.sheet=null;openPaywall('evals',{items:[{kind:'eval',...o}],replace:cur?cur.id:null});return;}
     snapshot();
-    const cur=f.dataset.id&&state.evals.find(e=>e.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.evals.push({id:uid(),...o});
+    if(cur)Object.assign(cur,o);else state.evals.push({id:uid(),...o});
     save();ui.sheet=null;const p=P();const e=state.evals.find(x=>x.course===o.course&&x.date===o.date);rerenderKeepScroll();
     toast(p.frozen?'Guardado. Entra a tu horario cuando rearmes tu semana.':e&&p.unmet[e.id]>0?`Guardado, pero faltan ${hrs(p.unmet[e.id])} sin hueco libre.`:'Guardado. Lía repartió tus horas de estudio.',true);}});
 document.addEventListener('change',ev=>{const el=ev.target;
