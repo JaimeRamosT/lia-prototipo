@@ -1,6 +1,6 @@
 # Cuentas y plan Pro con Supabase (fase 1)
 
-**Estado:** propuesta en la rama `feat/cuentas-supabase` · **Fecha:** 25 de octubre de 2026 · **Versión de la app:** 0.3.0
+**Estado:** propuesta en la rama `feat/cuentas-supabase`, con la base de datos ya aplicada en el proyecto del equipo · **Fecha:** 25 de octubre de 2026 · **Versión de la app:** 0.3.0
 
 ## En una frase
 
@@ -75,7 +75,7 @@ Supabase
   RLS: cada cuenta solo LEE lo suyo; sin permisos de escritura para la app
 ```
 
-**Datos** (`supabase/migrations/20261026003000_cuentas_y_suscripciones.sql`):
+**Datos** (`supabase/migrations/20261026005847_cuentas_y_suscripciones.sql`):
 
 | Tabla | Para qué |
 |---|---|
@@ -104,9 +104,9 @@ Supabase
 
 ## Puesta en marcha
 
-1. **Crear las tablas.** Elige una vía; la migración se puede aplicar dos veces sin error:
+1. **Crear las tablas.** En el proyecto del equipo ya están: la migración quedó registrada como `20261026005847` el 25 de octubre de 2026. Para otro proyecto, elige una vía; la migración se puede aplicar dos veces sin error:
    - **Integración con GitHub:** en Supabase → Project Settings → Integrations → GitHub, con *Working directory* `.` y *Deploy to production* activado, la migración se aplica sola al integrar esta rama en `main`.
-   - **A mano:** copia el contenido de `supabase/migrations/20261026003000_cuentas_y_suscripciones.sql` en Supabase → SQL Editor y ejecútalo.
+   - **A mano:** copia el contenido de `supabase/migrations/20261026005847_cuentas_y_suscripciones.sql` en Supabase → SQL Editor y ejecútalo.
 2. **Conectar la app.** En `config.js`, pega la *Project URL* y la clave *publishable* (o la *anon* heredada) de Supabase → Project Settings → API Keys.
 3. **Ajustar Auth** en Supabase → Authentication:
    - *URL Configuration*: *Site URL* con tu dirección de GitHub Pages y, en *Redirect URLs*, `http://localhost:8000/` y `https://jaimeramost.github.io/lia-prototipo/`.
