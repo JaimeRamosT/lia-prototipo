@@ -116,6 +116,34 @@ test('«no tengo clases el domingo» avisa que ese día no hay clases', () => {
   assert.match(r.texto, /no tienes clases/i);
 });
 
+// Evaluaciones y entregas
+const EVALS = [
+  ['trabajo final de marketing para el viernes', 'entrega', 'Trabajo final de Marketing', '2026-10-30'],
+  ['informe de laboratorio el jueves', 'entrega', 'Informe de Laboratorio', '2026-10-29'],
+  ['proyecto de software el 20/11', 'entrega', 'Proyecto de Software', '2026-11-20'],
+  ['monografía de historia para el 5 de noviembre', 'entrega', 'Monografía de Historia', '2026-11-05'],
+  ['tarea de algoritmos para el domingo', 'entrega', 'Tarea de Algoritmos', '2026-11-01'],
+  ['entrego el informe de Marketing el viernes', 'entrega', 'Informe de Marketing', '2026-10-30'],
+  ['tengo examen de estadística el lunes', 'examen', 'Estadística', '2026-11-02'],
+  ['parcial de Cálculo el jueves a las 9', 'parcial', 'Cálculo', '2026-10-29'],
+];
+for (const [frase, tipo, curso, fecha] of EVALS) {
+  test(`evaluación: «${frase}» → ${tipo} «${curso}»`, () => {
+    const r = L.interpret(frase, estado(), ahora());
+    assert.equal(r.intent, 'add');
+    const it = r.items[0];
+    assert.deepEqual([it.kind, it.type, it.course, it.date, it.error], ['eval', tipo, curso, fecha, undefined]);
+  });
+}
+test('dos evaluaciones en una frase comparten la fecha', () => {
+  const r = L.interpret('parcial de Contabilidad I y final de Economía el viernes', estado(), ahora());
+  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Contabilidad I', '2026-10-30'], ['final', 'Economía', '2026-10-30']]);
+});
+test('parcial y entrega en la misma frase', () => {
+  const r = L.interpret('tengo parcial de cálculo el jueves 9am y entrego el informe el viernes', estado(), ahora());
+  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Cálculo', '2026-10-29'], ['entrega', 'Informe', '2026-10-30']]);
+});
+
 // Compromisos de un solo día
 for (const [frase, fecha, ini, fin, nombre] of [
   ['el sábado tengo un cumpleaños de 4 a 9', '2026-10-31', '16:00', '21:00', 'Cumpleaños'],

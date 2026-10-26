@@ -259,7 +259,7 @@ const dayDiff=(a,b)=>Math.round((fromYmd(b)-fromYmd(a))/864e5);
 const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 const DIAS_C=['D','L','M','M','J','V','S'];
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-const EVAL_TYPES={parcial:{label:'Parcial',h:5,exam:true},final:{label:'Final',h:6,exam:true},practica:{label:'Práctica',h:3,exam:true},control:{label:'Control',h:2,exam:true},entrega:{label:'Entrega',h:4,exam:false},exposicion:{label:'Exposición',h:3,exam:false}};
+const EVAL_TYPES={parcial:{label:'Parcial',h:5,exam:true},examen:{label:'Examen',h:5,exam:true},final:{label:'Final',h:6,exam:true},practica:{label:'Práctica',h:3,exam:true},control:{label:'Control',h:2,exam:true},entrega:{label:'Entrega',h:4,exam:false},exposicion:{label:'Exposición',h:3,exam:false}};
 const COMMIT_TYPES={clase:'Clases',trabajo:'Trabajo',traslado:'Traslado',otro:'Otro'};
 const uid=()=>Math.random().toString(36).slice(2,9);
 const hrs=m=>{m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h&&r?`${h} h ${r} min`:h?`${h} h`:`${r} min`;};
@@ -348,7 +348,7 @@ function agendaFor(state,P,date){
 // ---------- Lectura de frases (sin IA) ----------
 const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const DAYW={domingo:0,domingos:0,lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,sabados:6};
-const EVAL_KW={parcial:'parcial',parciales:'parcial',examen:'parcial',examenes:'parcial',final:'final',finales:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',control:'control',quiz:'control',lab:'control',laboratorio:'control',entrega:'entrega',entrego:'entrega',entregar:'entrega',entregable:'entrega',exposicion:'exposicion',expongo:'exposicion',sustentacion:'exposicion',sustento:'exposicion'};
+const EVAL_KW={parcial:'parcial',parciales:'parcial',examen:'examen',examenes:'examen',tarea:'entrega',tareas:'entrega',proyecto:'entrega',monografia:'entrega',informe:'entrega',ensayo:'entrega',final:'final',finales:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',control:'control',quiz:'control',lab:'control',laboratorio:'control',entrega:'entrega',entrego:'entrega',entregar:'entrega',entregable:'entrega',exposicion:'exposicion',expongo:'exposicion',sustentacion:'exposicion',sustento:'exposicion'};
 const COMMIT_KW={trabajo:'trabajo',trabajar:'trabajo',trabajando:'trabajo',chamba:'trabajo',chambeo:'trabajo',turno:'trabajo',clase:'clase',clases:'clase',traslado:'traslado',viaje:'traslado',gimnasio:'otro',gym:'otro',ingles:'otro',voluntariado:'otro',almuerzo:'otro',futbol:'otro',iglesia:'otro',academia:'otro'};
 const NUMW={una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12};
 const MESN={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
@@ -424,10 +424,10 @@ function parseDays(ns){
 const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera']);
 const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:']);
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
-function extractCourse(toks,i){let j=i+1;while(j<toks.length&&SKIPW.has(toks[j].n))j++;const out=[];
+function extractCourse(toks,i,conTipos){let j=i+1;while(j<toks.length&&SKIPW.has(toks[j].n))j++;const out=[];
   for(;j<toks.length&&out.length<4;j++){const t=toks[j];
     if(t.n==='de'&&out.length&&j+1<toks.length&&!STOPW.has(toks[j+1].n)&&toks[j+1].n!=='de'&&DAYW[toks[j+1].n]===undefined&&!/^\d/.test(toks[j+1].n)&&!MESN[toks[j+1].n]){out.push(t.o);continue;}
-    if(STOPW.has(t.n)||t.n==='de'||DAYW[t.n]!==undefined||(EVAL_KW[t.n]&&!out.length)||MESN[t.n])break;
+    if(STOPW.has(t.n)||t.n==='de'||DAYW[t.n]!==undefined||(EVAL_KW[t.n]&&!out.length&&!conTipos)||MESN[t.n])break;
     if(/^\d/.test(t.n)){if(out.length&&/^\d$/.test(t.n)&&!(toks[j+1]&&/^(de|\/|am|pm|h|horas)$/.test(toks[j+1].n))){out.push(t.o);continue;}break;}
     if(/^(i|ii|iii|iv|v)$/.test(t.n)&&out.length){out.push(t.o.toUpperCase());continue;}
     out.push(t.o);}
@@ -438,21 +438,32 @@ function splitClauses(toks){const parts=[];let cur=[];
     if(t.n==='y'||t.n===','){const lns=cur.map(x=>x.n).join(' ');const rns=toks.slice(i+1).map(x=>x.n).join(' ');
       const leftOk=hasTime(lns)||(cur.some(x=>EVAL_KW[x.n])&&parseDate(lns,new Date())!==null);
       const rightOk=/\d/.test(rns)||Object.keys(DAYW).some(w=>new RegExp(`\\b${w}\\b`).test(rns))||cur.length&&toks.slice(i+1).some(x=>EVAL_KW[x.n]||COMMIT_KW[x.n])||/\b(hoy|manana|tarde|noche)\b/.test(rns);
-      if(cur.length&&leftOk&&rightOk){parts.push(cur);cur=[];continue;}
+      const esEval=x=>EVAL_KW[x.n]||ENTREGA_N.has(x.n)&&x.n!=='trabajo';
+      const dosEvals=cur.some(esEval)&&toks.slice(i+1,i+4).some(esEval);
+      if(cur.length&&(leftOk&&rightOk||dosEvals)){parts.push(cur);cur=[];continue;}
       if(!cur.length)continue;}
     cur.push(t);}
   if(cur.length)parts.push(cur);return parts;}
+// Entregas con nombre propio: "informe de laboratorio", "trabajo final de marketing", "tarea de algoritmos".
+const ENTREGA_N=new Set(['tarea','tareas','proyecto','monografia','informe','ensayo','trabajo']);
+const TRABAJO_ENTREGA=/^(final|grupal|escrito|monografico|aplicativo)$/;
+function evalDe(ns,now,type,course){const date=parseDate(ns,now);const tm=parseTimes(ns);
+  const time=tm.at!=null?fmt(tm.at):tm.range?fmt(tm.range[0]):(type==='entrega'?'23:59':'09:00');
+  const hm=ns.match(/\b(\d{1,2})\s*(?:h|hrs|horas)\b/);const hours=hm?Math.min(+hm[1],40):EVAL_TYPES[type].h;
+  if(!date)return{kind:'eval',type,course,time,hours,sinFecha:true,error:type==='entrega'?`¿Para qué día es ${course}? Por ejemplo: “para el viernes”.`:`¿Qué día es tu ${EVAL_TYPES[type].label.toLowerCase()} de ${course}? Por ejemplo: “el jueves a las 9”.`};
+  return{kind:'eval',type,course,date,time,hours};}
 function parseClause(toks,now,prev,S){
   const ns=toks.map(t=>t.n).join(' ');
   const iE=toks.findIndex(t=>EVAL_KW[t.n]);
   const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
-  if(iE>=0){let k=iE;while(k+1<toks.length&&EVAL_KW[toks[k+1].n])k++;const type=EVAL_KW[toks[k].n];const course=extractCourse(toks,k)||(type==='entrega'?'Trabajo':'Curso');
-    const date=parseDate(ns,now);const tm=parseTimes(ns);
-    let time=tm.at!=null?fmt(tm.at):tm.range?fmt(tm.range[0]):(type==='entrega'?'23:59':'09:00');
-    const hm=ns.match(/\b(\d{1,2})\s*(?:h|hrs|horas)\b/);
-    const hours=hm?Math.min(+hm[1],40):EVAL_TYPES[type].h;
-    if(!date)return{kind:'eval',error:`¿Qué día es tu ${EVAL_TYPES[type].label.toLowerCase()} de ${course}? Por ejemplo: “el jueves a las 9”.`};
-    return{kind:'eval',type,course,date,time,hours};}
+  const iN=toks.findIndex((t,j)=>ENTREGA_N.has(t.n)&&(t.n!=='trabajo'||TRABAJO_ENTREGA.test((toks[j+1]||{}).n||'')||toks.slice(Math.max(0,j-3),j).some(x=>EVAL_KW[x.n]==='entrega')));
+  if(iN>=0&&!toks.slice(0,iN).some(x=>EVAL_KW[x.n]&&EVAL_KW[x.n]!=='entrega')){
+    const doble=toks[iN].n==='trabajo'&&TRABAJO_ENTREGA.test((toks[iN+1]||{}).n||'');
+    const resto=extractCourse(toks,doble?iN+1:iN,true);
+    const nombre=cap(toks[iN].o.toLowerCase()+(doble?' '+toks[iN+1].o.toLowerCase():''))+(resto?' de '+resto:'');
+    return evalDe(ns,now,'entrega',nombre);}
+  if(iE>=0){let k=iE;while(k+1<toks.length&&EVAL_KW[toks[k+1].n])k++;const type=EVAL_KW[toks[k].n];
+    return evalDe(ns,now,type,extractCourse(toks,k)||(type==='entrega'?'Trabajo':'Curso'));}
   if(iC>=0||(prev&&prev.kind==='commit'&&!prev.error)){
     const type=iC>=0?COMMIT_KW[toks[iC].n]:prev.type;
     const name=iC>=0?(type==='otro'?cap(toks[iC].o):COMMIT_TYPES[type]):prev.name;
@@ -510,6 +521,9 @@ function interpret(text,state,now){
     const ex={date,start:fmt(s),end:fmt(e),label};return{intent:'except',exs:[ex],ex};}  // si e pasa de 1440, termina al día siguiente
   const clauses=splitClauses(toks);let prev=null;const items=[];
   for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
+  // Varias evaluaciones en una frase comparten la fecha si solo una la dice.
+  const conFecha=items.find(i=>i.kind==='eval'&&i.date);
+  if(conFecha)items.forEach((i,k)=>{if(i.kind==='eval'&&i.sinFecha){const{error,sinFecha,...r}=i;items[k]={...r,date:conFecha.date};}});
   if(items.length)return{intent:'add',items};
   if(/\b(reorganiza|reprograma|arma|planifica|ordena)\b/.test(ns))return{intent:'replan'};
   return{intent:'help'};}
@@ -635,7 +649,7 @@ function P(){return isPro()||!state.onboarded||!state.frozen?plan(state,now()):f
 function evById(id){return state.evals.find(e=>e.id===id);}
 function enDias(date){const n=dayDiff(ymd(now()),date);return n<0?'Pasó':n===0?'Hoy':n===1?'Mañana':`En ${n} días`;}
 function tagColor(date){const n=dayDiff(ymd(now()),date);return n<=1?'var(--exam-ink)':n<=3?'var(--trabajo-ink)':'var(--pri)';}
-function swColor(type){return type==='entrega'||type==='exposicion'?'k-trabajo':type==='parcial'||type==='final'?'k-examen':'k-estudio';}
+function swColor(type){return type==='entrega'||type==='exposicion'?'k-trabajo':type==='parcial'||type==='final'||type==='examen'?'k-examen':'k-estudio';}
 function rowHTML(x,date){const isToday=date===ymd(now());const nm=now().getHours()*60+now().getMinutes();const past=isToday&&x.e<=nm;
   const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'||x.kind==='libre'?`data-a="del-ex" data-id="${x.ref}"`:(['clase','trabajo','traslado','otro'].includes(x.kind)?`data-a="commit-dia" data-id="${x.ref}" data-d="${x.cola?ymd(addDays(fromYmd(date),-1)):date}"`:'');
   const sub=x.kind==='excepcion'?'Toca para quitar':x.kind==='libre'?'Toca para deshacer':x.sub||'';
