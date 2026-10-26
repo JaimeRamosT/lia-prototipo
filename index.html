@@ -175,7 +175,7 @@ h2{font-size:17px;margin:0;font-weight:600}
 .inbar .mic{width:48px;height:48px}
 .inbar .mic svg{width:22px;height:22px}
 /* forms */
-label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
+label.f,div.f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--mute)}
 label.f input,label.f select{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:12px 14px;font-weight:400;color:var(--ink);font-size:16px;width:100%;min-width:0}
 .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 @media (max-width:340px){.two:has(input[type=time]){grid-template-columns:minmax(0,1fr)}}
@@ -930,7 +930,7 @@ function sheetCommit(id,pre){const c=state.commitments.find(x=>x.id===id)||{id:'
   return `<form class="stack" data-form="commit" data-id="${c.id}" style="gap:14px"><div class="grab"></div><h2>${c.id?'Editar compromiso':'Nuevo compromiso'}</h2>
   <label class="f">Nombre<input id="c-name" name="name" required value="${esc(c.name)}" placeholder="Trabajo, Clases, Gimnasio…"></label>
   <label class="f">Tipo<select id="c-type" name="type">${Object.entries(COMMIT_TYPES).map(([k,v])=>`<option value="${k}" ${c.type===k?'selected':''}>${v}</option>`).join('')}</select></label>
-  <div class="f">Días<div class="dpick">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="d" value="${d}" ${c.days.includes(d)?'checked':''}><span>${DIAS_C[d]}</span></label>`).join('')}</div></div>
+  <div class="f" role="group" aria-labelledby="c-dias"><span id="c-dias">Días</span><div class="dpick">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" name="d" value="${d}" aria-label="${cap(DIAS[d])}" ${c.days.includes(d)?'checked':''}><span aria-hidden="true">${DIAS_C[d]}</span></label>`).join('')}</div></div>
   <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}" aria-describedby="c-noche"></label></div>
   <p class="small muted" id="c-noche" style="margin:-6px 0 0"${toMin(c.end)<toMin(c.start)?'':' hidden'}>Termina al día siguiente.</p>
   <button class="btn pri" type="submit">Guardar</button>${c.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${c.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
