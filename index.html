@@ -119,6 +119,8 @@ h2{font-size:17px;margin:0;font-weight:600}
 .k-clase{background:var(--clase);color:var(--clase-ink)}
 .k-trabajo{background:var(--trabajo);color:var(--trabajo-ink)}
 .k-traslado,.k-otro{background:var(--otro);color:var(--otro-ink)}
+/* Lo que se liberó solo ese día */
+.k-libre{background:transparent;color:var(--ok-ink);border:1.5px dashed var(--ok)}
 .k-excepcion{background:repeating-linear-gradient(135deg,var(--clase) 0 8px,var(--surface) 8px 16px);color:var(--clase-ink);border:1px solid var(--line)}
 .k-estudio{background:var(--pri);color:var(--pri-ink)}
 .k-hecho{background:var(--ok-soft);color:var(--ok)}
@@ -271,10 +273,14 @@ const MARGEN_DESPERTAR=30;  // nadie estudia apenas abre los ojos
 function finDelDia(S){const w=toMin(S.wake);let s=toMin(S.sleep);if(s<=w)s+=1440;return s;}
 function intervalo(start,end){const s=toMin(start);let e=toMin(end);if(e<s)e+=1440;return{s,e};}
 function busyFor(state,date){const wd=fromYmd(date).getDay(),ayer=(wd+6)%7,prev=ymd(addDays(fromYmd(date),-1));const b=[];
+  // Lo liberado solo ese día ("hoy no tengo clases", "salgo temprano") se descuenta de ese compromiso.
+  const libres=(c,d,desfase)=>state.exceptions.filter(x=>x.libre&&x.ref===c.id&&x.date===d).map(x=>{const r=intervalo(x.start,x.end);return[r.s+desfase,r.e+desfase];});
+  const poner=(c,s,e,extra,quitar)=>{let partes=[{s,e}];for(const [ls,le] of quitar)partes=subtract(partes,ls,le);
+    for(const q of partes)if(q.e>q.s)b.push({s:q.s,e:q.e,kind:c.type,label:c.name,ref:c.id,...extra});};
   for(const c of state.commitments){const r=intervalo(c.start,c.end);
-    if(c.days.includes(wd))b.push({s:r.s,e:r.e,kind:c.type,label:c.name,ref:c.id});
-    if(r.e>1440&&c.days.includes(ayer))b.push({s:0,e:r.e-1440,kind:c.type,label:c.name,ref:c.id,cola:true});}  // sigue desde anoche
-  for(const x of state.exceptions){const r=intervalo(x.start,x.end);
+    if(c.days.includes(wd))poner(c,r.s,r.e,{},libres(c,date,0));
+    if(r.e>1440&&c.days.includes(ayer))poner(c,0,r.e-1440,{cola:true},libres(c,prev,-1440));}  // sigue desde anoche
+  for(const x of state.exceptions){if(x.libre)continue;const r=intervalo(x.start,x.end);
     if(x.date===date)b.push({s:r.s,e:r.e,kind:'excepcion',label:x.label,ref:x.id});
     else if(x.date===prev&&r.e>1440)b.push({s:0,e:r.e-1440,kind:'excepcion',label:x.label,ref:x.id,cola:true});}
   return b;}
@@ -332,6 +338,7 @@ function plan(state,now){
 function agendaFor(state,P,date){
   const it=[];const ev=id=>state.evals.find(e=>e.id===id);
   for(const b of busyFor(state,date))it.push(b.cola?{...b,sub:'Sigue desde anoche'}:{...b});
+  for(const x of state.exceptions)if(x.libre&&x.date===date){const r=intervalo(x.start,x.end);it.push({s:r.s,e:r.e,kind:'libre',label:x.label,ref:x.id});}
   for(const e of state.evals)if(e.date===date)it.push({s:toMin(e.time),e:toMin(e.time)+120,kind:'examen',label:`${EVAL_TYPES[e.type].label} · ${e.course}`,ref:e.id});
   for(const x of state.done)if(x.date===date){const e=ev(x.evalId);it.push({s:toMin(x.start),e:toMin(x.start)+x.min,kind:'hecho',label:`Estudiaste ${e?e.course:''}`,ref:x.id});}
   for(const b of P.blocks)if(b.date===date){const e=ev(b.evalId);it.push({s:b.s,e:b.e,kind:'estudio',label:`Estudiar ${e?e.course:''}`,sub:e?`Para: ${EVAL_TYPES[e.type].label} ${fechaCorta(e.date)}`:'',ref:b.evalId,block:b});}
@@ -455,28 +462,52 @@ function parseClause(toks,now,prev,S){
     if(!range)return{kind:'commit',type,name,error:`¿A qué hora es ${name.toLowerCase()}? Por ejemplo: “de 3 a 7”.`};
     return{kind:'commit',type,name,days,start:fmt(range[0]),end:fmt(range[1])};}
   return null;}
-// Devuelve una intención: {intent:'add',items}, {intent:'except',...}, {intent:'ask',...}, {intent:'help'}
+// Compromisos de un solo día que no son clases ni trabajo.
+const EVENTO=/\b(cumpleanos|reunion|cita|fiesta|matrimonio|boda|evento|consulta|dentista|entrevista|partido|velorio|tramite|concierto)\b/;
+function nombreEvento(toks,w){const i=toks.findIndex(t=>t.n===w);if(i<0)return cap(w);const sig=toks[i+1];
+  return cap(toks[i].o.toLowerCase()+(sig&&/^(medica|medico|familiar)$/.test(sig.n)?' '+sig.o.toLowerCase():''));}
+// "No tengo clases", "cancelaron mi clase", "hoy no voy a trabajar": ese compromiso no va ese día.
+const NO_VA=/\b(cancelaron|cancelo|suspendieron|suspendio|no hay|no tengo|no tendre|no voy a (?:ir|tener|trabajar)|no voy al?|no ire|no trabajo|no entro)\b/;
+// Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'help'}…
 function interpret(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
   if(/\b(que tengo|que me toca|mi agenda|como esta mi)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
-  const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|cancelaron|no voy a poder|no podre)\b/;
   const hasEval=toks.some(t=>EVAL_KW[t.n]);
-  if(busyWords.test(ns)&&!hasEval){
+  // Un compromiso que ese día no va: "mañana no tengo clases", "cancelaron mi clase", "hoy no voy a trabajar".
+  const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
+  if(NO_VA.test(ns)&&!hasEval&&iC>=0){const date=parseDate(ns,now)||ymd(now),tipo=COMMIT_KW[toks[iC].n],palabra=toks[iC].n;
+    const cosa=tipo==='otro'?toks[iC].o.toLowerCase():COMMIT_TYPES[tipo].toLowerCase();
+    if(/\blos (lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b/.test(ns))return{intent:'aviso',texto:`Si ya no tienes ${cosa} esos días, cámbialo en tu horario fijo, en Perfil. Si es solo una vez, dime por ejemplo: “este viernes no tengo ${cosa}”.`};
+    const wd=fromYmd(date).getDay();
+    const cs=state.commitments.filter(c=>c.days.includes(wd)&&(tipo==='otro'?norm(c.name).includes(palabra):c.type===tipo));
+    if(!cs.length)return{intent:'aviso',texto:`${cap(fechaLarga(date))} no tienes ${cosa} en tu horario, así que no hay nada que liberar.`};
+    const exs=cs.map(c=>({date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}));return{intent:'except',exs,ex:exs[0]};}
+  const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|no voy a poder|no podre|no tengo tiempo)\b/;
+  const ev=!hasEval&&EVENTO.exec(ns);
+  if((busyWords.test(ns)||ev&&(parseDate(ns,now)||/\d/.test(ns)))&&!hasEval){
     const date=parseDate(ns,now)||ymd(now);const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=finDelDia(S);
-    const nowMin=date===ymd(now)?now.getHours()*60+now.getMinutes():wake;
-    let s,e,label='No disponible';
+    const nowMin=date===ymd(now)?now.getHours()*60+now.getMinutes():wake,wd=fromYmd(date).getDay();
+    let s,e,label=ev?nombreEvento(toks,ev[1]):'No disponible';
     if(tm.range){[s,e]=tm.range;}
-    else if(tm.until!=null||(tm.at!=null&&/\b(salgo|me quedo|hasta)\b/.test(ns))){e=tm.until!=null?tm.until:tm.at;if(e<=Math.max(nowMin,wake)&&e<720)e+=720;
-      const wd=fromYmd(date).getDay();const kind=/\bclase/.test(ns)?'clase':'trabajo';
-      const c=state.commitments.filter(c=>c.days.includes(wd)&&(c.type===kind||c.type==='trabajo')&&toMin(c.end)<e).sort((a,b)=>toMin(b.end)-toMin(a.end))[0];
-      s=c?toMin(c.end):Math.max(nowMin,wake);label=c?`${c.name} (más tarde)`:'Ocupado';}
+    else if(tm.until!=null||(tm.at!=null&&/\b(salgo|me quedo|hasta)\b/.test(ns))){
+      // "Salgo del trabajo a las 9": la hora se entiende según el horario de ese día (21:00, no 09:00).
+      const kind=/\bclase/.test(ns)?'clase':'trabajo',quedo=/\b(me quedo|quedarme|hasta)\b/.test(ns);
+      const c=state.commitments.filter(c=>c.days.includes(wd)&&c.type===kind).sort((a,b)=>intervalo(b.start,b.end).e-intervalo(a.start,a.end).e)[0];
+      const cands=(tm.crudo?horasPosibles(...tm.crudo):[tm.until!=null?tm.until:tm.at]).flatMap(x=>[x,x+1440]);
+      if(c){const r=intervalo(c.start,c.end);
+        const x=cands.filter(v=>v>r.e&&v<=r.e+720||!quedo&&v>r.s&&v<r.e).sort((a,b)=>Math.abs(a-r.e)-Math.abs(b-r.e))[0];
+        if(x==null)return{intent:'help'};
+        if(x<r.e){const ex={date,start:fmt(x),end:fmt(r.e),label:'Salida temprano',libre:true,ref:c.id};return{intent:'except',exs:[ex],ex};}
+        s=r.e;e=x;label=`${c.name} (más tarde)`;}
+      else{s=Math.max(nowMin,wake);e=cands.filter(v=>v>s).sort((a,b)=>a-b)[0];label='Ocupado';}}
     else if(tm.at!=null){s=tm.at;e=tm.at+60;}
-    else{s=wake;e=sleep;label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
+    else if(tm.part){[s,e]={manana:[wake,720],tarde:[720,1140],noche:[1140,sleep]}[tm.part];if(!ev)label=`Ocupado (${tm.part==='manana'?'mañana':tm.part})`;}
+    else{s=wake;e=sleep;if(!ev)label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
     if(!(e>s))return{intent:'help'};
-    return{intent:'except',ex:{date,start:fmt(s),end:fmt(e),label}};}  // si e pasa de 1440, termina al día siguiente
+    const ex={date,start:fmt(s),end:fmt(e),label};return{intent:'except',exs:[ex],ex};}  // si e pasa de 1440, termina al día siguiente
   const clauses=splitClauses(toks);let prev=null;const items=[];
   for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
   if(items.length)return{intent:'add',items};
@@ -606,8 +637,8 @@ function enDias(date){const n=dayDiff(ymd(now()),date);return n<0?'Pasó':n===0?
 function tagColor(date){const n=dayDiff(ymd(now()),date);return n<=1?'var(--exam-ink)':n<=3?'var(--trabajo-ink)':'var(--pri)';}
 function swColor(type){return type==='entrega'||type==='exposicion'?'k-trabajo':type==='parcial'||type==='final'?'k-examen':'k-estudio';}
 function rowHTML(x,date){const isToday=date===ymd(now());const nm=now().getHours()*60+now().getMinutes();const past=isToday&&x.e<=nm;
-  const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'?`data-a="del-ex" data-id="${x.ref}"`:(['clase','trabajo','traslado','otro'].includes(x.kind)?`data-a="edit-commit" data-id="${x.ref}"`:'');
-  const sub=x.kind==='excepcion'?'Toca para quitar':x.sub||'';
+  const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'||x.kind==='libre'?`data-a="del-ex" data-id="${x.ref}"`:(['clase','trabajo','traslado','otro'].includes(x.kind)?`data-a="commit-dia" data-id="${x.ref}" data-d="${x.cola?ymd(addDays(fromYmd(date),-1)):date}"`:'');
+  const sub=x.kind==='excepcion'?'Toca para quitar':x.kind==='libre'?'Toca para deshacer':x.sub||'';
   return `<button class="ag ${past?'past':''}" ${act}><span class="t tnum">${fmt(x.s)}</span><span class="blk k-${x.kind}"><b>${esc(x.label)}</b><small class="tnum">${fmt(x.s)} – ${fmt(x.e)}${sub?' · '+esc(sub):''}</small></span></button>`;}
 function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
   const sleep=`<div class="ag"><span class="t tnum">${state.settings.sleep}</span><span class="blk k-dormir"><b>A dormir</b><small>${state.evals.some(e=>e.date===ymd(addDays(fromYmd(date),1)))?'Mañana tienes evaluación: descansa':'Sin amanecidas'}</small></span></div>`;
@@ -724,7 +755,10 @@ function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class
   return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
   return `${it.name} — ${diasTxt(it.days)} · ${horario(it)}`;}
-function pendingHTML(){const it=ui.pending.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
+function pendingHTML(){const pe=ui.pending;
+  if(pe.exs)return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${pe.exs.map(x=>`<div class="blk ${x.libre?'k-libre':'k-excepcion'}"><b>${esc(x.label)}</b><small>${esc(`${cap(fechaCorta(x.date))} · ${horario(x)}`)}</small></div>`).join('')}
+   <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;
+  const it=pe.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
    <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;}
 
 function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter(e=>e.date>=ymd(now())&&!p.unmet[e.id]).length,up=state.evals.filter(e=>e.date>=ymd(now())).length;
@@ -857,12 +891,6 @@ function resumeAfterPay(p){if(!p)return;const c=p.ctx||{};
   else if(p.why==='session'&&c.ev)A.start(c);
   else if(p.why==='reorg'&&c.ev)A.move(c);
   else if(p.why==='reorg'||p.why==='rearm')toast('Listo. Lía reorganizó tu semana con tus cambios.');}
-function applyExceptionFree(ex){snapshot();state.exceptions.push({id:uid(),...ex});save();const p=P();
-  const hit=p.blocks.filter(b=>b.date===ex.date&&b.s<toMin(ex.end)&&b.e>toMin(ex.start));
-  let msg=`Anotado: ${ex.label.toLowerCase()} el ${fechaCorta(ex.date)} de ${ex.start} a ${ex.end}.`;
-  if(hit.length){const e=evById(hit[0].evalId);msg+=` Choca con tu bloque de ${e?e.course:'estudio'} a las ${fmt(hit[0].s)}. En Gratis no reorganizo sola: ${canArm()?'puedes rearmar tu semana ahora':`podrás rearmar tu semana desde el ${fechaCorta(nextArmDate())}`}. Con LIA Pro lo muevo al instante.`;liaSay(msg,{undo:true,cta:'reorg'});}
-  else{msg+=' No choca con tu estudio.';liaSay(msg,{undo:true});}
-  ui.pending=null;render();}
 
 // ---------- Sesión y escucha ----------
 function vSession(){const s=ui.session;const e=evById(s.ev);const left=Math.max(0,s.total-s.elapsed());const pct=1-left/s.total;const C=2*Math.PI*104;
@@ -945,10 +973,10 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     toast(`Lía agregó: ${ok.map(i=>i.kind==='eval'?i.course:i.name).join(', ')}${ex.length?(p.frozen?' · entra a tu horario cuando rearmes tu semana':` · ${hrs(p.blocks.filter(b=>ex.some(i=>evById(b.evalId)&&evById(b.evalId).course===i.course)).reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas`):''}`,true);
     const inp=document.getElementById('dict-'+from);rerenderKeepScroll();return;}
   if(from!=='chat'){toast(from==='commit'?'No te entendí. Prueba: “clases de lunes a viernes de 8 a 1”.':'No te entendí. Prueba: “parcial de Química el viernes a las 10”.');return;}
-  if(r.intent==='except'){const ex=r.ex;
-    if(!isPro()){applyExceptionFree(ex);return;}
-    if(state.settings.autonomy==='ask'){ui.pending={ex};render();return;}
-    applyException(ex);return;}
+  if(r.intent==='except'){const exs=r.exs;
+    if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();return;}
+    const m=aplicarCambio(exs);liaSay(m.texto,m.opts);ui.pending=null;render();return;}
+  if(r.intent==='aviso'){liaSay(r.texto);render();return;}
   if(r.intent==='agenda'){const p=P();const it=agendaFor(state,p,r.date);
     liaSay(it.length?`${cap(fechaLarga(r.date))}:\n${it.map(x=>`${fmt(x.s)}–${fmt(x.e)}  ${x.label}`).join('\n')}\nDuermes a las ${state.settings.sleep}.`:`${cap(fechaLarga(r.date))} lo tienes libre.`);render();return;}
   if(r.intent==='progress'){const p=P();const up=state.evals.filter(e=>e.date>=ymd(n));
@@ -961,14 +989,23 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     render();return;}
   if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
   liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “¿Qué tengo mañana?”');render();}
-function applyException(ex){const p0=P();snapshot();state.exceptions.push({id:uid(),...ex});save();const p1=P();
-  const moved=p1.blocks.filter(b=>b.date===ex.date&&!p0.blocks.some(x=>x.date===b.date&&x.s===b.s&&x.evalId===b.evalId));
-  const lost=p0.blocks.filter(b=>b.date===ex.date&&b.s<toMin(ex.end)&&b.e>toMin(ex.start));
-  let msg=`Anotado: ${ex.label.toLowerCase()} el ${fechaCorta(ex.date)} de ${ex.start} a ${ex.end}.`;
-  if(lost.length){const g={};for(const b of moved){const c=evById(b.evalId).course;(g[c]=g[c]||[]).push(fmt(b.s));}
-    msg+=moved.length?` Moví ${Object.entries(g).map(([c,ts])=>`${c} a las ${ts.join(' y ')}`).join('; ')}.`:` Reacomodé tus bloques en otros días.`;}
-  else msg+=' No chocaba con tu estudio.';
-  msg+=` Igual duermes a las ${state.settings.sleep}.`;liaSay(msg,{undo:true});ui.pending=null;render();}
+// Aplica cambios de un día (algo que ocupa o algo que se libera) y devuelve qué decirle a la persona.
+function aplicarCambio(exs){const p0=P();snapshot();for(const ex of exs)state.exceptions.push({id:uid(),...ex});save();
+  const p1=P(),ex=exs[0],r=intervalo(ex.start,ex.end),dia=fechaCorta(ex.date);
+  const nuevos=()=>p1.blocks.filter(b=>b.date===ex.date&&!p0.blocks.some(x=>x.date===b.date&&x.s===b.s&&x.evalId===b.evalId));
+  if(ex.libre){const que=ex.label==='Salida temprano'?`el ${dia} sales a las ${ex.start}`:`el ${dia} no tienes ${exs.map(x=>x.label.replace(/^Sin /,'')).join(' ni ')}`;
+    if(!isPro())return{texto:`Listo: ${que}. En Gratis no reorganizo sola: ${canArm()?'rearma tu semana para usar ese tiempo':`podrás rearmar tu semana desde el ${fechaCorta(nextArmDate())}`}.`,opts:{undo:true,cta:canArm()?null:'reorg'}};
+    const cursos=[...new Set(nuevos().map(b=>evById(b.evalId).course))];
+    return{texto:`Listo: ${que}.${cursos.length?` Usé ese tiempo para estudiar ${cursos.join(' y ')}.`:''}`,opts:{undo:true}};}
+  const msg=`Anotado: ${ex.label.toLowerCase()} el ${dia} de ${ex.start} a ${ex.end}.`,choca=b=>b.date===ex.date&&b.s<r.e&&b.e>r.s;
+  if(!isPro()){const hit=p1.blocks.filter(choca);
+    if(!hit.length)return{texto:msg+' No choca con tu estudio.',opts:{undo:true}};
+    const e=evById(hit[0].evalId);
+    return{texto:msg+` Choca con tu bloque de ${e?e.course:'estudio'} a las ${fmt(hit[0].s)}. En Gratis no reorganizo sola: ${canArm()?'puedes rearmar tu semana ahora':`podrás rearmar tu semana desde el ${fechaCorta(nextArmDate())}`}. Con LIA Pro lo muevo al instante.`,opts:{undo:true,cta:'reorg'}};}
+  let extra=' No chocaba con tu estudio.';
+  if(p0.blocks.some(choca)){const g={};for(const b of nuevos()){const c=evById(b.evalId).course;(g[c]=g[c]||[]).push(fmt(b.s));}
+    extra=Object.keys(g).length?` Moví ${Object.entries(g).map(([c,ts])=>`${c} a las ${ts.join(' y ')}`).join('; ')}.`:' Reacomodé tus bloques en otros días.';}
+  return{texto:msg+extra+` Igual duermes a las ${state.settings.sleep}.`,opts:{undo:true}};}
 
 const A={
  tab:d=>{ui.tab=d.t;ui.sheet=null;render();document.getElementById('view').scrollTop=0;},
@@ -991,7 +1028,14 @@ const A={
  'add-eval':()=>{if(evalRoom()<1){openPaywall('evals');return;}ui.sheet=sheetEval();render();},
  'edit-eval':d=>{ui.sheet=sheetEval(d.id);render();},
  'del-eval':d=>{snapshot();state.evals=state.evals.filter(e=>e.id!==d.id);state.done=state.done.filter(x=>x.evalId!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Evaluación eliminada.',true);},
- 'del-ex':d=>{snapshot();state.exceptions=state.exceptions.filter(x=>x.id!==d.id);save();rerenderKeepScroll();toast(isPro()?'Quité ese bloqueo y reorganicé.':'Quité ese bloqueo.',true);},
+ 'del-ex':d=>{const x=state.exceptions.find(y=>y.id===d.id);snapshot();state.exceptions=state.exceptions.filter(y=>y.id!==d.id);save();rerenderKeepScroll();
+   toast(x&&x.libre?'Listo: ese día vuelve a ser como siempre.':isPro()?'Quité ese bloqueo y reorganicé.':'Quité ese bloqueo.',true);},
+ 'commit-dia':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c)return;const hoy=d.d===ymd(now());
+   ui.sheet=`<div class="grab"></div><span class="eyebrow">${esc(COMMIT_TYPES[c.type])}</span><h2>${esc(c.name)} · ${horario(c)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))}. Se repite: ${diasTxt(c.days).toLowerCase()}.</p>
+   <button class="btn pri" data-a="libre-dia" data-id="${c.id}" data-d="${d.d}">${hoy?'Hoy no tengo esto':'Ese día no tengo esto'}</button>
+   <button class="btn sec" data-a="edit-commit" data-id="${c.id}">Cambiar mi horario fijo</button><button class="btn sec" data-a="close">Cerrar</button>`;render();},
+ 'libre-dia':d=>{const c=state.commitments.find(x=>x.id===d.id);ui.sheet=null;if(!c){render();return;}
+   const m=aplicarCambio([{date:d.d,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}]);rerenderKeepScroll();toast(m.texto,true);},
  block:d=>{ui.sheet=sheetBlock(d);render();},
  move:d=>{if(!isPro()){openPaywall('reorg',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const b=blockOf(d);if(state.settings.autonomy==='ask'){ui.sheet=`<div class="grab"></div><h2>¿Muevo este bloque?</h2><p class="muted" style="margin:0">Lía buscará otro hueco libre antes de tu evaluación.</p><button class="btn pri" data-a="move-ok" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, muévelo</button><button class="btn sec" data-a="close">No</button>`;render();return;}moveBlock(b);},
  'move-ok':d=>moveBlock(blockOf(d)),
@@ -1010,7 +1054,7 @@ const A={
  wk:d=>{ui.weekOffset+=+d.v;ui.sel=null;render();},
  sel:d=>{ui.sel=d.d;rerenderKeepScroll();},
  chip:d=>{handleText(d.q,'chat');},
- confirm:()=>{const p=ui.pending;ui.pending=null;if(p.ex){if(isPro())applyException(p.ex);else applyExceptionFree(p.ex);return;}
+ confirm:()=>{const p=ui.pending;ui.pending=null;if(p.exs){const m=aplicarCambio(p.exs);liaSay(m.texto,m.opts);render();return;}
    if(newEvalCount(p.items)>evalRoom()){ui.blockedItems=p.items;liaSay(limitMsg(),{cta:'evals'});render();return;}
    applyItems(p.items);const P1=P();const what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
    liaSay(P1.frozen?`Listo, agregué ${what}. En Gratis entra a tu horario cuando rearmes tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`:`Listo, agregué ${what}. Ahora tienes ${hrs(P1.blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio repartidas en tus horas libres.`,{undo:true});render();},

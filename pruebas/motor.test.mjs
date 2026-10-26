@@ -87,3 +87,29 @@ test('antes de un examen, el estudio termina a la hora de dormir de la víspera'
   assert.ok(p.blocks.every(b => b.date < '2026-10-28'), 'nada el día del examen');
   assert.ok(p.blocks.every(b => b.date !== '2026-10-27' || b.e <= 1470), 'la víspera, hasta las 00:30');
 });
+
+test('un compromiso liberado ese día deja libre su horario', () => {
+  const st = estado({
+    compromisos: [{ name: 'Clases', type: 'clase', days: LUN_A_VIE, start: '08:00', end: '13:00' }, { name: 'Trabajo', days: LUN_A_VIE, start: '15:00', end: '19:00' }],
+    excepciones: [{ id: 'x1', date: '2026-10-27', start: '08:00', end: '13:00', label: 'Sin Clases', libre: true, ref: 'c0' },
+                  { id: 'x2', date: '2026-10-26', start: '17:00', end: '19:00', label: 'Salida temprano', libre: true, ref: 'c1' }],
+    evaluaciones: [{ course: 'Cálculo', date: '2026-10-30', hours: 8 }],
+  });
+  assert.ok(!L.busyFor(st, '2026-10-27').some(b => b.ref === 'c0'), 'el martes no hay clases');
+  assert.ok(L.busyFor(st, '2026-10-28').some(b => b.ref === 'c0'), 'el miércoles sí');
+  const lun = L.busyFor(st, '2026-10-26').filter(b => b.ref === 'c1');
+  assert.deepEqual(lun.map(b => [b.s, b.e]), [[900, 1020]], 'el lunes trabaja solo de 15:00 a 17:00');
+  assert.ok(!L.busyFor(st, '2026-10-27').some(b => b.kind === 'excepcion'), 'liberar no cuenta como ocupado');
+  const p = L.plan(st, ahora());
+  assert.ok(choca(p.blocks, '2026-10-27', 480, 780), 'Lía usa la mañana libre del martes');
+});
+
+test('liberar un turno de noche también libera su madrugada', () => {
+  const st = estado({
+    compromisos: [{ name: 'Turno', days: LUN_A_VIE, start: '22:00', end: '06:00' }],
+    excepciones: [{ id: 'x', date: '2026-10-26', start: '22:00', end: '06:00', label: 'Sin Turno', libre: true, ref: 'c0' }],
+  });
+  assert.ok(!L.busyFor(st, '2026-10-26').some(b => b.ref === 'c0'));
+  assert.ok(!L.busyFor(st, '2026-10-27').some(b => b.ref === 'c0' && b.cola), 'sin la cola del lunes');
+  assert.ok(L.busyFor(st, '2026-10-27').some(b => b.ref === 'c0' && !b.cola), 'el turno del martes sigue');
+});
