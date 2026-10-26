@@ -930,7 +930,7 @@ const A={
  block:d=>{ui.sheet=sheetBlock(d);render();},
  move:d=>{if(!isPro()){openPaywall('reorg',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const b=blockOf(d);if(state.settings.autonomy==='ask'){ui.sheet=`<div class="grab"></div><h2>¿Muevo este bloque?</h2><p class="muted" style="margin:0">Lía buscará otro hueco libre antes de tu evaluación.</p><button class="btn pri" data-a="move-ok" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, muévelo</button><button class="btn sec" data-a="close">No</button>`;render();return;}moveBlock(b);},
  'move-ok':d=>moveBlock(blockOf(d)),
- 'done-block':d=>{snapshot();state.done.push({id:uid(),evalId:d.ev,date:d.d,start:fmt(+d.s),min:+d.e-+d.s});save();ui.sheet=null;rerenderKeepScroll();toast(`Bien. Sumé ${hrs(+d.e-+d.s)} a ${evById(d.ev).course}.`,true);},
+ 'done-block':d=>{const e=evById(d.ev);ui.sheet=null;if(!e){rerenderKeepScroll();return;}snapshot();state.done.push({id:uid(),evalId:d.ev,date:d.d,start:fmt(+d.s),min:+d.e-+d.s});save();rerenderKeepScroll();toast(`Bien. Sumé ${hrs(+d.e-+d.s)} a ${e.course}.`,true);},
  start:d=>{if(!isPro()){openPaywall('session',{ev:d.ev,d:d.d,s:d.s,e:d.e});return;}const total=(+d.e-+d.s)*60000;ui.sheet=null;ui.session={ev:d.ev,d:d.d,s:+d.s,total,acc:0,since:Date.now(),running:true,elapsed(){return this.acc+(this.running?Date.now()-this.since:0);}};render();tick();try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}},
  'sess-pause':()=>{const s=ui.session;if(s.running){s.acc+=Date.now()-s.since;s.running=false;}else{s.since=Date.now();s.running=true;}render();},
  'sess-done':()=>{const s=ui.session;const min=Math.max(5,Math.round(s.elapsed()/60000/5)*5);const nm=now();snapshot();
@@ -989,12 +989,12 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
   if(f.dataset.form==='commit'){const days=fd.getAll('d').map(Number);if(!days.length){toast('Elige al menos un día.');return;}
     if(toMin(fd.get('end'))<=toMin(fd.get('start'))){toast('La hora de fin debe ser después del inicio.');return;}
     snapshot();const o={name:String(fd.get('name')).trim(),type:fd.get('type'),days,start:fd.get('start'),end:fd.get('end')};
-    if(f.dataset.id){Object.assign(state.commitments.find(c=>c.id===f.dataset.id),o);}else state.commitments.push({id:uid(),...o});
+    const cur=f.dataset.id&&state.commitments.find(c=>c.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.commitments.push({id:uid(),...o});
     save();ui.sheet=null;rerenderKeepScroll();toast(P().frozen?'Guardado. Tu horario Gratis se actualiza cuando rearmes tu semana.':'Guardado. Lía reorganizó tu semana.',true);return;}
   if(f.dataset.form==='eval'){const o={type:fd.get('type'),course:String(fd.get('course')).trim(),date:fd.get('date'),time:fd.get('time'),hours:Math.max(.5,+fd.get('hours')||1)};
     if(!f.dataset.id&&o.date>=ymd(now())&&evalRoom()<1){ui.sheet=null;openPaywall('evals',{items:[{kind:'eval',...o}]});return;}
     snapshot();
-    if(f.dataset.id){Object.assign(state.evals.find(e=>e.id===f.dataset.id),o);}else state.evals.push({id:uid(),...o});
+    const cur=f.dataset.id&&state.evals.find(e=>e.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.evals.push({id:uid(),...o});
     save();ui.sheet=null;const p=P();const e=state.evals.find(x=>x.course===o.course&&x.date===o.date);rerenderKeepScroll();
     toast(p.frozen?'Guardado. Entra a tu horario cuando rearmes tu semana.':e&&p.unmet[e.id]>0?`Guardado, pero faltan ${hrs(p.unmet[e.id])} sin hueco libre.`:'Guardado. Lía repartió tus horas de estudio.',true);}});
 document.addEventListener('change',ev=>{const el=ev.target;
@@ -1117,6 +1117,10 @@ A.install=async()=>{const e=installEvt;if(!e)return;installEvt=null;try{await e.
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;if(ui.tab==='perfil'&&calm())rerenderKeepScroll();});
 window.addEventListener('appinstalled',()=>{installEvt=null;toast('Listo: LIA quedó instalada.');if(ui.tab==='perfil'&&calm())rerenderKeepScroll();});
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});
+
+// Otra pestaña (o la app instalada) guardó cambios: se adoptan para no pisarlos después con una copia vieja.
+window.addEventListener('storage',e=>{if(e.key!==KEY||!e.newValue)return;let nuevo=null;try{nuevo=JSON.parse(e.newValue);}catch(err){return;}
+  if(!nuevo||nuevo.v!==1)return;state=nuevo;undoStack=null;ensureState();if(calm())rerenderKeepScroll();});
 
 render();
 iniciarCuentas();
