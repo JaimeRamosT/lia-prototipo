@@ -63,6 +63,24 @@ test('una excepción de noche también ocupa la madrugada del día siguiente', (
   assert.ok(L.busyFor(st, '2026-10-28').some(b => b.s === 0 && b.e === 120 && b.cola));
 });
 
+test('no crea bloques más cortos que el mínimo de 30 minutos', () => {
+  const st = estado({ evaluaciones: [{ course: 'Química', date: '2026-10-30', hours: 2.25 }, { course: 'Arte', type: 'entrega', date: '2026-10-28', time: '23:59', hours: 0.25 }] });
+  const p = L.plan(st, ahora());
+  assert.ok(p.blocks.every(b => b.e - b.s >= 30), JSON.stringify(p.blocks.map(b => b.e - b.s)));
+  assert.equal(faltan(p), 0);
+});
+
+test('deja media hora después de despertar', () => {
+  const st = estado({
+    ajustes: { wake: '06:00' },
+    compromisos: [{ name: 'Clases', type: 'clase', days: LUN_A_VIE, start: '08:00', end: '13:00' }, { name: 'Trabajo', days: LUN_A_VIE, start: '14:00', end: '22:00' }],
+    evaluaciones: [{ course: 'Historia', date: '2026-10-30', hours: 6 }],
+  });
+  const p = L.plan(st, ahora(26, 5));
+  assert.ok(p.blocks.length > 0);
+  assert.ok(p.blocks.every(b => b.s >= 390), 'ningún bloque antes de las 06:30: ' + JSON.stringify(p.blocks.map(b => L.fmt(b.s))));
+});
+
 test('antes de un examen, el estudio termina a la hora de dormir de la víspera', () => {
   const st = estado({ ajustes: { sleep: '00:30' }, evaluaciones: [{ course: 'Física', date: '2026-10-28', time: '08:00', hours: 4 }] });
   const p = L.plan(st, ahora());

@@ -267,6 +267,7 @@ const fechaCorta=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()].slice(0,3)} $
 function subtract(wins,s,e){const out=[];for(const w of wins){if(e<=w.s||s>=w.e){out.push(w);continue;}if(s>w.s)out.push({s:w.s,e:s});if(e<w.e)out.push({s:e,e:w.e});}return out;}
 // Un día de estudio va de la hora de despertar a la de dormir. Si se duerme después de medianoche (00:30),
 // el día termina en el minuto 1470; un horario que termina al día siguiente (22:00–06:00) funciona igual.
+const MARGEN_DESPERTAR=30;  // nadie estudia apenas abre los ojos
 function finDelDia(S){const w=toMin(S.wake);let s=toMin(S.sleep);if(s<=w)s+=1440;return s;}
 function intervalo(start,end){const s=toMin(start);let e=toMin(end);if(e<s)e+=1440;return{s,e};}
 function busyFor(state,date){const wd=fromYmd(date).getDay(),ayer=(wd+6)%7,prev=ymd(addDays(fromYmd(date),-1));const b=[];
@@ -293,7 +294,7 @@ function doneFor(state,id){return state.done.filter(x=>x.evalId===id).reduce((a,
 
 // Motor de horarios: reparte las horas que pide cada evaluación en los huecos libres reales.
 function plan(state,now){
-  const S=state.settings,wake=toMin(S.wake),sleep=finDelDia(S);
+  const S=state.settings,wake=toMin(S.wake)+MARGEN_DESPERTAR,sleep=finDelDia(S);
   const today=ymd(now),nowMin=now.getHours()*60+now.getMinutes();
   const evs=state.evals.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
   let last=ymd(addDays(now,6));for(const e of evs)if(e.date>last)last=e.date;
@@ -313,13 +314,13 @@ function plan(state,now){
     while(rem>=10&&progress){progress=false;
       for(const d of dlist){if(rem<10)break;const day=days[d];
         const avail=Math.min(S.maxDay-day.load,120-(evLoad[d]||0));
-        if(avail<Math.min(S.minBlock,rem))continue;
+        const need=S.minBlock;  // ningún bloque más corto que el mínimo, aunque falte menos tiempo
+        if(avail<need)continue;
         const limit=d===dl.date?dl.end:sleep;
-        const need=Math.min(S.minBlock,rem);
         const cands=day.wins.map(w=>({s:w.s,e:Math.min(w.e,limit)})).filter(w=>w.e-w.s>=need);
         if(!cands.length)continue;
         cands.sort((a,b)=>(b.e-b.s)-(a.e-a.s)||a.s-b.s);
-        const w=cands[0];let len=Math.min(S.block,rem,avail,w.e-w.s);
+        const w=cands[0];let len=Math.min(S.block,Math.max(rem,need),avail,w.e-w.s);
         len=Math.floor(len/5)*5;if(len<need)continue;
         let st=w.s;if(w.e-w.s>=len+180&&st<600)st=Math.min(600,w.e-len);
         blocks.push({evalId:ev.id,date:d,s:st,e:st+len});
