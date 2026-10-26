@@ -183,6 +183,7 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .dpick label{display:grid;place-items:center;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);font-weight:600;color:var(--ink)}
 .dpick input{position:absolute;opacity:0;pointer-events:none}
 .dpick input:checked+span{color:var(--pri-ink)}
+.dpick label:has(input:focus-visible){outline:2px solid var(--pri);outline-offset:2px}
 .dpick label:has(input:checked){background:var(--pri-fill);border-color:var(--pri-fill);color:var(--pri-ink)}
 .opt{display:flex;gap:12px;align-items:center;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px}
 .opt:has(input:checked){border-color:var(--pri)}
@@ -233,6 +234,13 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--surfa
 .btn.pri .pro,.pill.solid .pro,.hero .pro{background:var(--pri-ink);color:var(--pri-strong)}
 .hero .btn.light .pro{background:var(--badge-bg);color:var(--badge-ink)}
 .mic.lock{position:relative}
+/* Áreas de toque de al menos 44 px sin cambiar el tamaño visible */
+.pill,.mic,button.ico,.toast button{position:relative}
+.pill::before{content:"";position:absolute;inset:-5px 0}
+.mic::before{content:"";position:absolute;inset:-4px}
+.inbar .mic::before{inset:0}  /* ya miden 48 px y están junto al borde */
+button.ico::before{content:"";position:absolute;inset:-11px}
+.toast button::before{content:"";position:absolute;inset:-12px -8px}
 .mic.lock::after{content:"PRO";position:absolute;top:-7px;right:0;font-size:8px;font-weight:700;letter-spacing:.04em;line-height:1;padding:2px 4px;border-radius:5px;background:var(--badge-bg);color:var(--badge-ink)}
 .plan{display:flex;gap:12px;align-items:flex-start;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px;cursor:pointer}
 .plan:has(input:checked){border-color:var(--pri);box-shadow:inset 0 0 0 1px var(--pri)}
@@ -861,7 +869,8 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
   const range=d0.getMonth()===d6.getMonth()?`${d0.getDate()} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`:`${d0.getDate()} de ${MESES[d0.getMonth()]} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`;
   return `${demoBanner()}<div class="between"><div><div class="kicker">${range}</div><h1>Tu semana</h1></div><div class="row-h"><button class="pill ghost" data-a="wk" data-v="-1" aria-label="Semana anterior">${I.back.replace('<svg','<svg width="16" height="16"')}</button><button class="pill ghost" data-a="wk" data-v="1" aria-label="Semana siguiente">${I.next.replace('<svg','<svg width="16" height="16"')}</button></div></div>
   ${freeWeekLine()}<div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
-    return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
+    const que=hasE&&hasS?', con evaluación y estudio':hasE?', con evaluación':hasS?', con estudio':'';
+    return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}" aria-label="${cap(DIAS[dt.getDay()])} ${dt.getDate()}${d===t?', hoy':''}${que}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
   <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>evaluaciones esta semana</span></div></div>
   <div class="between"><h2>${cap(fechaLarga(ui.sel))}</h2><span class="small" style="color:var(--pri);font-weight:600">${selStudy?hrs(selStudy)+' de estudio':''}</span></div>
   ${agendaHTML(ui.sel,p)}`;}
