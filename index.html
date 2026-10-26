@@ -85,6 +85,11 @@ h2{font-size:17px;margin:0;font-weight:600}
 .hero .eyebrow{color:var(--pri-ink);opacity:.75}
 .hero .big{font-size:32px;font-weight:700;letter-spacing:-.02em}
 .hero-t{font-size:20px;font-weight:700;line-height:1.25;text-wrap:balance}
+/* La evaluación del día, primero en Hoy */
+.evhoy{border:1.5px solid var(--exam)}
+.evhoy .eyebrow,.evhoy-a{color:var(--exam-ink)}
+.evhoy-t{font-size:20px;font-weight:700;line-height:1.25}
+.evhoy-a{font-weight:600}
 .note{background:var(--pri-soft);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
 .note b{color:var(--pri)}
 .warn{background:var(--exam-soft);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
@@ -700,7 +705,9 @@ function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
   return `<div class="agenda">${it.map(x=>rowHTML(x,date)).join('')}${sleep}</div>`;}
 function demoBanner(){if(state.mode!=='example')return '';const mios=tieneMios();
   return `<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="${mios?'own-restore':'start-own'}">${mios?'Volver a mis datos':'Usar mis horarios'}</button></div>`;}
-function conflicts(){const ev=state.evals.filter(e=>e.date>=ymd(now())).sort((a,b)=>a.date.localeCompare(b.date));const out=[];
+// Evaluaciones que van seguidas o el mismo día (sin contar las que ya terminaron).
+function conflicts(){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes();
+  const ev=state.evals.filter(e=>e.date>t||(e.date===t&&toMin(e.time)+120>nm)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const out=[];
   for(let i=0;i<ev.length-1;i++){if(dayDiff(ev[i].date,ev[i+1].date)<=1)out.push([ev[i],ev[i+1]]);}return out;}
 
 // ---------- Vistas ----------
@@ -775,8 +782,15 @@ function heroFalta(pend){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(
   const titulo=pend.length===1?`${cap(faltaTxt(tot))} de estudio para ${esc(pend[0].e.course)}.`:`${cap(faltaTxt(tot))} de estudio para ${pend.length} evaluaciones.`;
   const lista=pend.length>1?`<span style="opacity:.9">${pend.map(x=>`${esc(x.e.course)}: ${hrs(x.min)}`).join(' · ')}</span>`:'';
   return `<section class="hero"><span class="eyebrow">${motivo(pend)==='sin agendar'?'Sin agendar':'Falta tiempo'}</span><span class="hero-t">${titulo}</span>${lista}<span style="opacity:.85">${esc(c.txt)}</span><div style="height:6px"></div>${c.btn}</section>`;}
+// El día de una evaluación, eso va primero en Hoy.
+function evalHoyHTML(e,nm){const ini=toMin(e.time),need=e.hours*60,done=doneFor(state,e.id),tipo=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,ent=e.type==='entrega',exp=e.type==='exposicion';
+  const cuando=ent?`Hasta las ${e.time}${ini>nm?` · quedan ${hrs(ini-nm)}`:''}`:ini>nm?`A las ${e.time} · en ${hrs(ini-nm)}`:`Empezó a las ${e.time}`;
+  const avance=done?`<span class="small muted">Estudiaste ${hrs(Math.min(done,need))} de ${hrs(need)}.</span>`:'';
+  return `<button class="card stack evhoy" data-a="tab" data-t="evals" style="text-align:left;gap:6px"><span class="eyebrow">${ent?'Hoy entregas':exp?'Hoy expones':'Hoy tienes evaluación'}</span><b class="evhoy-t">${tipo.label} · ${esc(e.course)}</b><span class="small muted tnum">${cuando}</span>${avance}<span class="small evhoy-a">${ent?'¡Éxitos con tu entrega!':exp?'¡Éxitos en tu exposición!':`¡Éxitos en tu ${tipo.label.toLowerCase()}!`}</span></button>`;}
 function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   const next=p.blocks.find(b=>b.date>t||b.e>nm),pend=sinHorario(p);
+  const vigente=e=>e.date>t||(e.date===t&&toMin(e.time)+120>nm);  // la evaluación aún no termina
+  const evHoy=state.evals.filter(e=>e.date===t&&vigente(e)).sort((a,b)=>a.time.localeCompare(b.time))[0];
   let hero;
   if(next){const e=evById(next.evalId);const when=next.date===t?(next.s>nm?`En ${hrs(next.s-nm)}`:'Ahora'):cap(fechaLarga(next.date));
     hero=`<section class="hero"><span class="eyebrow">Tu próximo bloque · ${esc(when)}</span><span class="big tnum">${fmt(next.s)} – ${fmt(next.e)}</span><span style="opacity:.9;font-weight:500">${esc(e.course)} · para tu ${EVAL_TYPES[e.type].label.toLowerCase()} del ${fechaCorta(e.date)}</span>
@@ -788,7 +802,7 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   // Si hay un bloque próximo pero algo no entró, se avisa aparte (después de preguntar por los bloques sin marcar).
   let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0);
     faltaH=`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>${pend.length===1?`${cap(faltaTxt(tot))} ${motivo(pend)} para ${esc(pend[0].e.course)}`:`${cap(faltaTxt(tot))} de estudio ${motivo(pend)}`}</b><br>${pend.length>1?esc(pend.map(x=>`${x.e.course}: ${hrs(x.min)}`).join(' · '))+'. ':''}${esc(consejoFalta(pend).txt)}</div></div>`;}
-  const prox=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+  const prox=state.evals.filter(e=>vigente(e)&&e!==evHoy).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
   let pc='';if(prox){const need=prox.hours*60,done=doneFor(state,prox.id),x=pend.find(y=>y.e.id===prox.id),dl=evalDeadline(prox,state.settings);
     const listo=need-done<10,vencido=dl.date<t||(dl.date===t&&dl.end<=nm);  // vencido: ya no queda tiempo para estudiar antes de la evaluación
     const est=listo?' · completaste tus horas de estudio':vencido?'':x?(x.agendar?' · aún no está en tu horario: entra cuando rearmes tu semana':` · <b style="color:var(--exam-ink)">${faltaTxt(x.min)} sin hueco</b>`):' · lo que falta ya está en tu horario';
@@ -799,7 +813,7 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   const cf=conflicts()[0];let cfH='';
   if(cf){const mismo=cf[0].date===cf[1].date,cfPend=cf.some(e=>pend.some(x=>x.e.id===e.id));
     cfH=`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>${mismo?`Tienes dos evaluaciones el ${fechaCorta(cf[0].date)}`:`Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}`}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van ${mismo?'el mismo día':'seguidos'}. ${cfPend?'Aún les falta tiempo de estudio.':'Ya repartí sus horas de estudio en tu horario.'}</div></div>`;}
-  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${avisoIOS()}${freeBanner()}${perdidosHTML(p)}${hero}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${freeBanner()}${perdidosHTML(p)}${hero}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
 function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
