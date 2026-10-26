@@ -841,11 +841,12 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
   const study=days.reduce((a,d)=>a+p.blocks.filter(b=>b.date===d).reduce((x,b)=>x+b.e-b.s,0)+state.done.filter(x=>x.date===d).reduce((x,y)=>x+y.min,0),0);
   const exams=state.evals.filter(e=>days.includes(e.date)).length;
   const selStudy=p.blocks.filter(b=>b.date===ui.sel).reduce((x,b)=>x+b.e-b.s,0);
-  const range=`${fromYmd(days[0]).getDate()} – ${fromYmd(days[6]).getDate()} de ${MESES[fromYmd(days[6]).getMonth()]}`;
+  const d0=fromYmd(days[0]),d6=fromYmd(days[6]);  // «26 de octubre – 1 de noviembre» si la semana cruza de mes
+  const range=d0.getMonth()===d6.getMonth()?`${d0.getDate()} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`:`${d0.getDate()} de ${MESES[d0.getMonth()]} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`;
   return `${demoBanner()}<div class="between"><div><div class="kicker">${range}</div><h1>Tu semana</h1></div><div class="row-h"><button class="pill ghost" data-a="wk" data-v="-1" aria-label="Semana anterior">${I.back.replace('<svg','<svg width="16" height="16"')}</button><button class="pill ghost" data-a="wk" data-v="1" aria-label="Semana siguiente">${I.next.replace('<svg','<svg width="16" height="16"')}</button></div></div>
   ${freeWeekLine()}<div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
     return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
-  <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>evaluaciones esta semana · 0 amanecidas</span></div></div>
+  <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>evaluaciones esta semana</span></div></div>
   <div class="between"><h2>${cap(fechaLarga(ui.sel))}</h2><span class="small" style="color:var(--pri);font-weight:600">${selStudy?hrs(selStudy)+' de estudio':''}</span></div>
   ${agendaHTML(ui.sel,p)}`;}
 
