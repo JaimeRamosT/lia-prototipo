@@ -347,13 +347,15 @@ function plan(state,now){
 // Plan Gratis: el que se armó al empezar la semana, contado con honestidad. Un bloque que ya pasó sin estudiarse
 // no cuenta como agendado: esas horas vuelven a faltar y el bloque queda en «perdidos» hasta que la persona diga si lo estudió.
 const claveBloque=b=>`${b.evalId}|${b.date}|${b.s}`;
+// Cuándo termina un bloque: si pasa la medianoche, termina al día siguiente.
+function finBloque(b){return b.e>=1440?{date:ymd(addDays(fromYmd(b.date),1)),min:b.e-1440}:{date:b.date,min:b.e};}
 function planCongelado(state,f,now){const t=ymd(now),nm=now.getHours()*60+now.getMinutes(),S=state.settings;
   const evs=new Map(state.evals.map(e=>[e.id,e])),vistos=new Set(Array.isArray(f.vistos)?f.vistos:[]);
   const sig=d=>ymd(addDays(fromYmd(d),1));
   // Lo estudiado después de medianoche se guarda con la fecha del día siguiente.
   const hecho=b=>state.done.some(x=>{if(x.evalId!==b.evalId)return false;const s=toMin(x.start)+(x.date===b.date?0:x.date===sig(b.date)?1440:NaN);return s<b.e&&s+x.min>b.s;});
   const aTiempo=b=>{const dl=evalDeadline(evs.get(b.evalId),S);return b.date<dl.date||(b.date===dl.date&&b.e<=dl.end);};
-  const paso=b=>b.date<t||(b.date===t&&b.e<=nm);
+  const paso=b=>{const f=finBloque(b);return f.date<t||(f.date===t&&f.min<=nm);};
   const vivos=f.blocks.filter(b=>evs.has(b.evalId)&&!hecho(b)&&aTiempo(b));
   const blocks=vivos.filter(b=>b.date>=t);
   const perdidos=vivos.filter(b=>paso(b)&&evs.get(b.evalId).date>=t&&!vistos.has(claveBloque(b)));
@@ -710,9 +712,9 @@ function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
   return `<div class="agenda">${it.map(x=>rowHTML(x,date)).join('')}${sleep}</div>`;}
 function demoBanner(){if(state.mode!=='example')return '';const mios=tieneMios();
   return `<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="${mios?'own-restore':'start-own'}">${mios?'Volver a mis datos':'Usar mis horarios'}</button></div>`;}
-// Evaluaciones que van seguidas o el mismo día (sin contar las que ya terminaron).
-function conflicts(){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes();
-  const ev=state.evals.filter(e=>e.date>t||(e.date===t&&toMin(e.time)+120>nm)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const out=[];
+// Evaluaciones que van seguidas o el mismo día, contando solo las que todavía se pueden estudiar.
+function conflicts(){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes(),S=state.settings;
+  const ev=state.evals.filter(e=>{const dl=evalDeadline(e,S);return dl.date>t||(dl.date===t&&dl.end>nm);}).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const out=[];
   for(let i=0;i<ev.length-1;i++){if(dayDiff(ev[i].date,ev[i+1].date)<=1)out.push([ev[i],ev[i+1]]);}return out;}
 
 // ---------- Vistas ----------
@@ -811,7 +813,8 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
        :`<button class="btn light" data-a="done-block" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">Ya lo estudié</button>`}
      <button class="small" style="color:var(--pri-ink);opacity:.85;text-align:center;padding:6px" data-a="move" data-ev="${next.evalId}" data-d="${next.date}" data-s="${next.s}" data-e="${next.e}">¿No puedes a esa hora? Lía lo mueve${isPro()?'':PRO_TAG}</button></section>`;}
   else if(pend.length)hero=heroFalta(pend);
-  else if(state.evals.some(e=>e.date>=t))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.85">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
+  else if(state.evals.some(vigente)&&state.evals.filter(vigente).every(e=>e.hours*60-doneFor(state,e.id)<10))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.85">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
+  else if(state.evals.some(vigente))hero='';  // queda estudio, pero ya no hay tiempo antes de la evaluación (p. ej., el día del examen)
   else hero=`<section class="hero"><span class="eyebrow">Sin evaluaciones próximas</span><span class="hero-t">No tienes exámenes ni entregas por ahora.</span><span style="opacity:.85">Agrega la próxima y Lía reparte tus horas de estudio.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   // Si hay un bloque próximo pero algo no entró, se avisa aparte (después de preguntar por los bloques sin marcar).
   let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
@@ -831,7 +834,7 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
 function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
-    return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>¿Estudiaste ${esc(e?e.course:'')}?</b><br>Tu bloque ${cuando} de ${fmt(b.s)} a ${fmt(b.e)} ya pasó y no lo marcaste.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="done-block" data-ev="${b.evalId}" data-d="${b.date}" data-s="${b.s}" data-e="${b.e}">Sí, lo estudié</button><button class="pill ghost" data-a="perdido-no" data-ev="${b.evalId}" data-k="${esc(claveBloque(b))}">No pude</button></div></div></div>`;}
+    return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>¿Estudiaste ${esc(e?e.course:'')}?</b><br>Tu bloque ${cuando} de ${fmt(b.s)} a ${fmt(b.e)} ya pasó y no lo marcaste.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="done-block" data-ev="${b.evalId}" data-d="${b.date}" data-s="${b.s}" data-e="${b.e}" aria-label="Sí, estudié ${esc(e?e.course:'')}">Sí, lo estudié</button><button class="pill ghost" data-a="perdido-no" data-ev="${b.evalId}" data-k="${esc(claveBloque(b))}" aria-label="No pude estudiar ${esc(e?e.course:'')}">No pude</button></div></div></div>`;}
   return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Tienes ${l.length} bloques sin marcar</b><br>Suman ${hrs(l.reduce((a,b)=>a+b.e-b.s,0))}. ¿Los estudiaste? Márcalos para que Lía cuente tu avance; lo que no estudiaste queda pendiente.<div style="margin-top:8px"><button class="pill solid" data-a="perdidos">Revisar mis bloques</button></div></div></div>`;}
 // En iPhone sin instalar, Safari puede borrar los datos de LIA tras 7 días sin abrirla: se avisa una vez, en Hoy.
 function avisoIOS(){if(state.mode==='example'||!isIOS()||isStandalone())return '';try{if(localStorage.getItem('lia.avisoIOS'))return '';}catch(e){return '';}
@@ -917,7 +920,7 @@ function sheetEval(id,pre){const t=ymd(addDays(now(),3));const e=state.evals.fin
   <label class="f">Curso<input id="e-course" name="course" required value="${esc(e.course)}" placeholder="Cálculo II"></label>
   <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"${e.id?'':` min="${ymd(now())}"`}></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
   <button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
-function sheetBlock(d){const e=evById(d.ev),n=now(),t=ymd(n),paso=d.d<t||(d.d===t&&+d.e<=n.getHours()*60+n.getMinutes());
+function sheetBlock(d){const e=evById(d.ev),n=now(),t=ymd(n),f=finBloque({date:d.d,e:+d.e}),paso=f.date<t||(f.date===t&&f.min<=n.getHours()*60+n.getMinutes());
   const head=`<div class="grab"></div><span class="eyebrow">${paso?'Bloque que ya pasó':'Bloque de estudio'}</span><h2>${esc(e?e.course:'')} · ${fmt(+d.s)} – ${fmt(+d.e)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))} · para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</p>`;
   if(paso)return `${head}<button class="btn pri" data-a="done-block" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, lo estudié</button>
   <button class="btn sec" data-a="perdido-no" data-ev="${d.ev}" data-k="${esc(claveBloque({evalId:d.ev,date:d.d,s:+d.s}))}">No pude estudiarlo</button><button class="btn sec" data-a="close">Cerrar</button>`;

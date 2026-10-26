@@ -80,3 +80,13 @@ test('lo estudiado después de medianoche (guardado con la fecha del día siguie
   const p = L.planCongelado(st, f, ahora(27, 10, 0));
   assert.equal(p.perdidos.length, 0);
 });
+
+test('un bloque que pasa la medianoche sigue agendado hasta que termina al día siguiente', () => {
+  const st = semana(), f = { week: '2026-10-26', at: '2026-10-26', initial: true, sig: '', unmet: {}, evalIds: ['e0', 'e1'],
+    blocks: [{ evalId: 'e0', date: '2026-10-26', s: 1410, e: 1470 }] };
+  const durante = L.planCongelado(st, f, ahora(27, 0, 15));
+  assert.equal(durante.perdidos.length, 0, 'a las 00:15 el bloque de 23:30 a 00:30 aún no termina');
+  const despues = L.planCongelado(st, f, ahora(27, 0, 31));
+  assert.equal(despues.perdidos.length, 1);
+  assert.equal(despues.unmet.e0 - durante.unmet.e0, 60);
+});
