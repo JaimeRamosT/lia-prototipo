@@ -8,7 +8,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 
 | Situación | Skill |
 |---|---|
-| Vas a cambiar `plan()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
+| Vas a cambiar `plan()`, `planCongelado()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
 | Terminas cualquier cambio en `index.html` o `sw.js` | `engineering:code-review` |
 | Tocas pantallas, componentes, colores o tamaños | `design:accessibility-review` y `design:design-critique` |
 | Escribes o cambias texto que ve la persona (Lía, errores, estados vacíos) | `design:ux-copy`, en español peruano |
@@ -34,7 +34,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Commits convencionales. No hagas commit ni push sin que te lo pidan.
 - Terminadores de línea LF.
 - Si cambia el esquema de datos (`v:1`), escribe una migración: hoy cualquier otra versión descarta lo guardado.
-- Cada corrección de `plan()` o de `interpret()` lleva su prueba en `pruebas/` (`node --test`).
+- Cada corrección de `plan()`, `planCongelado()` o `interpret()` lleva su prueba en `pruebas/` (`node --test`).
 - Si agregas un archivo que la app necesita sin internet, súmalo a `SHELL` en `sw.js` y sube `VERSION`.
 - GitHub Pages sirve para el prototipo. No se usa para cobrar: antes de eso hay que mudar el hosting.
 

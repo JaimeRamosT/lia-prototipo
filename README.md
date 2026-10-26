@@ -37,7 +37,7 @@ Con Node.js 18 o más nuevo, ejecuta en esta carpeta:
 node --test
 ```
 
-Prueban el motor de horarios y la lectura de frases (carpeta `pruebas/`) sin abrir el navegador. Córrelas antes de integrar un cambio a `main`.
+Prueban el motor de horarios, el plan semanal de Gratis y la lectura de frases (carpeta `pruebas/`) sin abrir el navegador. Córrelas antes de integrar un cambio a `main`.
 
 ## Cuentas con Supabase
 
@@ -56,7 +56,7 @@ Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al pr
 | `vendor/` | Cliente de Supabase (2.118.0, licencia MIT). Solo se descarga cuando alguien usa su cuenta. |
 | `supabase/` | Configuración de la CLI de Supabase y migraciones de la base de datos. |
 | `docs/` | Especificación y diseño de cuentas y planes. |
-| `pruebas/` | Pruebas del motor de horarios y de la lectura de frases (`node --test`). |
+| `pruebas/` | Pruebas del motor de horarios, del plan de Gratis y de la lectura de frases (`node --test`). |
 | `.nojekyll` | Le indica a GitHub Pages que publique los archivos tal cual. |
 | `.gitattributes` | Guarda los archivos de `vendor/` sin cambiar sus fines de línea. |
 
