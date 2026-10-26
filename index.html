@@ -642,7 +642,10 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   const night=`<div class="night"><span class="ico" style="color:var(--pri-sub)">${I.moon}</span><div><b>Hoy duermes a las ${state.settings.sleep}</b><div class="sub">${tom?`Mañana tienes ${EVAL_TYPES[tom.type].label.toLowerCase()} de ${esc(tom.course)}. Con este plan llegas sin amanecerte.`:'Tu horario no te pide amanecerte.'}</div></div></div>`;
   const cf=conflicts()[0];
   const cfH=cf?`<div class="warn"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="small"><b>Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van seguidos. Ya empecé a repartir el estudio desde antes.</div></div>`:'';
-  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${freeBanner()}${hero}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${avisoIOS()}${freeBanner()}${hero}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+// En iPhone sin instalar, Safari puede borrar los datos de LIA tras 7 días sin abrirla: se avisa una vez, en Hoy.
+function avisoIOS(){if(state.mode==='example'||!isIOS()||isStandalone())return '';try{if(localStorage.getItem('lia.avisoIOS'))return '';}catch(e){return '';}
+  return `<div class="note"><span class="ico" style="color:var(--pri)">${I.alert}</span><div class="grow small"><b>Instala LIA para no perder tus datos</b><br>En iPhone, si no la instalas, Safari puede borrar tus datos cuando pasas 7 días sin abrirla. Toca <strong>Compartir</strong> y luego <strong>Agregar a inicio</strong>.<div style="margin-top:8px"><button class="pill ghost" data-a="aviso-ios-ok">Entendido</button></div></div></div>`;}
 
 function vSemana(){const n=now(),t=ymd(n),p=P();
   const mon=addDays(n,-((n.getDay()+6)%7)+7*ui.weekOffset);const days=[...Array(7)].map((_,i)=>ymd(addDays(mon,i)));
@@ -973,6 +976,7 @@ const A={
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
  reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(KEY_MIOS);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
+ 'aviso-ios-ok':()=>{try{localStorage.setItem('lia.avisoIOS','1');}catch(e){}rerenderKeepScroll();},
  'listen-stop':()=>{stopMic(true);},
  'listen-cancel':()=>{stopMic(false);},
  'listen-type':()=>{const t=ui.listen&&ui.listen.target;stopMic(false);const el=document.getElementById(t);if(el){el.focus();}},
