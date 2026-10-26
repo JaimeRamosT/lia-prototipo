@@ -833,8 +833,16 @@ function render(){ensureState();const subEv=PAGOS?checkSub():null;const v=docume
   else if(ui.listen)L.innerHTML=vListen();
   else if(ui.sheet)L.innerHTML=`<div class="scrim" data-a="scrim"><div class="sheet" role="dialog" aria-modal="true">${ui.sheet}</div></div>`;
   else L.innerHTML='';
+  focusLayer(L);
   if(ui.tab==='lia'&&!inOb){const c=document.getElementById('view');c.scrollTop=c.scrollHeight;}
   if(subEv)toast(subEv==='end'?'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.':'LIA Pro se renovó por un mes más (demo: sin cobro real).');}
+// Accesibilidad: con una hoja o pantalla superpuesta abierta, el fondo queda inerte y el foco pasa a ella.
+function focusLayer(L){const open=!!L.firstElementChild;document.getElementById('app').inert=open;
+  if(!open)return;const box=L.querySelector('.sheet')||L.querySelector('.full .in');if(!box||box.contains(document.activeElement))return;
+  const t=box.querySelector('h1,h2')||box;t.setAttribute('tabindex','-1');t.focus({preventScroll:true});}
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;
+  if(ui.listen){A['listen-cancel']();return;}
+  if(ui.sheet&&!document.querySelector('.sheet .spin')){e.preventDefault();A.close();}});
 function rerenderKeepScroll(){const v=document.getElementById('view');const y=v.scrollTop;render();v.scrollTop=y;}
 let toastT;
 function toast(msg,withUndo){const b=document.getElementById('toastbox');b.innerHTML=`<div class="toast" role="status"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;clearTimeout(toastT);toastT=setTimeout(()=>{b.innerHTML='';},withUndo?6000:3200);}
