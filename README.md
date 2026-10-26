@@ -2,7 +2,7 @@
 
 LIA arma un horario de estudio en las horas libres de universitarios que estudian y trabajan. Este repositorio contiene el prototipo funcional del Grupo 8. Es una sola página que corre en el navegador. Se puede instalar como app y abre sin internet.
 
-> **Prototipo de prueba.** No tiene cuentas, servidor ni pagos. Los datos de cada persona se guardan solo en su dispositivo.
+> **Prototipo de prueba.** Sin cuenta se usa LIA Gratis. LIA Pro necesita una cuenta en Supabase; el pago es de prueba y no cobra nada. Los horarios de cada persona se guardan solo en su dispositivo.
 
 ## Publicarlo en GitHub Pages
 
@@ -29,6 +29,22 @@ python3 -m http.server 8000
 
 Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con doble clic, la app también funciona, pero no se puede instalar ni usar sin internet.
 
+Para ver las herramientas del equipo, como *simular el fin del periodo* de Pro, abre la app con `?pruebas=1`. `?pruebas=0` las vuelve a ocultar en ese navegador.
+
+### Pruebas automáticas
+
+Con Node.js 18 o más nuevo, ejecuta en esta carpeta:
+
+```
+node --test
+```
+
+Prueban el motor de horarios, el plan semanal de Gratis y la lectura de frases (carpeta `pruebas/`) sin abrir el navegador. Córrelas antes de integrar un cambio a `main`.
+
+## Cuentas con Supabase
+
+Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis. Antes de invitar estudiantes, sigue la [guía del piloto](docs/cuentas-y-planes.md#piloto-con-estudiantes).
+
 ## Qué hay aquí
 
 | Archivo | Para qué sirve |
@@ -38,13 +54,20 @@ Luego abre <http://localhost:8000> en el navegador. Si abres `index.html` con do
 | `sw.js` | Guarda una copia de la app para abrirla sin internet. |
 | `icons/` | Íconos de la app y del navegador. |
 | `fonts/` | Fuente Inter y su licencia. |
+| `config.js` | URL y clave publicable de Supabase. Ambas son públicas; nunca pongas aquí la clave secreta. |
+| `vendor/` | Cliente de Supabase (2.118.0, licencia MIT). Solo se descarga cuando alguien usa su cuenta. |
+| `supabase/` | Configuración de la CLI de Supabase y migraciones de la base de datos. |
+| `docs/` | Especificación y diseño de cuentas y planes. |
+| `pruebas/` | Pruebas del motor de horarios, del plan de Gratis y de la lectura de frases (`node --test`). |
 | `.nojekyll` | Le indica a GitHub Pages que publique los archivos tal cual. |
+| `.gitattributes` | Guarda los archivos de `vendor/` sin cambiar sus fines de línea. |
 
 ## Qué funciona y qué no
 
 Funciona:
 
 - **Primer uso.** Datos de ejemplo, o tu propio horario con un registro de 2 pasos.
+- **Planes.** Sin cuenta, Gratis: hasta 3 evaluaciones próximas y una semana que se arma una vez. Con una cuenta Pro: sin límites, voz, modo sesión y reorganización automática.
 - **Horario automático.** Bloques de estudio en tus horas libres, que se reorganizan cuando algo cambia.
 - **Pantallas.** Hoy, Semana, Evaluaciones, chat con Lía (entiende frases simples, sin IA) y modo sesión con temporizador.
 - **Dictado por voz.** Solo en navegadores con reconocimiento de voz, como Chrome. En los demás, la app pide usar el micrófono del teclado.
@@ -54,8 +77,10 @@ Límites de esta versión:
 
 - **Datos solo en el dispositivo.** Viven en el navegador de cada dispositivo, no se sincronizan entre dispositivos y se pierden si se borran los datos del sitio.
 - **iPhone sin instalar.** Si LIA no está instalada, Safari borra los datos de un sitio que no se abre en 7 días de uso. Instalada en la pantalla de inicio, eso no pasa.
-- **Sin funciones de servidor.** No hay cuentas, recordatorios con la app cerrada ni pagos.
+- **La cuenta solo lleva el plan.** Los horarios todavía no viajan entre dispositivos.
+- **Sin cobro real ni recordatorios.** El pago es una simulación y aún no hay avisos con la app cerrada.
 
 ## Créditos
 
-Fuente [Inter](https://github.com/rsms/inter), de The Inter Project Authors, bajo la SIL Open Font License 1.1 (`fonts/OFL.txt`).
+- Fuente [Inter](https://github.com/rsms/inter), de The Inter Project Authors, bajo la SIL Open Font License 1.1 (`fonts/OFL.txt`).
+- [supabase-js](https://github.com/supabase/supabase-js), de Supabase, bajo licencia MIT (`vendor/supabase-js-LICENSE.txt`).

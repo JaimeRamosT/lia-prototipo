@@ -1,6 +1,6 @@
 # LIA · instrucciones para Claude
 
-LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica con GitHub Pages desde `main`. Los datos viven en `localStorage` (`lia.app.v1`). El prototipo no incluye pagos. Responde y escribe en español.
+LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica con GitHub Pages desde `main`. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Responde y escribe en español.
 
 ## Skills: llámalos, no los omitas
 
@@ -8,7 +8,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 
 | Situación | Skill |
 |---|---|
-| Vas a cambiar `plan()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
+| Vas a cambiar `plan()`, `planCongelado()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
 | Terminas cualquier cambio en `index.html` o `sw.js` | `engineering:code-review` |
 | Tocas pantallas, componentes, colores o tamaños | `design:accessibility-review` y `design:design-critique` |
 | Escribes o cambias texto que ve la persona (Lía, errores, estados vacíos) | `design:ux-copy`, en español peruano |
@@ -34,6 +34,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Commits convencionales. No hagas commit ni push sin que te lo pidan.
 - Terminadores de línea LF.
 - Si cambia el esquema de datos (`v:1`), escribe una migración: hoy cualquier otra versión descarta lo guardado.
+- Cada corrección de `plan()`, `planCongelado()` o `interpret()` lleva su prueba en `pruebas/` (`node --test`).
 - Si agregas un archivo que la app necesita sin internet, súmalo a `SHELL` en `sw.js` y sube `VERSION`.
 - GitHub Pages sirve para el prototipo. No se usa para cobrar: antes de eso hay que mudar el hosting.
 
@@ -42,6 +43,18 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - `main` es el tronco y siempre debe poder publicarse, porque GitHub Pages despliega todo lo que llega a `main`.
 - Cada cambio va en una rama corta que sale de `main` (`feat/…`, `fix/…`, `chore/…`), dura uno o dos días y vuelve pronto a `main`.
 - Commits pequeños. Integra a `main` seguido en vez de acumular cambios.
-- Lo que aún no debe ver el público entra a `main` apagado detrás de una bandera (por ejemplo `pagos`), no en una rama larga.
-- Antes de integrar a `main`, corre las pruebas.
+- Lo que aún no debe ver el público entra a `main` apagado detrás de una bandera, no en una rama larga.
+- Antes de integrar a `main`, corre las pruebas: `node --test` para la lógica y una revisión en el navegador.
 - En esta carpeta, usa `git -c core.autocrlf=true`: la copia se clonó en Windows y sus archivos tienen fin de línea CRLF.
+
+## Supabase
+
+- Proyecto del equipo: `lvtthltugrpbqjezwnsd` (us-east-1). Su URL y su clave publicable están en `config.js`.
+- La base de datos se define en `supabase/migrations/`. Cada cambio es una migración nueva que se pueda aplicar dos veces sin error; no edites migraciones que ya llegaron a `main`.
+- La integración con GitHub aplica las migraciones a producción al integrar en `main`: antes, usa `engineering:deploy-checklist`.
+- Si aplicas una migración con el MCP de Supabase (`apply_migration`), Supabase la registra con la hora en que se aplicó. Renombra el archivo local con esa versión (`list_migrations`) antes de integrar en `main`, para que la integración no falle ni la repita.
+- Después de cada migración, corre los asesores de seguridad y de rendimiento. Los avisos 0029 de las cuatro funciones que usan las cuentas son esperados: no les quites el permiso (ver `docs/cuentas-y-planes.md`).
+- El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
+- En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
+- Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
+- Especificación y diseño: `docs/cuentas-y-planes.md`.
