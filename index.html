@@ -469,6 +469,9 @@ let state;let fresh=false;
 try{const raw=localStorage.getItem(KEY);state=raw?JSON.parse(raw):null;}catch(e){state=null;}
 if(!state||state.v!==1){state=exampleState(new Date());fresh=true;}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+// Mientras se miran los datos de ejemplo, los datos propios esperan aquí para poder volver a ellos.
+const KEY_MIOS=KEY+'.mios';
+function tieneMios(){try{return !!localStorage.getItem(KEY_MIOS);}catch(e){return false;}}
 let undoStack=null;
 function snapshot(){undoStack=JSON.stringify(state);}
 function undo(){if(!undoStack)return;const sub=state.sub,cuenta=state.cuenta;state=JSON.parse(undoStack);if(sub)state.sub=sub;state.cuenta=cuenta||null;undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
@@ -569,7 +572,8 @@ function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
   const sleep=`<div class="ag"><span class="t tnum">${state.settings.sleep}</span><span class="blk k-dormir"><b>A dormir</b><small>${state.evals.some(e=>e.date===ymd(addDays(fromYmd(date),1)))?'Mañana tienes evaluación: descansa':'Sin amanecidas'}</small></span></div>`;
   if(!it.length)return `<div class="agenda"><div class="card muted small">Día libre: no hay compromisos ni estudio programado.</div>${sleep}</div>`;
   return `<div class="agenda">${it.map(x=>rowHTML(x,date)).join('')}${sleep}</div>`;}
-function demoBanner(){return state.mode==='example'?`<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="start-own">Usar mis horarios</button></div>`:'';}
+function demoBanner(){if(state.mode!=='example')return '';const mios=tieneMios();
+  return `<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="${mios?'own-restore':'start-own'}">${mios?'Volver a mis datos':'Usar mis horarios'}</button></div>`;}
 function conflicts(){const ev=state.evals.filter(e=>e.date>=ymd(now())).sort((a,b)=>a.date.localeCompare(b.date));const out=[];
   for(let i=0;i<ev.length-1;i++){if(dayDiff(ev[i].date,ev[i+1].date)<=1)out.push([ev[i],ev[i+1]]);}return out;}
 
@@ -695,7 +699,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   </div>
   <span class="eyebrow">Tus datos</span>
   ${installCard()}
-  <div class="stack">${state.mode==='example'?'<button class="btn pri" data-a="start-own">Usar mis horarios</button>':'<button class="btn sec" data-a="see-example">Ver datos de ejemplo</button>'}<button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
+  <div class="stack">${state.mode==='example'?(tieneMios()?'<button class="btn pri" data-a="own-restore">Volver a mis datos</button>':'<button class="btn pri" data-a="start-own">Usar mis horarios</button>'):'<button class="btn sec" data-a="see-example">Ver datos de ejemplo</button>'}<button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
   <p class="small muted" style="margin:0;text-align:center">LIA ${APP_VERSION} · prototipo de prueba</p>`;}
 
 // ---------- Hojas (formularios) ----------
@@ -903,7 +907,14 @@ function applyException(ex){const p0=P();snapshot();state.exceptions.push({id:ui
 
 const A={
  tab:d=>{ui.tab=d.t;ui.sheet=null;render();document.getElementById('view').scrollTop=0;},
- 'see-example':()=>{const sub=state.sub,cuenta=state.cuenta;state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;ensureState();save();ui.welcome=false;ui.tab='hoy';ui.sheet=null;render();},
+ 'see-example':()=>{const propios=state.mode==='own'&&(state.commitments.length||state.evals.length||state.done.length);
+   if(propios){try{localStorage.setItem(KEY_MIOS,JSON.stringify(state));}catch(e){toast('No pude guardar tus datos aparte, así que no cambié nada.');return;}}
+   const sub=state.sub,cuenta=state.cuenta;state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;undoStack=null;ensureState();save();ui.welcome=false;ui.tab='hoy';ui.sheet=null;render();
+   if(propios)toast('Guardé tus datos. Para volver a ellos, toca «Volver a mis datos».');},
+ 'own-restore':()=>{let mios=null;try{mios=JSON.parse(localStorage.getItem(KEY_MIOS));}catch(e){}
+   if(!mios||mios.v!==1){try{localStorage.removeItem(KEY_MIOS);}catch(e){}A['start-own']();return;}
+   const sub=state.sub,cuenta=state.cuenta;state=mios;state.sub=sub||freeSub();state.cuenta=cuenta||null;undoStack=null;ensureState();save();try{localStorage.removeItem(KEY_MIOS);}catch(e){}
+   ui.welcome=false;ui.ob=state.onboarded?0:1;ui.tab='hoy';ui.sheet=null;render();toast('Volviste a tus datos.');},
  'start-own':()=>{if(state.mode==='example'&&!ui.welcome){ui.sheet=sheetOwn();render();return;}A['own-go']();},
  'own-go':()=>{const sub=state.sub,cuenta=state.cuenta;state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
  'ob-back':()=>{if(ui.ob<=1){ui.welcome=true;}else ui.ob--;render();},
@@ -937,7 +948,7 @@ const A={
  close:()=>{ui.sheet=null;render();},
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
- reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
+ reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(KEY_MIOS);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
  'listen-stop':()=>{stopMic(true);},
  'listen-cancel':()=>{stopMic(false);},
