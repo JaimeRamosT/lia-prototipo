@@ -760,7 +760,7 @@ function sheetCheckout(){const per=ui.pay.period,p=PRICES[per],m=ui.pay.method;
   <button class="btn pri" data-a="pay-sim" data-ok="1">Simular pago aprobado</button>
   <button class="btn sec" data-a="pay-sim" data-ok="0">Simular pago rechazado</button>
   ${per==='mes'?'<p class="small muted" style="margin:0;text-align:center">Si pagas con tarjeta, puedes cancelar la renovación cuando quieras desde Perfil.</p>':''}`;}
-function sheetProcessing(){return `<div class="grab"></div><div class="spin" role="status" aria-label="Procesando el pago"></div><h2 style="text-align:center">Procesando tu pago</h2><p class="small muted" style="margin:0;text-align:center">${esc(METHODS[ui.pay.method].name)} · ${soles(PRICES[ui.pay.period].amount)} · modo demo</p>`;}
+function sheetProcessing(){return `<div class="grab"></div><div class="spin" role="status" aria-label="Procesando el pago"></div><h2 style="text-align:center">Procesando tu pago</h2><p class="small muted" style="margin:0;text-align:center">${esc((METHODS[ui.pay.method]||METHODS.yape).name)} · ${soles(PRICES[ui.pay.period].amount)} · modo demo</p>`;}
 function sheetSuccess(){const s=state.sub;
   const line=s.autoRenew?`Se renueva el ${fechaSub(s.until)} con tu tarjeta.`:`Tienes Pro hasta el ${fechaSub(s.until)}.`;
   const w=ui.pay.why,c=ui.pay.ctx||{};
@@ -770,7 +770,7 @@ function sheetSuccess(){const s=state.sub;
   <div class="card stack small">${['Evaluaciones sin límite','Lía reorganiza tu semana sola','Dictado por voz','Modo sesión'].map(t=>`<div class="row-h"><span class="check">${I.check}</span><span>${t}</span></div>`).join('')}</div>
   <div class="demo-note"><b>Modo demo.</b> No se realizó ningún cobro.</div>
   <button class="btn pri" data-a="pay-done">${cta}</button>`;}
-function sheetFail(){return `<div class="grab"></div><span class="eyebrow" style="color:var(--exam-ink)">Pago no completado</span><h2>No se pudo completar el pago</h2><p class="muted" style="margin:0">No se te cobró nada. ${esc(ui.pay.error||METHODS[ui.pay.method].fail)}</p><button class="btn pri" data-a="pay-retry">Intentar de nuevo</button><button class="btn sec" data-a="close">Ahora no</button>`;}
+function sheetFail(){return `<div class="grab"></div><span class="eyebrow" style="color:var(--exam-ink)">Pago no completado</span><h2>No se pudo completar el pago</h2><p class="muted" style="margin:0">No se te cobró nada. ${esc(ui.pay.error||(METHODS[ui.pay.method]||METHODS.yape).fail)}</p><button class="btn pri" data-a="pay-retry">Intentar de nuevo</button><button class="btn sec" data-a="close">Ahora no</button>`;}
 function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
   const rows=[['Precio','S/ 0',`${soles(PRICES.mes.amount)} al mes o ${soles(PRICES.ciclo.amount)} por ciclo (4 meses, ${SAVE_PCT}% menos)`],
    ['Horario fijo y evaluaciones',`Hasta ${FREE_EVALS} evaluaciones`,'Ilimitadas'],
@@ -977,7 +977,7 @@ Object.assign(A,{
  'sub-cancel':()=>{ui.sheet=sheetCancel();render();},
  'sub-cancel-ok':()=>{ui.sheet=null;render();sbRpc('cambiar_renovacion',{p_activa:false}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast(`Listo. Tienes Pro hasta el ${fechaCorta(state.sub.until)}.`);}).catch(e=>toast(mensajeError(e)));},
  'sub-resume':()=>{sbRpc('cambiar_renovacion',{p_activa:true}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast('Renovación automática activada.');}).catch(e=>toast(mensajeError(e)));},
- 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:state.sub.period||'ciclo',method:state.sub.method||'yape'};ui.sheet=sheetCheckout();render();},
+ 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};ui.sheet=sheetCheckout();render();},
  'sub-expire':()=>{if(!isPro())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
    toast(sigue?'LIA Pro se renovó por un mes más (demo: sin cobro real).':'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');}).catch(e=>toast(mensajeError(e)));},
 });
