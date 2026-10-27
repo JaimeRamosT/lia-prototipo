@@ -17,7 +17,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 | Vas a construir una función nueva (cuenta, notificaciones, sílabos, Google Calendar) | `product-management:write-spec`, antes de programar |
 | Decides cuentas, sincronización, hosting o dónde vive una clave | `engineering:architecture` o `engineering:system-design` |
 | La app empieza a usar la API de Claude | `product-self-knowledge` |
-| Cambias las instrucciones, el esquema o el modelo de la IA (`supabase/functions/lia-ia/`) | `engineering:testing-strategy`, y corre la evaluación de frases (`pruebas/ia/`) |
+| Cambias las instrucciones, el esquema o el modelo de la IA (`supabase/functions/lia-ia/`) | `engineering:testing-strategy`. Agrega frases a `pruebas/ia/frases.json` si hace falta y pide a Coconut que corra la evaluación con el modelo real (`pruebas/ia/evaluar.mjs`, con su clave; ver el README) |
 | Pruebas con estudiantes, precio o validación | `design:user-research` y `anthropic-skills:investigacion-emprendimiento` |
 | Mejora visual con una meta concreta, o unificar colores y tokens | `frontend-design` o `design:design-system` |
 

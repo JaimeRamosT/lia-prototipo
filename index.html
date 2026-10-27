@@ -607,6 +607,50 @@ function interpret(text,state,now){
   if(items.length)return{intent:'add',items};
   if(/\b(reorganiza|reprograma|arma|planifica|ordena)\b/.test(ns))return{intent:'replan'};
   return{intent:'help'};}
+// ---------- Lía con IA (docs/ia-con-gemini.md) ----------
+// Lo que se envía a la función lia-ia: fecha y hora con su zona, horas de dormir, horario fijo y evaluaciones
+// de las últimas dos semanas en adelante. Nunca el nombre ni el correo.
+function contextoIA(state,now){const off=-now.getTimezoneOffset(),a=Math.abs(off),desde=ymd(addDays(now,-14));
+  return{ahora:`${ymd(now)}T${pad(now.getHours())}:${pad(now.getMinutes())}:00${off>=0?'+':'-'}${pad(Math.floor(a/60))}:${pad(a%60)}`,
+    despierto:state.settings.wake,duermo:state.settings.sleep,
+    evaluaciones:state.evals.filter(e=>e.date>=desde).sort((x,y)=>x.date.localeCompare(y.date)).slice(0,30).map(e=>({id:e.id,curso:e.course,tipo:e.type,fecha:e.date,hora:e.time})),
+    compromisos:state.commitments.slice(0,30).map(c=>({id:c.id,nombre:c.name,tipo:c.type,dias:c.days,inicio:c.start,fin:c.end}))};}
+// Los últimos mensajes del chat, para entender respuestas cortas como "el de Cálculo".
+function historialIA(chat){return chat.slice(-6).filter(m=>m&&typeof m.text==='string'&&m.text).map(m=>({de:m.from==='me'?'yo':'lia',texto:m.text.slice(0,300)}));}
+const HHMM=/^([01]\d|2[0-3]):[0-5]\d$/;
+function fechaIA(v){if(typeof v!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(v))return null;const d=fromYmd(v);return isNaN(d)||ymd(d)!==v?null:v;}
+function textoIA(v,n){return typeof v==='string'?v.replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,n):'';}
+// Revisa la propuesta de la IA y la convierte en la intención que usa responder() (la misma forma que interpret()).
+// Lo que no cuadra se descarta; si no queda nada útil devuelve {intent:'help'} y la app usa las reglas.
+function validarIA(r,state,now){
+  if(!r||typeof r!=='object')return{intent:'help'};
+  const texto=textoIA(r.texto,300),entre=(f,a,b)=>!!f&&f>=ymd(addDays(now,a))&&f<=ymd(addDays(now,b)),lista=v=>Array.isArray(v)?v.slice(0,6).filter(x=>x&&typeof x==='object'):[];
+  switch(r.intent){
+    case 'add':{const items=[];
+      for(const e of lista(r.evaluaciones)){const date=fechaIA(e.fecha),type=EVAL_TYPES[e.tipo]?e.tipo:null,course=cap(textoIA(e.curso,60));
+        if(!type||!course||!entre(date,0,400))continue;
+        const h=Number(e.horas);
+        items.push({kind:'eval',type,course,date,time:HHMM.test(e.hora)?e.hora:(type==='entrega'?'23:59':'09:00'),hours:h>=0.5&&h<=40?Math.round(h*2)/2:EVAL_TYPES[type].h});}
+      for(const c of lista(r.compromisos)){const type=COMMIT_TYPES[c.tipo]?c.tipo:null;
+        const days=[...new Set((Array.isArray(c.dias)?c.dias:[]).filter(d=>Number.isInteger(d)&&d>=0&&d<=6))].sort((x,y)=>x-y);
+        if(!type||!days.length||!HHMM.test(c.inicio)||!HHMM.test(c.fin)||c.inicio===c.fin)continue;
+        items.push({kind:'commit',type,name:cap(textoIA(c.nombre,40))||(type==='otro'?'Otro':COMMIT_TYPES[type]),days,start:c.inicio,end:c.fin});}
+      return items.length?{intent:'add',items}:{intent:'help'};}
+    case 'except':{const exs=[];
+      for(const x of lista(r.cambios)){const date=fechaIA(x.fecha);if(!entre(date,-1,120))continue;
+        if(x.libera===true){const c=state.commitments.find(c=>c.id===x.compromisoId);
+          if(!c||!c.days.includes(fromYmd(date).getDay())||exs.some(e=>e.ref===c.id&&e.date===date))continue;
+          // Sale antes o entra más tarde: solo el tramo libre, si está dentro del compromiso (los de madrugada se liberan enteros).
+          const tramo=HHMM.test(x.inicio)&&HHMM.test(x.fin)&&c.start<c.end&&x.inicio<x.fin&&x.inicio>=c.start&&x.fin<=c.end&&(x.inicio!==c.start||x.fin!==c.end);
+          exs.push(tramo?{date,start:x.inicio,end:x.fin,label:x.fin===c.end?'Salida temprano':`Sin ${c.name}`,libre:true,ref:c.id}:{date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id});}
+        else if(HHMM.test(x.inicio)&&HHMM.test(x.fin)&&x.inicio!==x.fin)exs.push({date,start:x.inicio,end:x.fin,label:cap(textoIA(x.motivo,40))||'Ocupado'});}
+      return exs.length?{intent:'except',exs,ex:exs[0]}:{intent:'help'};}
+    case 'log':{const s=r.estudio&&typeof r.estudio==='object'?r.estudio:{},e=state.evals.find(x=>x.id===s.evaluacionId),date=fechaIA(s.fecha),min=s.minutos;
+      return e&&entre(date,-14,0)&&Number.isInteger(min)&&min>=5&&min<=720?{intent:'log',evalId:e.id,course:e.course,date,min}:{intent:'help'};}
+    case 'agenda':{const f=fechaIA(r.fecha);return{intent:'agenda',date:entre(f,-7,60)?f:ymd(now)};}
+    case 'progress':case 'next':case 'replan':return{intent:r.intent};
+    case 'pregunta':case 'aviso':case 'fuera':return texto?{intent:'aviso',texto}:{intent:'help'};
+    default:return{intent:'help'};}}
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -642,7 +686,7 @@ let undoStack=null;
 function snapshot(){undoStack=JSON.stringify(state);}
 function undo(){if(!undoStack)return;const sub=state.sub,cuenta=state.cuenta;state=JSON.parse(undoStack);if(sub)state.sub=sub;state.cuenta=cuenta||null;undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
 
-const ui={tab:'hoy',welcome:fresh,ob:0,weekOffset:0,sel:null,sheet:null,session:null,listen:null,pending:null,pay:null,blockedItems:null};
+const ui={tab:'hoy',welcome:fresh,ob:0,weekOffset:0,sel:null,sheet:null,session:null,listen:null,pending:null,pay:null,blockedItems:null,pensando:false,iaPendiente:null,iaRestantes:null};
 
 // ---------- Planes: LIA Gratis y LIA Pro ----------
 // Gratis: hasta 3 evaluaciones próximas; el horario se arma una vez por semana y queda fijo (state.frozen).
@@ -892,8 +936,8 @@ function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).s
 
 function vLia(){const ph='Escríbele a Lía…';
   const sug=['¿Qué tengo mañana?','Hoy salgo del trabajo a las 9','Parcial de Estadística el viernes a las 10','Libera mi sábado','¿Cuánto me falta?'];
-  return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok)">Tu secretaria · versión sin IA (entiende frases simples)</div></div></div>
-  <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}</div>
+  return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok-ink)">${iaActiva()?'Tu secretaria · con IA':'Tu secretaria · versión sin IA (entiende frases simples)'}</div></div></div>
+  <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}${ui.pensando?`<div class="msg">${AV(28)}<div class="bub"><span class="muted">Lía está pensando…</span></div></div>`:''}</div>
   <div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
   <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off" aria-label="Mensaje para Lía"><button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="chat-in" aria-label="${isPro()?'Hablar con Lía':'Hablar con Lía (LIA Pro)'}">${I.mic}</button><button type="submit" class="mic" aria-label="Enviar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
 function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class="bub">${esc(m.text)}</div></div>`;
@@ -914,7 +958,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   const studied=state.done.reduce((a,x)=>a+x.min,0);
   return `${demoBanner()}<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · ${isPro()?'LIA Pro':'LIA Gratis'}</div></div></div>
   <div class="stats"><div class="card stat"><b class="tnum">${covered}/${up}</b><span>evaluaciones con tiempo de estudio completo</span></div><div class="card stat"><b class="tnum">${hrs(studied)}</b><span>estudiadas con LIA</span></div></div>
-  ${planCard()}${cuentaCard()}
+  ${planCard()}${cuentaCard()}${iaCard()}
   <div class="between"><span class="eyebrow">Tu horario fijo</span><button class="pill" data-a="add-commit">${I.plus.replace('<svg','<svg width="14" height="14"')} Agregar</button></div>
   <div class="stack">${state.commitments.map(commitItem).join('')||'<div class="card small muted">Sin compromisos.</div>'}</div>
   <span class="eyebrow">Ajustes de Lía</span>
@@ -1034,6 +1078,18 @@ function planCard(){const s=state.sub;
    <div class="row-h" style="flex-wrap:wrap">${act}<button class="btn sec sm" data-a="plans">Comparar planes</button></div>
    ${modoPruebas()?'<button class="linkbtn" style="color:var(--mute);text-align:left;font-weight:500" data-a="sub-expire">Pruebas: simular el fin del periodo</button>':''}</div>`;}
 // Modo pruebas (?pruebas=1): herramientas del equipo, como simular el fin del periodo. Se recuerda en este navegador; ?pruebas=0 lo apaga.
+// Lía con IA (?ia=1): bandera del equipo mientras se evalúa. Se recuerda en este navegador; ?ia=0 la apaga.
+function iaBandera(){try{const q=new URLSearchParams(location.search).get('ia');if(q==='1')localStorage.setItem('lia.ia.bandera','1');else if(q==='0')localStorage.removeItem('lia.ia.bandera');
+  return localStorage.getItem('lia.ia.bandera')==='1';}catch(e){return false;}}
+// Lo que eligió la persona en el aviso: 'si', 'no' o null si todavía no eligió.
+function iaEleccion(){try{const v=localStorage.getItem('lia.ia');return v==='si'||v==='no'?v:null;}catch(e){return null;}}
+function iaElegir(v){try{localStorage.setItem('lia.ia',v);}catch(e){}}
+function iaPosible(){return iaBandera()&&isPro()&&cuentasActivas();}
+function iaActiva(){return iaPosible()&&iaEleccion()==='si';}
+function iaCard(){if(!iaPosible())return '';const on=iaActiva(),r=ui.iaRestantes;
+  return `<div class="card stack"><span class="eyebrow">Lía con IA</span>
+   <div class="small muted">${on?`Lía entiende tus mensajes con Gemini.${typeof r==='number'?` Hoy te quedan ${r} ${r===1?'mensaje':'mensajes'} con IA.`:''}`:'Lía entiende solo frases simples. Con la IA entiende tus mensajes como los escribes.'}</div>
+   ${on?'<button class="btn sec sm" data-a="ia-apagar">Apagar la IA</button>':'<button class="btn sec sm" data-a="ia-prender">Usar Lía con IA</button>'}</div>`;}
 function modoPruebas(){try{const q=new URLSearchParams(location.search).get('pruebas');if(q==='1')localStorage.setItem('lia.pruebas','1');else if(q==='0')localStorage.removeItem('lia.pruebas');
   return localStorage.getItem('lia.pruebas')==='1';}catch(e){return false;}}
 function freeBanner(){if(isPro()||!state.frozen)return '';
@@ -1143,21 +1199,29 @@ function applyItems(items){snapshot();for(const it of items){if(it.kind==='eval'
 function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();anunciar(`Lía: ${text}`);}
 // Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
 function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
-function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interpret(q,state,n);
-  if(from==='chat')state.chat.push({from:'me',text:q});
+function handleText(q,from){q=q.trim();if(!q)return;
+  if(from==='chat'&&iaPosible()&&navigator.onLine!==false){
+    if(ui.pensando){const i=document.getElementById('chat-in');if(i&&!i.value)i.value=q;anunciar('Espera un momento: Lía está respondiendo.');return;}
+    const el=iaEleccion();
+    if(el===null){ui.iaPendiente=q;ui.sheet=sheetIA();render();return;}
+    if(el==='si'){conIA(q);return;}}
+  const n=now();responder(q,from,interpret(q,state,n),n);}
+// Responde una intención (de las reglas o de la IA). Con eco:false, el mensaje de la persona ya está en el chat.
+function responder(q,from,r,n,{eco=true}={}){
+  if(from==='chat'&&eco)state.chat.push({from:'me',text:q});
   const kindOnly=from==='commit'?'commit':from==='eval'?'eval':null;
   if(r.intent==='add'){let items=r.items;const errs=items.filter(i=>i.error);const ok=items.filter(i=>!i.error);
     if(kindOnly&&ok.some(i=>i.kind!==kindOnly)&&!ok.some(i=>i.kind===kindOnly)){}
     if(errs.length&&!ok.length){if(from==='chat'){liaSay(errs[0].error);render();}else toast(errs[0].error);return;}
     if(newEvalCount(ok)>evalRoom()){ui.blockedItems=ok;if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else openPaywall('evals',{items:ok});return;}
-    if(from==='chat'){ui.pending={items:ok,q};save();render();return;}
+    if(from==='chat'){ui.pending={items:ok,q};save();render();anunciar(`Lía entendió: ${ok.map(resumenItem).join('; ')}. Confirma o corrige.`);return;}
     applyItems(ok);const p=P();const evs=ok.filter(i=>i.kind==='eval');
     const agendado=p.frozen?0:p.blocks.filter(b=>{const e=evById(b.evalId);return e&&evs.some(i=>i.course===e.course&&i.date===e.date);}).reduce((a,b)=>a+b.e-b.s,0);
     const fin=!evs.length?'':p.frozen?' Entra a tu horario cuando rearmes tu semana.':agendado?` Agendé ${hrs(agendado)} de estudio.`:' Todavía no encontré horas libres para estudiar.';
     toast(`Lía agregó: ${ok.map(resumenItem).join('; ')}.${fin}`,true);rerenderKeepScroll();return;}
   if(from!=='chat'){toast(from==='commit'?'No te entendí. Prueba: “clases de lunes a viernes de 8 a 1”.':'No te entendí. Prueba: “parcial de Química el viernes a las 10”.');return;}
   if(r.intent==='except'){const exs=r.exs;
-    if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();return;}
+    if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();anunciar(`Lía entendió: ${exs.map(x=>`${x.label}, ${fechaCorta(x.date)}, ${horario(x)}`).join('; ')}. Confirma o corrige.`);return;}
     const m=aplicarCambio(exs);liaSay(m.texto,m.opts);ui.pending=null;render();return;}
   if(r.intent==='aviso'){liaSay(r.texto);render();return;}
   if(r.intent==='log'){if(r.error){liaSay(r.error);render();return;}
@@ -1177,6 +1241,45 @@ function handleText(q,from){q=q.trim();if(!q)return;const n=now();const r=interp
     render();return;}
   if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
   liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.');render();}
+// ---------- Lía con IA: envío a la función lia-ia ----------
+const IA_TIEMPO=15000;  // ms; la función corta a los 12 s, esto cubre la red del teléfono
+const IA_NIVEL_GRATUITO=true;  // nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
+// Los topes (25 al día y 300 al mes) los pone usar_ia() en Supabase (migración cupo_ia); si cambian, cambia también estos textos y el aviso.
+const IA_AVISOS={
+  cupo_dia:'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te respondo con lo básico.',
+  cupo_mes:'Ya usaste tus 300 mensajes con IA de este mes. Hasta el próximo mes te respondo con lo básico.',
+  sesion:'Tu sesión venció: vuelve a iniciarla en Perfil para usar la IA. Mientras, te respondo con lo básico.',
+  solo_pro:'La IA es parte de LIA Pro. Te respondo con lo básico.',
+  ocupado:'La IA no respondió esta vez, así que te respondo con lo básico.'};
+function pedirIA(cuerpo){
+  return sb().then(c=>c.auth.getSession()).then(({data})=>{const t=data&&data.session&&data.session.access_token;
+    if(!t)return{ok:false,error:'sesion'};
+    const ctl=new AbortController(),reloj=setTimeout(()=>ctl.abort(),IA_TIEMPO);
+    return fetch(`${SB_CFG.url}/functions/v1/lia-ia`,{method:'POST',signal:ctl.signal,
+        headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify(cuerpo)})
+      .then(res=>res.json().catch(()=>null).then(d=>res.ok&&d&&d.ok?d:{ok:false,error:(d&&d.error)||'ocupado'}))
+      .finally(()=>clearTimeout(reloj));});}
+// Con IA: el mensaje aparece de inmediato, Lía "piensa" y responde con la propuesta revisada por validarIA().
+// Sin respuesta útil (error, sin cupo, o la IA no entendió), responde con las reglas como siempre.
+// El historial y el contexto se toman al enviar: lo que pase mientras Lía piensa no cambia lo que se preguntó.
+async function conIA(q){const n=now(),cuerpo={mensaje:q,historial:historialIA(state.chat),contexto:contextoIA(state,n)};
+  state.chat.push({from:'me',text:q});save();ui.pensando=true;render();anunciar('Lía está pensando…');
+  let r=null,aviso='';
+  try{const d=await pedirIA(cuerpo);
+    if(d.ok){if(typeof d.restantes_dia==='number')ui.iaRestantes=d.restantes_dia;const v=validarIA(d.respuesta,state,n);if(v.intent!=='help')r=v;}
+    else{aviso=IA_AVISOS[d.error]||IA_AVISOS.ocupado;if(d.error==='cupo_dia'||d.error==='cupo_mes')ui.iaRestantes=0;
+      if(d.error==='solo_pro')refrescarPlan(true).catch(()=>{});}}
+  catch(e){aviso=IA_AVISOS.ocupado;}
+  conservarBorrador(()=>{ui.pensando=false;if(aviso)liaSay(aviso);responder(q,'chat',r||interpret(q,state,n),n,{eco:false});});}
+// Si la persona empezó a escribir mientras Lía pensaba, lo que escribió sigue en la caja cuando llega la respuesta.
+function conservarBorrador(fn){const i=document.getElementById('chat-in'),v=i?i.value:'';fn();const j=document.getElementById('chat-in');if(j&&v&&!j.value)j.value=v;}
+function sheetIA(){return `<div class="grab"></div><h2>Lía con IA</h2>
+  <p class="muted" style="margin:0">Para entender lo que escribes, Lía envía tu mensaje y un resumen de tu horario (cursos, evaluaciones y horario fijo) a Gemini, la IA de Google, en Estados Unidos. No envía tu nombre ni tu correo.</p>
+  <p class="muted" style="margin:0">${IA_NIVEL_GRATUITO?'Por ahora usamos la versión gratuita de Gemini, así que Google puede usar esos mensajes para mejorar sus productos. No escribas datos personales que no quieras compartir.':'Google no usa esos mensajes para mejorar sus productos.'}</p>
+  <p class="small muted" style="margin:0">Tienes 25 mensajes con IA al día. Sin internet o si la IA falla, Lía sigue entendiendo frases simples. Puedes apagarla cuando quieras en Perfil.</p>
+  <button class="btn pri" data-a="ia-si">Usar Lía con IA</button><button class="btn sec" data-a="ia-no">Ahora no</button>`;}
+// Si la persona cierra el aviso sin elegir, su mensaje se responde con las reglas y la próxima vez se le vuelve a preguntar.
+function soltarPendienteIA(){const q=ui.iaPendiente;ui.iaPendiente=null;if(q){const n=now();responder(q,'chat',interpret(q,state,n),n);}else render();}
 // Aplica cambios de un día (algo que ocupa o algo que se libera) y devuelve qué decirle a la persona.
 function aplicarCambio(exs){const p0=P();snapshot();for(const ex of exs)state.exceptions.push({id:uid(),...ex});save();
   const p1=P(),ex=exs[0],r=intervalo(ex.start,ex.end),dia=fechaCorta(ex.date);
@@ -1249,6 +1352,10 @@ const A={
  wk:d=>{ui.weekOffset+=+d.v;ui.sel=null;render();},
  sel:d=>{ui.sel=d.d;rerenderKeepScroll();},
  chip:d=>{handleText(d.q,'chat');},
+ 'ia-si':()=>{iaElegir('si');ui.sheet=null;const q=ui.iaPendiente;ui.iaPendiente=null;if(q)conIA(q);else{rerenderKeepScroll();toast('Listo: Lía usa la IA para entenderte.');}},
+ 'ia-no':()=>{iaElegir('no');ui.sheet=null;soltarPendienteIA();},
+ 'ia-apagar':()=>{iaElegir('no');rerenderKeepScroll();toast('Listo: Lía te responde sin IA.');},
+ 'ia-prender':()=>{ui.sheet=sheetIA();render();},
  confirm:()=>{const p=ui.pending;ui.pending=null;if(p.exs){const m=aplicarCambio(p.exs);liaSay(m.texto,m.opts);render();return;}
    if(newEvalCount(p.items)>evalRoom()){ui.blockedItems=p.items;liaSay(limitMsg(),{cta:'evals'});render();return;}
    applyItems(p.items);const P1=P();const what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
@@ -1259,8 +1366,8 @@ const A={
    liaSay('Ok, no guardé nada. Corrige tu mensaje y envíalo otra vez.');render();
    const i=document.getElementById('chat-in');if(i&&p&&p.q){i.value=p.q;i.focus();}},
  undo:()=>undo(),
- close:()=>{ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';render();},  // al cerrar no se guarda la contraseña escrita
- scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';render();}},
+ close:()=>{ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();},  // al cerrar no se guarda la contraseña escrita
+ scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
  reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(KEY_MIOS);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
@@ -1483,7 +1590,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.3.7';
+const APP_VERSION='0.4.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
