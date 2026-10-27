@@ -1,6 +1,6 @@
 # LIA · instrucciones para Claude
 
-LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Responde y escribe en español.
+LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Con Pro, Lía entiende los mensajes con Gemini a través de la Edge Function `lia-ia` (ver `docs/ia-con-gemini.md`). Responde y escribe en español.
 
 ## Skills: llámalos, no los omitas
 
@@ -17,6 +17,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 | Vas a construir una función nueva (cuenta, notificaciones, sílabos, Google Calendar) | `product-management:write-spec`, antes de programar |
 | Decides cuentas, sincronización, hosting o dónde vive una clave | `engineering:architecture` o `engineering:system-design` |
 | La app empieza a usar la API de Claude | `product-self-knowledge` |
+| Cambias las instrucciones, el esquema o el modelo de la IA (`supabase/functions/lia-ia/`) | `engineering:testing-strategy`, y corre la evaluación de frases (`pruebas/ia/`) |
 | Pruebas con estudiantes, precio o validación | `design:user-research` y `anthropic-skills:investigacion-emprendimiento` |
 | Mejora visual con una meta concreta, o unificar colores y tokens | `frontend-design` o `design:design-system` |
 
@@ -61,4 +62,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
-- Especificación y diseño: `docs/cuentas-y-planes.md`.
+- La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat.
+- El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
+- La función `lia-ia` nunca escribe en sus registros el texto de los mensajes.
+- Especificación y diseño: `docs/cuentas-y-planes.md` (cuentas y planes) y `docs/ia-con-gemini.md` (IA).
