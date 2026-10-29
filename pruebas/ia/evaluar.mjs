@@ -48,7 +48,7 @@ const vale = (esperado, real) => esperado === undefined || (Array.isArray(espera
 const mismosDias = (a, b) => Array.isArray(b) && JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 
 function itemCoincide(e, i) {
-  if (!i || i.error || e.kind !== i.kind) return false;
+  if (!i || e.kind !== i.kind) return false;
   if (e.kind === 'eval') return vale(e.type, i.type) && norm(i.course).includes(norm(e.course)) && vale(e.date, i.date) && vale(e.time, i.time);
   return vale(e.type, i.type) && (e.days === undefined || mismosDias(e.days, i.days)) && vale(e.start, i.start) && vale(e.end, i.end);
 }
@@ -67,22 +67,25 @@ function emparejar(esperados, reales, coincide, exacto) {
   }
   return !exacto || usados.size === reales.length;
 }
-const preguntaReglas = r => (r.intent === 'add' && r.items.length > 0 && r.items.every(i => i.error)) || (r.intent === 'log' && !!r.error);
+// Lo que Lía pregunta: el dato que le falta al borrador (iteración 2: Lía pide lo que falta, con IA y sin IA).
+const faltaDe = r => (r && r.intent === 'pregunta' && r.borrador ? L.faltaDe(r.borrador.items[r.borrador.i]) : null);
 
-// r: la intención que usa la app; origen: 'ia' o 'reglas'; ia: la intención que eligió Gemini (antes de la revisión).
-export function revisar(espera, { r, origen, ia }) {
+// r: la intención que usa la app; origen: 'ia' o 'reglas'; ia: la intención que eligió Gemini (antes de la revisión);
+// faltaIA: el dato que Gemini dijo que preguntaba.
+export function revisar(espera, { r, origen, ia, faltaIA = null }) {
   return (Array.isArray(espera) ? espera : [espera]).some(e => {
     const exacto = e.exacto !== false;
     switch (e.intent) {
       case 'add': return r.intent === 'add' && emparejar(e.items, r.items, itemCoincide, exacto);
       case 'except': return r.intent === 'except' && emparejar(e.exs, r.exs, cambioCoincide, exacto);
-      case 'log': return r.intent === 'log' && !r.error && r.evalId === e.evalId && vale(e.date, r.date) && vale(e.min, r.min);
+      case 'log': return r.intent === 'log' && r.evalId === e.evalId && vale(e.date, r.date) && vale(e.min, r.min);
       case 'agenda': return r.intent === 'agenda' && r.date === e.date;
       case 'progress': case 'next': case 'replan': return r.intent === e.intent;
-      case 'pregunta': return origen === 'ia' ? ia === 'pregunta' : preguntaReglas(r);
+      // Pregunta lo que falta: con borrador (y respuestas rápidas) o, con IA, al menos el dato correcto en «falta».
+      case 'pregunta': return (r.intent === 'pregunta' && vale(e.falta, faltaDe(r))) || (origen === 'ia' && ia === 'pregunta' && vale(e.falta, faltaIA));
       case 'aviso': return origen === 'ia' ? ia === 'aviso' : r.intent === 'aviso';
       case 'fuera': return origen === 'ia' ? ia === 'fuera' : r.intent === 'help';
-      case 'sin_cambios': return !['add', 'except', 'log', 'replan'].includes(r.intent) || preguntaReglas(r);
+      case 'sin_cambios': return !['add', 'except', 'log', 'replan'].includes(r.intent);
       default: return false;
     }
   });
@@ -92,19 +95,27 @@ export function revisar(espera, { r, origen, ia }) {
 export function resumir(r) {
   if (!r) return '—';
   switch (r.intent) {
-    case 'add': return 'agrega ' + r.items.map(i => i.error ? `(pregunta: ${i.error})` : i.kind === 'eval' ? `${i.type} «${i.course}» ${i.date} ${i.time}` : `${i.type} «${i.name}» [${i.days.join(',')}] ${i.start}–${i.end}`).join(' + ');
+    case 'add': return 'agrega ' + r.items.map(i => i.kind === 'eval' ? `${i.type} «${i.course}» ${i.date} ${i.time}` : `${i.type} «${i.name}» [${i.days.join(',')}] ${i.start}–${i.end}`).join(' + ');
+    case 'pregunta': return `pregunta (${faltaDe(r)}): «${r.texto}»`;
     case 'except': return r.exs.map(x => `${x.libre ? 'libera' + (x.ref ? ' ' + x.ref : '') : 'ocupa'} ${x.date} ${x.start}–${x.end}${x.label ? ` «${x.label}»` : ''}`).join(' + ');
-    case 'log': return r.error ? `(pregunta: ${r.error})` : `anota ${r.min} min de ${r.evalId} el ${r.date}`;
+    case 'log': return `anota ${r.min} min de ${r.evalId} el ${r.date}`;
     case 'agenda': return `agenda del ${r.date}`;
     case 'aviso': return `dice: «${r.texto}»`;
     default: return r.intent;
   }
 }
 
+// Sin IA, una respuesta corta («a las 6 de la tarde») completa el borrador de la pregunta anterior, como en la app.
+export function reglasConCharla(f, s, n) {
+  const yo = (f.historial || []).filter(h => h.de === 'yo').at(-1);
+  if (yo) { const antes = L.interpret(yo.texto, s, n); if (antes.intent === 'pregunta') { const r = L.respuestaBorrador({ ...antes.borrador }, f.frase, s, n); if (r) return r; } }
+  return L.interpret(f.frase, s, n);
+}
+
 // ---------- Una frase ----------
 export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo = MODELO, tiempo = TIEMPO_GEMINI, soloReglas = false } = {}) {
   const s = estadoEval(), n = ahoraLocal();
-  const reglas = L.interpret(f.frase, s, n);
+  const reglas = reglasConCharla(f, s, n);
   const base = { id: f.id, frase: f.frase, reglas: revisar(f.espera, { r: reglas, origen: 'reglas', ia: null }), resumenReglas: resumir(reglas) };
   if (soloReglas) return base;
   const pedido = leerPedido(JSON.stringify({ mensaje: f.frase, historial: f.historial || [], contexto: contextoEval(s) }));
@@ -113,12 +124,12 @@ export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo 
   const g = await pedirGemini({ fetch }, modelo, clave, pedido, { tiempo });
   const ms = Date.now() - t0;
   if (g.error) return { ...base, ms, error: g.error, httpStatus: g.httpStatus || null, soloIA: false, conRespaldo: base.reglas, origen: 'reglas', resumenIA: `(error: ${g.error})` };
-  const v = L.validarIA(g.respuesta, s, n), ia = g.respuesta.intent;
+  const v = L.validarIA(g.respuesta, s, n), ia = g.respuesta.intent, faltaIA = g.respuesta.falta || null;
   const usaIA = v.intent !== 'help';  // como en la app: si la revisión no deja nada útil, responde con las reglas
   return {
     ...base, ms, error: null, uso: g.uso, formato: g.formato, ia, respuesta: g.respuesta, resumenIA: resumir(v),
-    soloIA: revisar(f.espera, { r: v, origen: 'ia', ia }),
-    conRespaldo: usaIA ? revisar(f.espera, { r: v, origen: 'ia', ia }) : base.reglas,
+    soloIA: revisar(f.espera, { r: v, origen: 'ia', ia, faltaIA }),
+    conRespaldo: usaIA ? revisar(f.espera, { r: v, origen: 'ia', ia, faltaIA }) : base.reglas,
     origen: usaIA ? 'ia' : 'reglas',
   };
 }
