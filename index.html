@@ -614,10 +614,21 @@ function parseDate(ns,now){
   if(m)return mk(+m[1],+m[2]);
   m=ns.match(/\b(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/);
   if(m)return mk(+m[1],MESN[m[2]]);
+  // «El lunes 9», «el martes 3 a las 8»: el número dice qué semana es. No es fecha si el número es una hora
+  // («el viernes 10 de la noche») o el inicio de un rango («lunes 8 a 1»).
+  m=ns2.match(/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(\d{1,2})\b(?!\s*(?::|am\b|pm\b|h\b|hrs?\b|horas?\b|de la\b|del\b|-|a\s+\d|hasta\b))/);
+  if(m){const f=diaConNumero(+m[2],DAYW[m[1]],now);if(f)return f;}
   for(const [w,wd] of Object.entries(DAYW)){if(new RegExp(`\\b${w}\\b`).test(ns2)){const prox=new RegExp(`\\b(proximo|siguiente|otro)\\s+${w}\\b`).test(ns2);let d=nextWeekday(now,wd,false);if(prox&&dayDiff(ymd(now),d)<7)d=ymd(addDays(fromYmd(d),7));return d;}}
   m=ns.match(/\bel (\d{1,2})\b(?!\s*(?::|am|pm|h\b|horas))/);
-  if(m){const d=+m[1];let dt=new Date(now.getFullYear(),now.getMonth(),d);if(dt<addDays(now,-1))dt=new Date(now.getFullYear(),now.getMonth()+1,d);return ymd(dt);}
+  if(m)return diaDelMes(+m[1],now);
   return null;}
+// «El 9»: el día 9 de este mes o, si ya pasó, del siguiente.
+function diaDelMes(d,now){let dt=new Date(now.getFullYear(),now.getMonth(),d);if(dt<addDays(now,-1))dt=new Date(now.getFullYear(),now.getMonth()+1,d);return ymd(dt);}
+// «El lunes 9»: el próximo día 9 que cae lunes (de hoy en adelante, hasta 3 meses). Si ninguno cae lunes,
+// manda el número, igual que «el 9»: es lo más concreto que dijo la persona y la propuesta muestra el día.
+function diaConNumero(d,wd,now){if(d<1||d>31)return null;const hoy=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  for(let k=0;k<3;k++){const dt=new Date(now.getFullYear(),now.getMonth()+k,d);if(dt.getDate()===d&&dt>=hoy&&dt.getDay()===wd)return ymd(dt);}
+  return diaDelMes(d,now);}
 function parseDays(ns){
   if(/\b(todos los dias|diario|diariamente|cada dia)\b/.test(ns))return[0,1,2,3,4,5,6];
   if(/\bfin(?:es)? de semana\b/.test(ns))return[6,0];
@@ -628,7 +639,8 @@ function parseDays(ns){
   const out=[];for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns)&&!out.includes(wd))out.push(wd);
   return out.sort((a,b)=>((a+6)%7)-((b+6)%7));}
 const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera']);
-const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:']);
+// «Práctica calificada de química»: «calificada» es parte del tipo, no del curso.
+const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:','calificada','calificado','calificadas','calificados']);
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 function extractCourse(toks,i,conTipos){let j=i+1;while(j<toks.length&&SKIPW.has(toks[j].n))j++;const out=[];
   for(;j<toks.length&&out.length<4;j++){const t=toks[j];
@@ -2102,7 +2114,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.5.1';
+const APP_VERSION='0.5.2';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
