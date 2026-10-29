@@ -64,7 +64,7 @@ Hoy Lía entiende frases con reglas (`interpret()`). Funciona sin internet y es 
 4. **Validación en la app.** Una función nueva en el bloque LOGIC (`validarIA()`) revisa cada campo antes de usarlo: tipos de evaluación y de compromiso conocidos, fechas y horas válidas y en un rango razonable, horas de estudio entre 0.5 y 40, días de la semana entre 0 y 6, identificadores que existan y textos de largo limitado. Si algo no cuadra, se descarta y se usan las reglas.
 5. **Flujo en el chat.** Con Pro e internet, el mensaje va a la IA: "Lía está pensando…", luego la propuesta con las mismas confirmaciones de hoy (agregar pide confirmar; los cambios de un día respetan la opción de autonomía; "Deshacer" sigue igual). Sin internet, con error o sin cupo, se usan las reglas y Lía lo dice en una línea.
 6. **Privacidad.** Antes del primer uso, un aviso: Lía envía el mensaje y un resumen del horario a Gemini, de Google, en Estados Unidos. Como usamos el nivel gratuito, el aviso dice que Google puede usar esos mensajes para mejorar sus productos y pide no escribir datos personales. La persona elige «Usar Lía con IA» o «Ahora no», y puede cambiarlo en Perfil. Se envía lo mínimo: fecha y hora actuales, cursos, evaluaciones y horario fijo. Nunca el correo ni el nombre.
-7. **Bandera.** Todo entra a `main` apagado detrás de `?ia=1` (solo el equipo) hasta pasar la evaluación. `?ia=0` la apaga en ese navegador.
+7. **Bandera.** Todo entró a `main` apagado detrás de `?ia=1` (solo el equipo) mientras se evaluaba. Se quitó en la versión 0.5.1 (29 de octubre de 2026): la bandera se guardaba en cada navegador, así que no llegaba a la app instalada (en iPhone, esa app tiene su propio almacenamiento), y tampoco protegía nada, porque cualquiera podía escribir `?ia=1`. Lo que limita el uso es el cupo de `usar_ia()`.
 8. **Sin gasto.** En el nivel gratuito Google no cobra. Si se llega a sus límites, Gemini responde 429 y la app sigue con las reglas.
 
 ### P1: poco después de la fase 1
@@ -218,7 +218,7 @@ La evaluación con el modelo real se corre cada vez que cambian las instruccione
 3. `feat/ia-funcion`: la Edge Function `lia-ia`, su entrada en `supabase/config.toml` y sus pruebas. Se despliega sola al integrar a `main`.
 4. `feat/ia-chat`: `validarIA()`, el flujo del chat detrás de `?ia=1`, el aviso de privacidad (revisado con `design:ux-copy`) y las pruebas de navegador.
 5. Evaluación con el modelo real y ajuste de las instrucciones hasta llegar a la meta.
-6. Encender para Pro (quitar la bandera) y medir en el piloto.
+6. Encender para Pro (quitar la bandera) y medir en el piloto. La bandera se quitó en la versión 0.5.1, el 29 de octubre de 2026. Falta volver a correr la evaluación con el modelo real con las frases de la iteración 2.
 
 **Fase 2: sílabos (3 a 4 días).** Subir un PDF o una foto → la función lo envía a Gemini → lista de evaluaciones para revisar → agregar. Con cupo propio de sílabos.
 
