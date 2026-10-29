@@ -33,36 +33,49 @@ test('historialIA toma los últimos seis mensajes y marca quién habló', () => 
   assert.deepEqual(L.historialIA(chat), ['m3', 'm4', 'm5', 'm6', 'm7', 'm8'].map((t, i) => ({ de: i % 2 ? 'yo' : 'lia', texto: t })));
 });
 
-test('add: evaluaciones válidas pasan con sus valores por defecto; las malas se descartan', () => {
+test('add: evaluaciones completas pasan; las malas se descartan', () => {
   const r = L.validarIA({ intent: 'add', texto: 'ok', evaluaciones: [
     { tipo: 'practica', curso: 'física', fecha: '2026-10-29', hora: '19:00' },
-    { tipo: 'entrega', curso: 'Informe de Química', fecha: '2026-11-05' },
-    { tipo: 'parcial', curso: 'Estadística', fecha: '2026-11-02', hora: '9:00', horas: 7.3 },
+    { tipo: 'parcial', curso: 'Estadística', fecha: '2026-11-02', hora: '09:00', horas: 7.3 },
     { tipo: 'examen', curso: 'Pasado', fecha: '2026-10-20', hora: '09:00' },
     { tipo: 'concierto', curso: 'Rock', fecha: '2026-10-30', hora: '20:00' },
-    { tipo: 'final', curso: '   ', fecha: '2026-11-30', hora: '09:00' },
     { tipo: 'final', curso: 'Álgebra', fecha: '2026-02-30', hora: '09:00' },
   ] }, base(), lunes);
   assert.equal(r.intent, 'add');
   assert.deepEqual(r.items, [
     { kind: 'eval', type: 'practica', course: 'Física', date: '2026-10-29', time: '19:00', hours: 3 },
-    { kind: 'eval', type: 'entrega', course: 'Informe de Química', date: '2026-11-05', time: '23:59', hours: 4 },
     { kind: 'eval', type: 'parcial', course: 'Estadística', date: '2026-11-02', time: '09:00', hours: 7.5 },
   ]);
+  assert.deepEqual(L.validarIA({ intent: 'add', texto: 'x', evaluaciones: [{ tipo: 'nada' }] }, base(), lunes), { intent: 'help' });
 });
 
-test('add: compromisos con días únicos y ordenados; sin horario válido se descartan', () => {
+test('add: sin hora, sin fecha o sin curso, la app pregunta en vez de inventar (decisión 4)', () => {
+  const sinHora = L.validarIA({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'entrega', curso: 'Informe de Química', fecha: '2026-11-05' }] }, base(), lunes);
+  assert.equal(sinHora.intent, 'pregunta');
+  assert.equal(sinHora.texto, '¿A qué hora vence tu informe de Química?');
+  assert.deepEqual(sinHora.opciones.map(o => o.t), ['23:59', 'Otra hora']);
+  assert.deepEqual(sinHora.borrador.items[0], { kind: 'eval', type: 'entrega', course: 'Informe de Química', date: '2026-11-05', time: '', hours: 4 });
+  // Una hora mal escrita cuenta como que no vino.
+  assert.equal(L.validarIA({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'parcial', curso: 'X', fecha: '2026-11-02', hora: '9:00' }] }, base(), lunes).intent, 'pregunta');
+  const sinFecha = L.validarIA({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'examen', curso: 'Inglés' }] }, base(), lunes);
+  assert.equal(sinFecha.texto, '¿Qué día es tu examen de Inglés?');
+  const sinCurso = L.validarIA({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'final', curso: '   ', fecha: '2026-11-30', hora: '09:00' }] }, base(), lunes);
+  assert.match(sinCurso.texto, /^¿De qué curso es tu final del lun 30 nov\?$/);
+});
+
+test('add: compromisos con días únicos y ordenados; sin días o sin horario, pregunta', () => {
   const r = L.validarIA({ intent: 'add', texto: 'ok', compromisos: [
     { tipo: 'trabajo', nombre: 'chamba en la tienda', dias: [5, 1, 1, 9, -1], inicio: '18:00', fin: '23:00' },
     { tipo: 'clase', nombre: '', dias: [2, 4], inicio: '07:00', fin: '09:00' },
-    { tipo: 'otro', nombre: 'Gym', dias: [], inicio: '06:00', fin: '07:00' },
-    { tipo: 'trabajo', nombre: 'Turno', dias: [1], inicio: '10:00', fin: '10:00' },
   ] }, base(), lunes);
   assert.deepEqual(r.items, [
     { kind: 'commit', type: 'trabajo', name: 'Chamba en la tienda', days: [1, 5], start: '18:00', end: '23:00' },
     { kind: 'commit', type: 'clase', name: 'Clases', days: [2, 4], start: '07:00', end: '09:00' },
   ]);
-  assert.deepEqual(L.validarIA({ intent: 'add', texto: 'x', evaluaciones: [{ tipo: 'nada' }] }, base(), lunes), { intent: 'help' });
+  const dias = L.validarIA({ intent: 'add', texto: 'ok', compromisos: [{ tipo: 'deporte', nombre: 'Gym', dias: [], inicio: '06:00', fin: '07:00' }] }, base(), lunes);
+  assert.deepEqual([dias.intent, dias.texto, dias.opciones.map(o => o.t).join('|')], ['pregunta', '¿Qué días tienes gym?', 'Lun a Vie|Fines de semana|Otros días']);
+  const horario = L.validarIA({ intent: 'add', texto: 'ok', compromisos: [{ tipo: 'trabajo', nombre: 'Turno', dias: [1], inicio: '10:00', fin: '10:00' }] }, base(), lunes);
+  assert.deepEqual([horario.intent, horario.texto], ['pregunta', '¿De qué hora a qué hora tienes turno?']);
 });
 
 test('except: liberar usa el horario real del compromiso y solo si ese día le toca', () => {
@@ -79,10 +92,16 @@ test('except: liberar usa el horario real del compromiso y solo si ese día le t
   assert.equal(r.intent, 'except');
   assert.deepEqual(r.exs, [
     { date: '2026-10-27', start: '08:00', end: '12:00', label: 'Sin Clases', libre: true, ref: 'c1' },
-    { date: '2026-10-26', start: '19:00', end: '22:00', label: 'Trabajo (más tarde)' },
-    { date: '2026-10-31', start: '15:00', end: '19:00', label: 'Ocupado' },
+    { date: '2026-10-26', start: '19:00', end: '22:00', label: 'Trabajo (más tarde)', cat: 'trabajo' },
+    { date: '2026-10-31', start: '15:00', end: '19:00', label: 'Ocupado', cat: 'otro' },
   ]);
   assert.equal(r.ex, r.exs[0]);
+});
+
+test('except: algo de un día sin horas queda como borrador y la app pregunta, con su categoría', () => {
+  const r = L.validarIA({ intent: 'except', texto: 'ok', cambios: [{ fecha: '2026-10-31', libera: false, motivo: 'cumpleaños de Ana' }] }, base(), lunes);
+  assert.deepEqual([r.intent, r.texto], ['pregunta', 'Anoto el cumpleaños de Ana del sábado. ¿De qué hora a qué hora es?']);
+  assert.deepEqual(r.borrador.items[0], { kind: 'evento', date: '2026-10-31', start: '', end: '', label: 'Cumpleaños de Ana', cat: 'ocio' });
 });
 
 test('except: salir antes o entrar más tarde libera solo el tramo, si está dentro del compromiso', () => {
@@ -103,12 +122,17 @@ test('except: salir antes o entrar más tarde libera solo el tramo, si está den
     [{ date: '2026-10-27', start: '22:00', end: '06:00', label: 'Sin Turno', libre: true, ref: 'c0' }]);
 });
 
-test('log: solo con una evaluación que existe, una fecha reciente y minutos razonables', () => {
+test('log: con una evaluación que existe, una fecha reciente y minutos razonables; si falta algo, pregunta', () => {
   const ok = L.validarIA({ intent: 'log', texto: 'ok', estudio: { evaluacionId: 'e0', fecha: '2026-10-25', minutos: 90 } }, base(), lunes);
   assert.deepEqual(ok, { intent: 'log', evalId: 'e0', course: 'Cálculo II', date: '2026-10-25', min: 90 });
-  for (const estudio of [{ evaluacionId: 'e9', fecha: '2026-10-25', minutos: 90 }, { evaluacionId: 'e0', fecha: '2026-10-27', minutos: 90 },
-    { evaluacionId: 'e0', fecha: '2026-10-25', minutos: 2 }, { evaluacionId: 'e0', fecha: '2026-10-25', minutos: 12.5 }, { evaluacionId: 'e0', fecha: '2026-09-01', minutos: 60 }])
+  for (const estudio of [{ evaluacionId: 'e0', fecha: '2026-10-27', minutos: 90 }, { evaluacionId: 'e0', fecha: '2026-09-01', minutos: 60 }])
     assert.deepEqual(L.validarIA({ intent: 'log', texto: 'x', estudio }, base(), lunes), { intent: 'help' }, JSON.stringify(estudio));
+  const cual = L.validarIA({ intent: 'log', texto: 'x', estudio: { evaluacionId: 'e9', fecha: '2026-10-25', minutos: 90 } }, base(), lunes);
+  assert.deepEqual([cual.intent, cual.texto, cual.opciones.map(o => o.t).join('|')], ['pregunta', '¿Para qué evaluación estudiaste?', 'Parcial de Cálculo II|Entrega de Química']);
+  for (const minutos of [2, 12.5, undefined])
+    assert.equal(L.validarIA({ intent: 'log', texto: 'x', estudio: { evaluacionId: 'e0', fecha: '2026-10-25', minutos } }, base(), lunes).texto, '¿Cuánto tiempo estudiaste para Cálculo II?');
+  // Sin fecha, es de hoy.
+  assert.equal(L.validarIA({ intent: 'log', texto: 'x', estudio: { evaluacionId: 'e0', minutos: 30 } }, base(), lunes).date, '2026-10-26');
 });
 
 test('agenda, progreso, próxima evaluación, preguntas y temas ajenos', () => {
@@ -116,6 +140,11 @@ test('agenda, progreso, próxima evaluación, preguntas y temas ajenos', () => {
   assert.deepEqual(L.validarIA({ intent: 'agenda', texto: '', fecha: 'mañana' }, base(), lunes), { intent: 'agenda', date: '2026-10-26' });
   for (const i of ['progress', 'next', 'replan']) assert.deepEqual(L.validarIA({ intent: i, texto: 'x' }, base(), lunes), { intent: i });
   assert.deepEqual(L.validarIA({ intent: 'pregunta', texto: '¿De qué curso es el examen?' }, base(), lunes), { intent: 'aviso', texto: '¿De qué curso es el examen?' });
+  // Con lo que entendió, la pregunta de la IA va con las respuestas rápidas de la app (si pregunta lo mismo que falta).
+  const p = L.validarIA({ intent: 'pregunta', falta: 'curso', texto: '¿De qué curso es el examen del viernes?', evaluaciones: [{ tipo: 'examen', fecha: '2026-10-30' }] }, base(), lunes);
+  assert.deepEqual([p.intent, p.texto, p.borrador.items[0].date], ['pregunta', '¿De qué curso es el examen del viernes?', '2026-10-30']);
+  const otra = L.validarIA({ intent: 'pregunta', falta: 'fecha', texto: '¿Qué día?', evaluaciones: [{ tipo: 'examen', curso: 'Inglés', fecha: '2026-10-30' }] }, base(), lunes);
+  assert.equal(otra.texto, '¿A qué hora es tu examen de Inglés del viernes?');
   assert.deepEqual(L.validarIA({ intent: 'fuera', texto: 'Eso no lo sé hacer.\u0000' }, base(), lunes), { intent: 'aviso', texto: 'Eso no lo sé hacer.' });
   for (const r of [null, 'texto', { intent: 'pregunta', texto: '' }, { intent: 'borrar_todo', texto: 'listo' }, { intent: 'help', texto: '?' }])
     assert.deepEqual(L.validarIA(r, base(), lunes), { intent: 'help' }, JSON.stringify(r));
