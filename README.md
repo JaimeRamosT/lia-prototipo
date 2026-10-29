@@ -104,6 +104,7 @@ Funciona:
 - **Planes.** Sin cuenta, Gratis: hasta 3 evaluaciones próximas y una semana que se arma una vez; las evaluaciones nuevas entran solas en las horas libres, sin mover lo ya armado. Con una cuenta Pro: sin límites, voz, modo sesión y reorganización automática.
 - **Horario automático.** Bloques de estudio en tus horas libres, que se reorganizan cuando algo cambia.
 - **Categorías.** Clases, trabajo, traslado, comidas, curso o taller, deporte, ocio y descanso, familia y casa, y otro, cada una con su color, su ícono y su nombre. Lía sugiere una vez la categoría de lo que quedó en «Otro».
+- **Rutinas y cosas de un solo día.** Un botón «Agregar» en Hoy y en Semana para una rutina semanal, algo de un solo día (un cumpleaños, una cita) o una evaluación. Una rutina puede tener varios horarios (por ejemplo, clases en la mañana unos días y en la tarde otros) y avisa si se cruza con otra. Nada se guarda sin hora. En Gratis, lo que no choca con el estudio ya armado no obliga a rearmar la semana.
 - **Pantallas.** Hoy, Semana, Evaluaciones, chat con Lía (entiende frases simples; con IA, solo en pruebas) y modo sesión con temporizador.
 - **Dictado por voz.** Solo en navegadores con reconocimiento de voz, como Chrome. En los demás, la app pide usar el micrófono del teclado.
 - **App instalable.** Se agrega a la pantalla de inicio y abre sin internet.
