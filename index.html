@@ -33,7 +33,10 @@ img{max-width:100%}
   --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C1B29; --mute:#6B6A7B; --line:#E6E2D9;
   --pri:#3D3BF3; --pri-ink:#FFFFFF; --pri-soft:#ECEBFF; --pri-sub:#C9C8FF;
   --clase:#E8EBF2; --clase-ink:#1C1B29; --trabajo:#FFE6BA; --trabajo-ink:#5A3B00;
-  --otro:#E4F1EA; --otro-ink:#1F4D33; --exam:#FF5A4E; --exam-soft:#FFEFEC; --exam-ink:#B4271B;
+  /* Categorías de rutinas y eventos: fondo / texto (4.5:1 o más, también el texto pequeño al 85 %) */
+  --traslado:#DCEEF7; --traslado-ink:#0B4763; --comida:#EEF2D3; --comida-ink:#4A5210; --curso:#D7F1EE; --curso-ink:#0B4A44;
+  --deporte:#E4F1EA; --deporte-ink:#1F4D33; --ocio:#FBE3EE; --ocio-ink:#7A1C47; --casa:#ECE6F8; --casa-ink:#43307A;
+  --otro:#EDEBE5; --otro-ink:#3D3B36; --exam:#FF5A4E; --exam-soft:#FFEFEC; --exam-ink:#B4271B;
   --ok:#1E9E5A; --ok-soft:#E3F7EC; --ok-ink:#13703F; --pri-strong:#3D3BF3; --night:#16153A; --night-ink:#FFFFFF; --shadow:rgba(28,27,41,.10);
   --badge-bg:#3D3BF3; --badge-ink:#FFFFFF;
   /* Rellenos con texto blanco encima (4.5:1 o más) y enlace dentro del aviso */
@@ -44,14 +47,18 @@ img{max-width:100%}
   --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
   --pri:#8A88FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
   --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
-  --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
+  --traslado:#13303D; --traslado-ink:#A6DDF5; --comida:#2B2F16; --comida-ink:#D9E59A; --curso:#123532; --curso-ink:#93E0D6;
+  --deporte:#1D3327; --deporte-ink:#A8E6C3; --ocio:#3B1C2B; --ocio-ink:#F7B3D2; --casa:#2A2340; --casa-ink:#D2C5F5;
+  --otro:#2A2925; --otro-ink:#E2DFD6; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
   --ok:#4CC98A; --ok-soft:#173326; --ok-ink:#4CC98A; --pri-strong:#3D3BF3; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4);
   --badge-bg:#D3D2FF; --badge-ink:#16153A; --pri-fill:#5754E8; --exam-fill:#C9372D; --toast-link:#3D3BF3; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A3A2B8; --line:#2D2C44;
   --pri:#8A88FF; --pri-ink:#FFFFFF; --pri-soft:#26254A; --pri-sub:#D3D2FF;
   --clase:#26283A; --clase-ink:#E0E2EE; --trabajo:#3D2F14; --trabajo-ink:#FFD891;
-  --otro:#1D3327; --otro-ink:#A8E6C3; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
+  --traslado:#13303D; --traslado-ink:#A6DDF5; --comida:#2B2F16; --comida-ink:#D9E59A; --curso:#123532; --curso-ink:#93E0D6;
+  --deporte:#1D3327; --deporte-ink:#A8E6C3; --ocio:#3B1C2B; --ocio-ink:#F7B3D2; --casa:#2A2340; --casa-ink:#D2C5F5;
+  --otro:#2A2925; --otro-ink:#E2DFD6; --exam:#FF6F64; --exam-soft:#3A1E1E; --exam-ink:#FF9F97;
   --ok:#4CC98A; --ok-soft:#173326; --ok-ink:#4CC98A; --pri-strong:#3D3BF3; --night:#0B0B19; --night-ink:#FFFFFF; --shadow:rgba(0,0,0,.4);
   --badge-bg:#D3D2FF; --badge-ink:#16153A; --pri-fill:#5754E8; --exam-fill:#C9372D; --toast-link:#3D3BF3; color-scheme:dark}
 html,body{height:100%}
@@ -131,7 +138,18 @@ h2{font-size:17px;margin:0;font-weight:600}
 .k-estudio small,.k-examen small,.k-hecho small,.k-libre small{opacity:1}
 .k-clase{background:var(--clase);color:var(--clase-ink)}
 .k-trabajo{background:var(--trabajo);color:var(--trabajo-ink)}
-.k-traslado,.k-otro{background:var(--otro);color:var(--otro-ink)}
+.k-traslado{background:var(--traslado);color:var(--traslado-ink)}
+.k-comida{background:var(--comida);color:var(--comida-ink)}
+.k-curso{background:var(--curso);color:var(--curso-ink)}
+.k-deporte{background:var(--deporte);color:var(--deporte-ink)}
+.k-ocio{background:var(--ocio);color:var(--ocio-ink)}
+.k-casa{background:var(--casa);color:var(--casa-ink)}
+.k-otro{background:var(--otro);color:var(--otro-ink)}
+/* Ícono de la categoría dentro del bloque: el color nunca va solo */
+.blk b .ki{display:inline-flex;width:16px;height:16px;margin-right:6px;vertical-align:-2px}
+.blk b .ki svg,.sw .ki svg{width:100%;height:100%}
+.sw .ki{display:inline-flex;width:22px;height:22px}
+.ico .ki,.ico .ki svg{display:block;width:100%;height:100%}
 /* Lo que se liberó solo ese día */
 .k-libre{background:transparent;color:var(--ok-ink);border:1.5px dashed var(--ok)}
 .k-excepcion{background:repeating-linear-gradient(135deg,var(--clase) 0 8px,var(--surface) 8px 16px);color:var(--clase-ink);border:1px solid var(--line)}
@@ -298,7 +316,10 @@ const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'
 const DIAS_C=['D','L','M','M','J','V','S'];
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const EVAL_TYPES={parcial:{label:'Parcial',h:5,exam:true},examen:{label:'Examen',h:5,exam:true},final:{label:'Final',h:6,exam:true},practica:{label:'Práctica',h:3,exam:true},control:{label:'Control',h:2,exam:true},entrega:{label:'Entrega',h:4,exam:false},exposicion:{label:'Exposición',h:3,exam:false}};
-const COMMIT_TYPES={clase:'Clases',trabajo:'Trabajo',traslado:'Traslado',otro:'Otro'};
+// Categorías de rutinas y de lo que pasa un solo día. El orden es el de los formularios.
+const COMMIT_TYPES={clase:'Clases',trabajo:'Trabajo',traslado:'Traslado',comida:'Comidas',curso:'Curso o taller',deporte:'Deporte',ocio:'Ocio y descanso',casa:'Familia y casa',otro:'Otro'};
+// Un tipo que esta versión no conoce (por ejemplo, datos de una versión más nueva) se muestra como «Otro».
+const tipoRutina=t=>COMMIT_TYPES[t]?t:'otro';
 const uid=()=>Math.random().toString(36).slice(2,9);
 const hrs=m=>{m=Math.round(m);const h=Math.floor(m/60),r=m%60;return h&&r?`${h} h ${r} min`:h?`${h} h`:`${r} min`;};
 const fechaLarga=s=>{const d=fromYmd(s);return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`;};
@@ -314,7 +335,7 @@ function busyFor(state,date){const wd=fromYmd(date).getDay(),ayer=(wd+6)%7,prev=
   // Lo liberado solo ese día ("hoy no tengo clases", "salgo temprano") se descuenta de ese compromiso.
   const libres=(c,d,desfase)=>state.exceptions.filter(x=>x.libre&&x.ref===c.id&&x.date===d).map(x=>{const r=intervalo(x.start,x.end);return[r.s+desfase,r.e+desfase];});
   const poner=(c,s,e,extra,quitar)=>{let partes=[{s,e}];for(const [ls,le] of quitar)partes=subtract(partes,ls,le);
-    for(const q of partes)if(q.e>q.s)b.push({s:q.s,e:q.e,kind:c.type,label:c.name,ref:c.id,...extra});};
+    for(const q of partes)if(q.e>q.s)b.push({s:q.s,e:q.e,kind:tipoRutina(c.type),label:c.name,ref:c.id,...extra});};
   for(const c of state.commitments){const r=intervalo(c.start,c.end);
     if(c.days.includes(wd))poner(c,r.s,r.e,{},libres(c,date,0));
     if(r.e>1440&&c.days.includes(ayer))poner(c,0,r.e-1440,{cola:true},libres(c,prev,-1440));}  // sigue desde anoche
@@ -418,7 +439,16 @@ function agendaFor(state,P,date){
 const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const DAYW={domingo:0,domingos:0,lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,sabados:6};
 const EVAL_KW={parcial:'parcial',parciales:'parcial',examen:'examen',examenes:'examen',tarea:'entrega',tareas:'entrega',proyecto:'entrega',monografia:'entrega',informe:'entrega',ensayo:'entrega',final:'final',finales:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',control:'control',quiz:'control',lab:'control',laboratorio:'control',entrega:'entrega',entrego:'entrega',entregar:'entrega',entregable:'entrega',exposicion:'exposicion',expongo:'exposicion',sustentacion:'exposicion',sustento:'exposicion'};
-const COMMIT_KW={trabajo:'trabajo',trabajar:'trabajo',trabajando:'trabajo',chamba:'trabajo',chambeo:'trabajo',turno:'trabajo',clase:'clase',clases:'clase',traslado:'traslado',viaje:'traslado',gimnasio:'otro',gym:'otro',ingles:'otro',voluntariado:'otro',almuerzo:'otro',futbol:'otro',iglesia:'otro',academia:'otro'};
+const COMMIT_KW={trabajo:'trabajo',trabajar:'trabajo',trabajando:'trabajo',chamba:'trabajo',chambeo:'trabajo',turno:'trabajo',clase:'clase',clases:'clase',
+  traslado:'traslado',viaje:'traslado',bus:'traslado',combi:'traslado',micro:'traslado',metro:'traslado',metropolitano:'traslado',movilidad:'traslado',
+  almuerzo:'comida',almorzar:'comida',desayuno:'comida',cena:'comida',cenar:'comida',lonche:'comida',comida:'comida',refrigerio:'comida',
+  curso:'curso',cursos:'curso',taller:'curso',talleres:'curso',academia:'curso',ingles:'curso',idioma:'curso',idiomas:'curso',diplomado:'curso',cepre:'curso',
+  frances:'curso',portugues:'curso',aleman:'curso',italiano:'curso',chino:'curso',japones:'curso',
+  gimnasio:'deporte',gym:'deporte',futbol:'deporte',fulbito:'deporte',voley:'deporte',basquet:'deporte',natacion:'deporte',correr:'deporte',running:'deporte',
+  deporte:'deporte',entreno:'deporte',entrenamiento:'deporte',yoga:'deporte',pilates:'deporte',crossfit:'deporte',box:'deporte',boxeo:'deporte',baile:'deporte',
+  descanso:'ocio',descansar:'ocio',siesta:'ocio',ocio:'ocio',netflix:'ocio',videojuegos:'ocio',cine:'ocio',relajo:'ocio',hobby:'ocio',pasatiempo:'ocio',
+  familia:'casa',hijo:'casa',hija:'casa',hijos:'casa',hijas:'casa',cuido:'casa',cuidar:'casa',quehaceres:'casa',
+  voluntariado:'otro',iglesia:'otro',misa:'otro'};
 const NUMW={una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12};
 const MESN={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
 const TIMECTX=new Set(['las','la','de','a','desde','hasta','y','entre']);
@@ -521,6 +551,16 @@ function evalDe(ns,now,type,course){const date=parseDate(ns,now);const tm=parseT
   const hm=ns.match(/\b(\d{1,2})\s*(?:h|hrs|horas)\b/);const hours=hm?Math.min(+hm[1],40):EVAL_TYPES[type].h;
   if(!date)return{kind:'eval',type,course,time,hours,sinFecha:true,error:type==='entrega'?`¿Para qué día es ${course}? Por ejemplo: “para el viernes”.`:`¿Qué día es tu ${EVAL_TYPES[type].label.toLowerCase()} de ${course}? Por ejemplo: “el jueves a las 9”.`};
   return{kind:'eval',type,course,date,time,hours};}
+// Nombre de una rutina dicha en una frase: «Clases», «Trabajo» y «Traslado» por su tipo; las demás, por la palabra
+// que se usó («Almuerzo», «Gimnasio») y, si es un curso, con su tema («Curso de inglés»).
+const NOMBRE_KW={almorzar:'Almuerzo',cenar:'Cena',descansar:'Descanso',entreno:'Entrenamiento',cuido:'Cuidar a la familia',cuidar:'Cuidar a la familia',
+  hijo:'Familia',hija:'Familia',hijos:'Familia',hijas:'Familia',quehaceres:'Quehaceres de la casa'};
+function nombreRutina(toks,i,type){if(type==='clase'||type==='trabajo'||type==='traslado')return COMMIT_TYPES[type];
+  const w=toks[i],a=toks[i+1],b=toks[i+2];if(NOMBRE_KW[w.n])return NOMBRE_KW[w.n];
+  if(/^(curso|cursos|taller|talleres|academia)$/.test(w.n)&&a&&a.n==='de'&&b&&!STOPW.has(b.n)&&DAYW[b.n]===undefined&&!/^\d/.test(b.n))return cap(w.o.toLowerCase()+' de '+b.o.toLowerCase());
+  return cap(w.o.toLowerCase());}
+// La categoría que sugiere el nombre de una rutina («Almuerzo» → comida), o null si no se sabe.
+function tipoPorNombre(nombre){for(const w of norm(String(nombre||'')).split(/[^a-z0-9]+/))if(COMMIT_KW[w])return COMMIT_KW[w];return null;}
 function parseClause(toks,now,prev,S){
   const ns=toks.map(t=>t.n).join(' ');
   const iE=toks.findIndex(t=>EVAL_KW[t.n]);
@@ -535,7 +575,7 @@ function parseClause(toks,now,prev,S){
     return evalDe(ns,now,type,extractCourse(toks,k)||(type==='entrega'?'Trabajo':'Curso'));}
   if(iC>=0||(prev&&prev.kind==='commit'&&!prev.error)){
     const type=iC>=0?COMMIT_KW[toks[iC].n]:prev.type;
-    const name=iC>=0?(type==='otro'?cap(toks[iC].o):COMMIT_TYPES[type]):prev.name;
+    const name=iC>=0?nombreRutina(toks,iC,type):prev.name;
     const days=parseDays(ns);const tm=parseTimes(ns);let range=tm.range;
     if(!range&&tm.part){range={manana:[540,780],tarde:[840,1080],noche:[1140,1320]}[tm.part];}
     if(!days.length)return{kind:'commit',type,name,error:`¿Qué días tienes ${name.toLowerCase()}? Por ejemplo: “de lunes a viernes de 3 a 7”.`};
@@ -583,10 +623,12 @@ function interpret(text,state,now){
   // Un compromiso que ese día no va: "mañana no tengo clases", "cancelaron mi clase", "hoy no voy a trabajar".
   const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
   if(NO_VA.test(ns)&&!hasEval&&iC>=0){const date=parseDate(ns,now)||ymd(now),tipo=COMMIT_KW[toks[iC].n],palabra=toks[iC].n;
-    const cosa=tipo==='otro'?toks[iC].o.toLowerCase():COMMIT_TYPES[tipo].toLowerCase();
+    const porTipo=tipo==='clase'||tipo==='trabajo'||tipo==='traslado',cosa=porTipo?COMMIT_TYPES[tipo].toLowerCase():toks[iC].o.toLowerCase();
     if(/\blos (lunes|martes|miercoles|jueves|viernes|sabados|domingos)\b/.test(ns))return{intent:'aviso',texto:`Si ya no tienes ${cosa} esos días, cámbialo en tu horario fijo, en Perfil. Si es solo una vez, dime por ejemplo: “este viernes no tengo ${cosa}”.`};
     const wd=fromYmd(date).getDay();
-    const cs=state.commitments.filter(c=>c.days.includes(wd)&&(tipo==='otro'?norm(c.name).includes(palabra):c.type===tipo));
+    // Clases, trabajo y traslados se buscan por su tipo; lo demás («no voy al gimnasio»), por su nombre y, si no aparece, por su tipo.
+    const delDia=state.commitments.filter(c=>c.days.includes(wd)),porNombre=delDia.filter(c=>norm(c.name).includes(palabra));
+    const cs=porTipo?delDia.filter(c=>c.type===tipo):porNombre.length?porNombre:delDia.filter(c=>c.type===tipo);
     if(!cs.length)return{intent:'aviso',texto:`${cap(fechaLarga(date))} no tienes ${cosa} en tu horario, así que no hay nada que liberar.`};
     const exs=cs.map(c=>({date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}));return{intent:'except',exs,ex:exs[0]};}
   const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|no voy a poder|no podre|no tengo tiempo)\b/;
@@ -790,6 +832,18 @@ const I={
  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
  next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>'};
 const AV=(s=32)=>`<span class="av" style="width:${s}px;height:${s}px">${I.spark}</span>`;
+// Íconos de las categorías: van junto al nombre en las listas y en los bloques, para que el color nunca vaya solo.
+const ICO_RUTINA={
+ clase:'<path d="M3 5.5A1.5 1.5 0 0 1 4.5 4H9a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H3z"/><path d="M21 5.5A1.5 1.5 0 0 0 19.5 4H15a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z"/>',
+ trabajo:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
+ traslado:'<rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 21v-3M16 21v-3"/><path d="M8.5 14.5h.01M15.5 14.5h.01" stroke-width="2.6"/>',
+ comida:'<path d="M7 3v6a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2 1.5-3 4.5-3 8h3"/>',
+ curso:'<path d="M4 20l4-1L19 8a2.1 2.1 0 0 0-3-3L5 16z"/><path d="M14 7l3 3"/>',
+ deporte:'<path d="M3 16.5V12l4-1.5 2.5 2 3.5 1.5 6 1a2.5 2.5 0 0 1 2 2.5v.5z"/><path d="M3 19.5h18M8 14l1.5-1.5M11 15l1.5-1.5"/>',
+ ocio:'<path d="M4 9h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3.5c0 1 .8 1.5.8 2.5M12 3.5c0 1 .8 1.5.8 2.5M5 21h10"/>',
+ casa:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+ otro:'<path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="3.2"/>'};
+const icoRutina=t=>`<span class="ki" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICO_RUTINA[tipoRutina(t)]}</svg></span>`;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // ---------- Utilidades de vista ----------
@@ -802,9 +856,10 @@ function enDias(date){const n=dayDiff(ymd(now()),date);return n<0?'Pasó':n===0?
 function tagColor(date){const n=dayDiff(ymd(now()),date);return n<=1?'var(--exam-ink)':n<=3?'var(--trabajo-ink)':'var(--pri)';}
 function swColor(type){return type==='entrega'||type==='exposicion'?'k-trabajo':type==='parcial'||type==='final'||type==='examen'?'k-examen':'k-estudio';}
 function rowHTML(x,date){const isToday=date===ymd(now());const nm=now().getHours()*60+now().getMinutes();const past=isToday&&x.e<=nm;
-  const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'||x.kind==='libre'?`data-a="del-ex" data-id="${x.ref}"`:(['clase','trabajo','traslado','otro'].includes(x.kind)?`data-a="commit-dia" data-id="${x.ref}" data-d="${x.cola?ymd(addDays(fromYmd(date),-1)):date}"`:'');
+  const act=x.kind==='estudio'?`data-a="block" data-ev="${x.block.evalId}" data-d="${x.block.date}" data-s="${x.block.s}" data-e="${x.block.e}"`:x.kind==='examen'?`data-a="edit-eval" data-id="${x.ref}"`:x.kind==='excepcion'||x.kind==='libre'?`data-a="del-ex" data-id="${x.ref}"`:(COMMIT_TYPES[x.kind]?`data-a="commit-dia" data-id="${x.ref}" data-d="${x.cola?ymd(addDays(fromYmd(date),-1)):date}"`:'');
   const sub=x.kind==='excepcion'?'Toca para quitar':x.kind==='libre'?'Toca para deshacer':x.sub||'';
-  return `<button class="ag ${past?'past':''}" ${act}><span class="t tnum">${fmt(x.s)}</span><span class="blk k-${x.kind}"><b>${esc(x.label)}</b><small class="tnum">${fmt(x.s)} – ${fmt(x.e)}${sub?' · '+esc(sub):''}</small></span></button>`;}
+  const cat=COMMIT_TYPES[x.kind]?`${icoRutina(x.kind)}`:'',catSr=COMMIT_TYPES[x.kind]?`<span class="sr-only"> (${COMMIT_TYPES[x.kind]})</span>`:'';
+  return `<button class="ag ${past?'past':''}" ${act}><span class="t tnum">${fmt(x.s)}</span><span class="blk k-${x.kind}"><b>${cat}${esc(x.label)}${catSr}</b><small class="tnum">${fmt(x.s)} – ${fmt(x.e)}${sub?' · '+esc(sub):''}</small></span></button>`;}
 function agendaHTML(date,P0){const it=agendaFor(state,P0,date);
   const sleep=`<div class="ag"><span class="t tnum">${state.settings.sleep}</span><span class="blk k-dormir"><b>A dormir</b><small>${state.evals.some(e=>e.date===ymd(addDays(fromYmd(date),1)))?'Mañana tienes evaluación: descansa':'Sin amanecidas'}</small></span></div>`;
   if(!it.length)return `<div class="agenda"><div class="card muted small">Día libre: no hay compromisos ni estudio programado.</div>${sleep}</div>`;
@@ -835,7 +890,7 @@ function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map
    ${dictar('commit','“trabajo de lunes a viernes de 3 a 7”')}
    <div class="stack">${state.commitments.map(commitItem).join('')||'<p class="muted small" style="margin:0">Aún no hay compromisos.</p>'}
    <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
-   ${state.commitments.length&&!state.commitments.some(c=>c.type==='traslado')?'<p class="tip"><b>¿Te demoras en llegar a la U o al trabajo?</b> Agrega también tus traslados y tu almuerzo, para que Lía no te ponga a estudiar en esas horas.</p>':''}</div>
+   ${state.commitments.length&&!state.commitments.some(c=>c.type==='traslado'||c.type==='comida')?'<p class="tip"><b>¿Te demoras en llegar a la U o al trabajo?</b> Agrega también tus traslados y tu almuerzo, para que Lía no te ponga a estudiar en esas horas.</p>':''}</div>
    <div class="card stack"><span class="eyebrow">Tu sueño</span><div class="two"><label class="f">Me despierto<input type="time" id="ob-wake" data-set="wake" value="${state.settings.wake}"></label><label class="f">Me duermo<input type="time" id="ob-sleep" data-set="sleep" value="${state.settings.sleep}"></label></div></div>
    ${state.commitments.length?'<button class="btn pri" data-a="ob-next">Siguiente</button>':'<button class="btn sec" data-a="ob-next" data-v="saltar">Lo agrego después</button>'}`;
   if(s===2)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 2 de 2</span></div>
@@ -865,7 +920,7 @@ function dictar(kind,ej){const ev=kind==='eval',mic=isPro()||state.onboarded;ret
 // "22:00 – 06:00 del día siguiente" cuando el horario cruza la medianoche.
 function horario(c){return `${c.start} – ${c.end}${toMin(c.end)<toMin(c.start)?' del día siguiente':''}`;}
 function duracion(c){const r=intervalo(c.start,c.end);return r.e-r.s;}
-function commitItem(c){return `<button class="item" data-a="edit-commit" data-id="${c.id}"><span class="sw k-${c.type}">${COMMIT_TYPES[c.type][0]}</span><span class="grow"><b>${esc(c.name)}</b><br><span class="small muted">${diasTxt(c.days)} · ${horario(c)}</span></span><span class="tag muted">${hrs(c.days.length*duracion(c))}</span></button>`;}
+function commitItem(c){const t=tipoRutina(c.type);return `<button class="item" data-a="edit-commit" data-id="${c.id}"><span class="sw k-${t}">${icoRutina(t)}</span><span class="grow"><b>${esc(c.name)}</b><br><span class="small muted">${COMMIT_TYPES[t]} · ${diasTxt(c.days)} · ${horario(c)}</span></span><span class="tag muted">${hrs(c.days.length*duracion(c))}</span></button>`;}
 function diasTxt(ds){const s=[...ds].sort((a,b)=>((a+6)%7)-((b+6)%7));const k=s.join();
   if(k==='1,2,3,4,5')return'Lun a Vie';if(k==='1,2,3,4,5,6')return'Lun a Sáb';if(s.length===7)return'Todos los días';if(k==='6,0')return'Fines de semana';
   return s.map(d=>cap(DIAS[d].slice(0,3))).join(', ');}
@@ -949,12 +1004,19 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),c
   const cf=conflicts()[0];let cfH='';
   if(cf){const mismo=cf[0].date===cf[1].date,cfPend=cf.some(e=>pend.some(x=>x.e.id===e.id));
     cfH=`<div class="${cfPend?'warn':'note'}"><span class="ico" style="color:var(${cfPend?'--exam-ink':'--pri'})">${cfPend?I.alert:I.cal}</span><div class="small"><b>${mismo?`Tienes dos evaluaciones el ${fechaCorta(cf[0].date)}`:`Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}`}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van ${mismo?'el mismo día':'seguidos'}. ${cfPend?'Aún les falta tiempo de estudio.':'Ya repartí sus horas de estudio en tu horario.'}</div></div>`;}
-  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${freeBanner()}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${sugerenciaHTML()}${freeBanner()}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
 function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
     return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>¿Estudiaste ${esc(e?e.course:'')}?</b><br>Tu bloque ${cuando} de ${fmt(b.s)} a ${fmt(b.e)} ya pasó y no lo marcaste.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="done-block" data-ev="${b.evalId}" data-d="${b.date}" data-s="${b.s}" data-e="${b.e}" aria-label="Sí, estudié ${esc(e?e.course:'')}">Sí, lo estudié</button><button class="pill ghost" data-a="perdido-no" data-ev="${b.evalId}" data-k="${esc(claveBloque(b))}" aria-label="No pude estudiar ${esc(e?e.course:'')}">No pude</button></div></div></div>`;}
   return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Tienes ${l.length} bloques sin marcar</b><br>Suman ${hrs(l.reduce((a,b)=>a+b.e-b.s,0))}. ¿Los estudiaste? Márcalos para que Lía cuente tu avance; lo que no estudiaste queda pendiente.<div style="margin-top:8px"><button class="pill solid" data-a="perdidos">Revisar mis bloques</button></div></div></div>`;}
+// Rutinas que quedaron en «Otro» pero cuyo nombre sugiere una categoría («Almuerzo» → Comidas): Lía pregunta una vez.
+function sugerenciaTipo(){if(state.mode!=='own')return null;
+  for(const c of state.commitments){if(tipoRutina(c.type)!=='otro'||c.sugerido)continue;const t=tipoPorNombre(c.name);if(t&&t!=='otro')return{c,t};}return null;}
+function sugerenciaHTML(){const x=sugerenciaTipo();if(!x)return '';
+  return `<div class="note"><span class="ico" style="color:var(--pri)">${icoRutina(x.t)}</span><div class="grow small"><b>«${esc(x.c.name)}» parece ${COMMIT_TYPES[x.t]}. ¿Lo cambio?</b><br>Así se ve con su color y su ícono en tu día.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="tipo-si" data-id="${x.c.id}" data-t="${x.t}">Sí, cámbialo</button><button class="pill ghost" data-a="tipo-no" data-id="${x.c.id}">Déjalo en Otro</button></div></div></div>`;}
+// Cambiar la categoría o marcar la sugerencia no mueve horas: si el plan Gratis estaba al día, sigue al día.
+function sinMoverHoras(fn){const f=state.frozen,fresco=!!f&&!planStale();fn();if(fresco)f.sig=planSig();save();}
 // En iPhone sin instalar, Safari puede borrar los datos de LIA tras 7 días sin abrirla: se avisa una vez, en Hoy.
 function avisoIOS(){if(state.mode==='example'||!isIOS()||isStandalone())return '';try{if(localStorage.getItem('lia.avisoIOS'))return '';}catch(e){return '';}
   return `<div class="note"><span class="ico" style="color:var(--pri)">${I.alert}</span><div class="grow small"><b>Instala LIA para no perder tus datos</b><br>En iPhone, si no la instalas, Safari puede borrar tus datos cuando pasas 7 días sin abrirla. Toca <strong>Compartir</strong> y luego <strong>Agregar a inicio</strong>.<div style="margin-top:8px"><button class="pill ghost" data-a="aviso-ios-ok">Entendido</button></div></div></div>`;}
@@ -999,7 +1061,7 @@ function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} �
 function pendingHTML(){const pe=ui.pending;
   if(pe.exs)return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${pe.exs.map(x=>`<div class="blk ${x.libre?'k-libre':'k-excepcion'}"><b>${esc(x.label)}</b><small>${esc(`${cap(fechaCorta(x.date))} · ${horario(x)}`)}</small></div>`).join('')}
    <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;
-  const it=pe.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+i.type}"><b>${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
+  const it=pe.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+tipoRutina(i.type)}"><b>${i.kind==='eval'?'':icoRutina(i.type)}${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}${i.kind==='eval'?'':`<span class="sr-only"> (${COMMIT_TYPES[tipoRutina(i.type)]})</span>`}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
    <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;}
 
 function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter(e=>e.date>=ymd(now())&&!p.unmet[e.id]&&!(p.unplanned&&p.unplanned[e.id])).length,up=state.evals.filter(e=>e.date>=ymd(now())).length;
@@ -1373,6 +1435,10 @@ const A={
  'ob-saltar':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
  'add-commit':()=>{ui.sheet=sheetCommit();render();},
  sueno:()=>{ui.sheet=sheetSueno();render();},
+ 'tipo-si':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c||!COMMIT_TYPES[d.t])return;const n=norm(c.name);snapshot();
+   sinMoverHoras(()=>{for(const x of state.commitments)if(norm(x.name)===n&&tipoRutina(x.type)==='otro')x.type=d.t;});rerenderKeepScroll();toast(`Listo: «${c.name}» ahora está en ${COMMIT_TYPES[d.t]}.`,true);},
+ 'tipo-no':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c)return;const n=norm(c.name);
+   sinMoverHoras(()=>{for(const x of state.commitments)if(norm(x.name)===n)x.sugerido=true;});rerenderKeepScroll();},
  'edit-commit':d=>{ui.sheet=sheetCommit(d.id);render();},
  'del-commit':d=>{snapshot();state.commitments=state.commitments.filter(c=>c.id!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Compromiso eliminado.',true);},
  'add-eval':()=>{if(evalRoom()<1){openPaywall('evals');return;}ui.sheet=sheetEval();render();},
@@ -1381,7 +1447,7 @@ const A={
  'del-ex':d=>{const x=state.exceptions.find(y=>y.id===d.id);snapshot();state.exceptions=state.exceptions.filter(y=>y.id!==d.id);save();rerenderKeepScroll();
    toast(x&&x.libre?'Listo: ese día vuelve a ser como siempre.':isPro()?'Quité ese bloqueo y reorganicé.':'Quité ese bloqueo.',true);},
  'commit-dia':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c)return;const hoy=d.d===ymd(now());
-   ui.sheet=`<div class="grab"></div><span class="eyebrow">${esc(COMMIT_TYPES[c.type])}</span><h2>${esc(c.name)} · ${horario(c)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))}. Se repite: ${diasTxt(c.days).toLowerCase()}.</p>
+   ui.sheet=`<div class="grab"></div><span class="eyebrow">${esc(COMMIT_TYPES[tipoRutina(c.type)])}</span><h2>${esc(c.name)} · ${horario(c)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))}. Se repite: ${diasTxt(c.days).toLowerCase()}.</p>
    <button class="btn pri" data-a="libre-dia" data-id="${c.id}" data-d="${d.d}">${hoy?'Hoy no tengo esto':'Ese día no tengo esto'}</button>
    <button class="btn sec" data-a="edit-commit" data-id="${c.id}">Cambiar mi horario fijo</button><button class="btn sec" data-a="close">Cerrar</button>`;render();},
  'libre-dia':d=>{const c=state.commitments.find(x=>x.id===d.id);ui.sheet=null;if(!c){render();return;}
