@@ -152,8 +152,6 @@ h2{font-size:17px;margin:0;font-weight:600}
 .tag{font-size:13px;font-weight:600;white-space:nowrap}
 .bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--pri);border-radius:4px}
-.todo{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.todo .item{text-align:left}
 /* week */
 .days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .day{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
@@ -337,11 +335,10 @@ function evalDeadline(ev,S){const t=EVAL_TYPES[ev.type]||EVAL_TYPES.parcial;
 function doneFor(state,id){return state.done.filter(x=>x.evalId===id).reduce((a,x)=>a+x.min,0);}
 
 // Motor de horarios: reparte las horas que pide cada evaluación en los huecos libres reales.
-// Con soloIds, reparte solo esas evaluaciones (las demás siguen ocupando la hora de su examen).
-function plan(state,now,soloIds){
+function plan(state,now){
   const S=state.settings,wake=toMin(S.wake)+MARGEN_DESPERTAR,sleep=finDelDia(S);
   const today=ymd(now),nowMin=now.getHours()*60+now.getMinutes();
-  const evs=state.evals.filter(e=>!soloIds||soloIds.includes(e.id)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const evs=state.evals.slice().sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
   let last=ymd(addDays(now,6));for(const e of evs)if(e.date>last)last=e.date;
   const nDays=Math.min(dayDiff(today,last),60);const days={};
   for(let i=0;i<=nDays;i++){const d=ymd(addDays(fromYmd(today),i));let wins=wake<sleep?[{s:wake,e:sleep}]:[];
@@ -394,16 +391,6 @@ function planCongelado(state,f,now){const t=ymd(now),nm=now.getHours()*60+now.ge
     if(f.evalIds.includes(e.id)){const fut=vivos.filter(b=>b.evalId===e.id&&!paso(b)).reduce((a,b)=>a+b.e-b.s,0);unmet[e.id]=e.date>=t&&r-fut>=10?r-fut:0;}
     else if(e.date>=t&&r>=10)unplanned[e.id]=r;}
   return{blocks,unmet,unplanned,perdidos,days:{},frozen:true};}
-// Gratis: una evaluación nueva entra sola al horario ya armado, en los huecos libres, sin mover lo que ya estaba.
-// Los bloques armados que aún no pasan cuentan como estudio de su día (para el máximo diario) y como ocupados,
-// con los 10 minutos de pausa que el motor deja después de cada bloque.
-function sumarAlCongelado(state,f,ids,now){const t=ymd(now);
-  const nuevas=state.evals.filter(e=>ids.includes(e.id)&&e.date>=t&&!f.evalIds.includes(e.id)).map(e=>e.id);
-  if(!nuevas.length)return{blocks:[],unmet:{}};
-  const armado=f.blocks.filter(b=>finBloque(b).date>=t).map(b=>{const sig=b.s>=1440;return{date:sig?ymd(addDays(fromYmd(b.date),1)):b.date,s:sig?b.s-1440:b.s,len:b.e-b.s};});
-  const p=plan({...state,done:[...state.done,...armado.map(x=>({evalId:'',date:x.date,start:fmt(x.s),min:x.len}))],
-    exceptions:[...state.exceptions,...armado.map(x=>({date:x.date,start:fmt(x.s),end:fmt(x.s+x.len+10),label:''}))]},now,nuevas);
-  return{blocks:p.blocks,unmet:p.unmet};}
 function agendaFor(state,P,date){
   const it=[];const ev=id=>state.evals.find(e=>e.id===id);
   for(const b of busyFor(state,date))it.push(b.cola?{...b,sub:'Sigue desde anoche'}:{...b});
@@ -686,9 +673,7 @@ function exampleState(now){const t=ymd(now),d=n=>ymd(addDays(now,n));
     done:[{id:'h1',evalId:'e1',date:d(-1),start:'20:00',min:90},{id:'h2',evalId:'e1',date:d(-2),start:'20:00',min:60}],
     exceptions:[],
     chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana. También puedes decirme cosas como “hoy salgo del trabajo a las 9”.'}]};}
-// completar: muestra «Completa tu semana» en Hoy hasta que la persona tenga rutinas, horas de sueño revisadas y una evaluación.
-// suenoListo:false solo en quien empieza desde cero; en datos de versiones anteriores no existe y cuenta como revisado.
-function emptyState(){return{v:1,mode:'own',onboarded:false,completar:true,settings:{...DEFAULT_SETTINGS,suenoListo:false},commitments:[],evals:[],done:[],exceptions:[],
+function emptyState(){return{v:1,mode:'own',onboarded:false,settings:{...DEFAULT_SETTINGS},commitments:[],evals:[],done:[],exceptions:[],
   chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana.'}]};}
 let state;let fresh=false;
 try{const raw=localStorage.getItem(KEY);state=raw?JSON.parse(raw):null;}catch(e){state=null;}
@@ -730,14 +715,7 @@ function upcomingEvals(){const t=ymd(now());return state.evals.filter(e=>e.date>
 function evalRoom(){return isPro()?Infinity:Math.max(0,FREE_EVALS-upcomingEvals());}
 function newEvalCount(items){const t=ymd(now());return items.filter(i=>i.kind==='eval'&&i.date>=t).length;}
 function limitMsg(){return `En Gratis puedes tener hasta ${FREE_EVALS} evaluaciones próximas y ya tienes ${upcomingEvals()}. Con LIA Pro no hay límite.`;}
-// Firma de todo lo que cambia el plan. Con sin, sin esas evaluaciones (para saber si el plan estaba al día antes de agregarlas).
-function planSig(sin){const S=state.settings;return JSON.stringify([state.commitments,state.evals.filter(e=>!sin||!sin.includes(e.id)).map(e=>[e.id,e.type,e.date,e.time,e.hours]),state.exceptions,S.wake,S.sleep,S.maxDay,S.block,S.minBlock]);}
-// Gratis (decisión del 28-oct): las evaluaciones nuevas entran solas en los huecos libres, sin mover lo ya armado.
-// Devuelve los minutos que agendó. Si el plan estaba al día, sigue al día; si había otros cambios, sigue pidiendo rearmar.
-function agendarNuevas(ids){const f=state.frozen;if(isPro()||!state.onboarded||!f||!ids.length)return 0;
-  const fresco=f.sig===planSig(ids),r=sumarAlCongelado(state,f,ids,now());
-  f.blocks=[...f.blocks,...r.blocks];f.unmet={...f.unmet,...r.unmet};f.evalIds=[...new Set([...f.evalIds,...ids])];
-  if(fresco)f.sig=planSig();save();return r.blocks.reduce((a,b)=>a+b.e-b.s,0);}
+function planSig(){const S=state.settings;return JSON.stringify([state.commitments,state.evals.map(e=>[e.id,e.type,e.date,e.time,e.hours]),state.exceptions,S.wake,S.sleep,S.maxDay,S.block,S.minBlock]);}
 function armWeek(initial){const p=plan(state,now());
   state.frozen={week:mondayOf(now()),at:ymd(now()),initial:!!initial,sig:planSig(),blocks:p.blocks,unmet:p.unmet,evalIds:state.evals.map(e=>e.id)};save();return p;}
 function canArm(){const f=state.frozen;return !f||f.initial||f.week<mondayOf(now());}
@@ -753,13 +731,7 @@ function ensureState(){const s=state.sub;
   if(!state.cuenta||typeof state.cuenta!=='object'||!state.cuenta.id)state.cuenta=null;
   if(!state.cuenta&&state.sub.tier==='pro')state.sub=freeSub(state.sub.history);
   const f=state.frozen;if(f===undefined||(f&&(!Array.isArray(f.blocks)||!Array.isArray(f.evalIds)||!f.week)))state.frozen=null;
-  if(!isPro()&&state.onboarded&&!state.frozen)armWeek(true);
-  if(state.completar&&state.onboarded&&pasosCompletar().every(x=>x.ok)){state.completar=false;save();}
-  // Gratis: un plan inicial que aún no tiene bloques se rearma solo (no hay nada que mover), y lo que quedó
-  // «sin agendar» con versiones anteriores entra solo en los huecos libres.
-  const g=state.frozen;
-  if(!isPro()&&state.onboarded&&g){if(g.initial&&!g.blocks.length&&planStale())armWeek(true);
-    else{const t=ymd(now()),ids=state.evals.filter(e=>e.date>=t&&!g.evalIds.includes(e.id)).map(e=>e.id);if(ids.length)agendarNuevas(ids);}}}
+  if(!isPro()&&state.onboarded&&!state.frozen)armWeek(true);}
 // Plan desde Supabase: la base de datos decide (vencimientos y renovaciones incluidos); aquí solo se refleja.
 const MEDIO_APP={yape:'yape',plin:'plin',tarjeta:'card',cortesia:'cortesia'},MEDIO_DB={yape:'yape',plin:'plin',card:'tarjeta'};
 const medioNombre=k=>METHODS[k]?METHODS[k].name:k==='cortesia'?'Cortesía del equipo':'';
@@ -837,14 +809,14 @@ function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map
    <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
    ${state.commitments.length&&!state.commitments.some(c=>c.type==='traslado')?'<p class="tip"><b>¿Te demoras en llegar a la U o al trabajo?</b> Agrega también tus traslados y tu almuerzo, para que Lía no te ponga a estudiar en esas horas.</p>':''}</div>
    <div class="card stack"><span class="eyebrow">Tu sueño</span><div class="two"><label class="f">Me despierto<input type="time" id="ob-wake" data-set="wake" value="${state.settings.wake}"></label><label class="f">Me duermo<input type="time" id="ob-sleep" data-set="sleep" value="${state.settings.sleep}"></label></div></div>
-   ${state.commitments.length?'<button class="btn pri" data-a="ob-next">Siguiente</button>':'<button class="btn sec" data-a="ob-next" data-v="saltar">Lo agrego después</button>'}`;
+   <button class="btn pri" data-a="ob-next" ${state.commitments.length?'':'disabled style="opacity:.5"'}>Siguiente</button>`;
   if(s===2)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 2 de 2</span></div>
    <div class="stack"><h1>Tus evaluaciones</h1><p class="muted" style="margin:0">Exámenes y entregas que se vienen. Lía calcula cuántas horas necesitas para cada uno.</p></div>
    ${dictar('eval','“parcial de Cálculo el jueves a las 9”')}
    <div class="stack">${state.evals.map(evalItem).join('')||'<p class="muted small" style="margin:0">Aún no hay evaluaciones.</p>'}
    <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
    ${isPro()?'':`<p class="small muted" style="margin:0">${evalRoom()>0?`En Gratis puedes tener hasta ${FREE_EVALS} evaluaciones próximas: te ${evalRoom()===1?'queda':'quedan'} ${evalRoom()}.`:`Ya tienes ${FREE_EVALS} evaluaciones próximas, el máximo de Gratis. Con LIA Pro no hay límite.`}</p>`}</div>
-   ${state.evals.length?'<button class="btn pri" data-a="ob-next">Armar mi horario</button>':'<button class="btn sec" data-a="ob-saltar">Lo agrego después</button>'}`;
+   <button class="btn pri" data-a="ob-next" ${state.evals.length?'':'disabled style="opacity:.5"'}>Armar mi horario</button>`;
   // paso 3: resumen
   const p=P();const tot=p.blocks.reduce((a,b)=>a+b.e-b.s,0);const free=Object.values(p.days).slice(0,7).reduce((a,d)=>a+d.free,0);
   const falt=state.evals.filter(e=>p.unmet[e.id]>0);
@@ -857,10 +829,9 @@ function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map
    <button class="btn pri" data-a="ob-finish">Ver mi semana</button>`;}
 
 // Campo para escribirle (o dictarle) a Lía. El ejemplo va debajo, a la vista: no desaparece al empezar a escribir.
-// Durante el registro, en Gratis no se muestra el micrófono con candado: Pro se ofrece después de que LIA ya sirvió.
-function dictar(kind,ej){const ev=kind==='eval',mic=isPro()||state.onboarded;return `<div class="stack" style="gap:6px"><form class="dashed" data-form="dictar" data-kind="${kind}" style="padding:6px 6px 6px 14px">
+function dictar(kind,ej){const ev=kind==='eval';return `<div class="stack" style="gap:6px"><form class="dashed" data-form="dictar" data-kind="${kind}" style="padding:6px 6px 6px 14px">
    <input id="dict-${kind}" name="q" placeholder="${ev?'Escribe una evaluación':'Escribe un horario'}" aria-label="${ev?'Escríbele a Lía una evaluación':'Escríbele a Lía un horario'}" aria-describedby="dict-${kind}-ej" autocomplete="off" style="flex:1;min-width:0;border:0;background:transparent;color:var(--ink);padding:8px 0;font-weight:500">
-   ${mic?`<button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="dict-${kind}" aria-label="${isPro()?'Dictar por voz':'Dictar por voz (LIA Pro)'}">${I.mic}</button>`:''}
+   <button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="dict-${kind}" aria-label="${isPro()?'Dictar por voz':'Dictar por voz (LIA Pro)'}">${I.mic}</button>
    <button type="submit" class="mic" aria-label="Agregar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form><p class="small muted" id="dict-${kind}-ej" style="margin:0 4px">Por ejemplo: ${esc(ej)}</p></div>`;}
 // "22:00 – 06:00 del día siguiente" cuando el horario cruza la medianoche.
 function horario(c){return `${c.start} – ${c.end}${toMin(c.end)<toMin(c.start)?' del día siguiente':''}`;}
@@ -874,8 +845,7 @@ function evalItem(e){const p=P();const need=e.hours*60,done=doneFor(state,e.id),
    <span class="bar"><i style="width:${Math.min(100,Math.round(done/need*100))}%"></i></span>
    ${p.unmet[e.id]>0?`<span class="small" style="color:var(--exam-ink);font-weight:600">${cap(faltaTxt(p.unmet[e.id]))} sin hueco</span>`:p.unplanned&&p.unplanned[e.id]?`<span class="small" style="color:var(--trabajo-ink);font-weight:600">Sin agendar · entra cuando rearmes tu semana</span>`:pl?`<span class="small muted">${hrs(pl)} ya agendadas</span>`:''}</span><span class="tag" style="color:${tagColor(e.date)}">${enDias(e.date)}</span></button>`;}
 
-// Lo que falta estudiar y no está en el horario: sin hueco (no entró) o, en Gratis, sin agendar (se agregó a mitad de semana;
-// desde la 0.5.0 ensureState() las agenda solas, así que solo queda como respaldo).
+// Lo que falta estudiar y no está en el horario: sin hueco (no entró) o, en Gratis, sin agendar (se agregó a mitad de semana).
 // Solo cuenta lo que todavía se puede estudiar: el día de un examen ya no se estudia para él.
 function sinHorario(p){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes(),S=state.settings;
   return state.evals.filter(e=>{const dl=evalDeadline(e,S);return dl.date>t||(dl.date===t&&dl.end>nm);})
@@ -903,24 +873,7 @@ function evalHoyHTML(e,nm){const ini=toMin(e.time),need=e.hours*60,done=doneFor(
   const cuando=ent?`Hasta las ${e.time}${ini>nm?` · quedan ${hrs(ini-nm)}`:''}`:ini>nm?`A las ${e.time} · en ${hrs(ini-nm)}`:`Empezó a las ${e.time}`;
   const avance=done?`<span class="small muted">Estudiaste ${hrs(Math.min(done,need))} de ${hrs(need)}.</span>`:'';
   return `<button class="card stack evhoy" data-a="tab" data-t="evals" style="text-align:left;gap:6px"><span class="eyebrow">${ent?'Hoy entregas':exp?'Hoy expones':'Hoy tienes evaluación'}</span><b class="evhoy-t">${tipo.label} · ${esc(e.course)}</b><span class="small muted tnum">${cuando}</span>${avance}<span class="small evhoy-a">${ent?'¡Éxitos con tu entrega!':exp?'¡Éxitos en tu exposición!':`¡Éxitos en tu ${tipo.label.toLowerCase()}!`}</span></button>`;}
-// «Completa tu semana»: lo que falta para que Lía arme el horario, para quien saltó pasos del registro.
-// Desaparece cuando están las tres cosas (ensureState apaga state.completar).
-function pasosCompletar(){const t=ymd(now()),S=state.settings,nR=state.commitments.length;
-  const prox=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
-  return[{ok:nR>0,a:'add-commit',t:'Agrega tus rutinas',d:'Clases, trabajo, traslados: lo que se repite cada semana.',hecho:`Tus rutinas: ${nR} ${nR===1?'registrada':'registradas'}`},
-    {ok:S.suenoListo!==false,a:'sueno',t:'Revisa tus horas de sueño',d:`Ahora duermes de ${S.sleep} a ${S.wake}.`,hecho:`Tu sueño: de ${S.sleep} a ${S.wake}`},
-    {ok:!!prox,a:'add-eval',t:'Agrega tu próxima evaluación',d:'Un examen, una práctica o una entrega.',hecho:prox?`Tu próxima evaluación: ${(EVAL_TYPES[prox.type]||EVAL_TYPES.parcial).label.toLowerCase()} de ${prox.course}`:''}];}
-function completarHTML(){if(state.mode!=='own'||!state.completar||!state.onboarded)return '';
-  const ps=pasosCompletar(),n=ps.filter(x=>x.ok).length;if(n===ps.length)return '';
-  return `<section class="card stack" aria-labelledby="completa-t"><div class="between"><h2 id="completa-t">Completa tu semana</h2><span class="small muted tnum">${n} de ${ps.length} listos</span></div>
-   <span class="bar" aria-hidden="true"><i style="width:${Math.round(n/ps.length*100)}%"></i></span>
-   <ul class="todo">${ps.map(x=>x.ok?`<li class="row-h"><span class="check" aria-hidden="true">${I.check}</span><span class="small muted"><span class="sr-only">Listo: </span>${esc(x.hecho)}</span></li>`
-     :`<li><button class="item" data-a="${x.a}"><span class="sw" style="background:var(--pri-soft);color:var(--pri)">${I.plus.replace('<svg','<svg width="20" height="20" aria-hidden="true"')}</span><span class="grow"><b>${x.t}</b><br><span class="small muted">${esc(x.d)}</span></span></button></li>`).join('')}</ul></section>`;}
-function sheetSueno(){const S=state.settings;return `<form class="stack" data-form="sueno" style="gap:14px"><div class="grab"></div><h2>Tus horas de sueño</h2>
-  <p class="muted" style="margin:0">Lía no te pone a estudiar mientras duermes ni apenas te despiertas.</p>
-  <div class="two"><label class="f">Me despierto<input type="time" id="su-wake" name="wake" required value="${S.wake}"></label><label class="f">Me duermo<input type="time" id="su-sleep" name="sleep" required value="${S.sleep}"></label></div>
-  <button class="btn pri" type="submit">Guardar</button><button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
-function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),compl=completarHTML();
+function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes();
   const next=p.blocks.find(b=>b.date>t||b.e>nm),pend=sinHorario(p);
   const vigente=e=>e.date>t||(e.date===t&&toMin(e.time)+120>nm);  // la evaluación aún no termina
   const evHoy=state.evals.filter(e=>e.date===t&&vigente(e)).sort((a,b)=>a.time.localeCompare(b.time))[0];
@@ -933,7 +886,6 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),c
   else if(pend.length)hero=heroFalta(pend);
   else if(state.evals.some(vigente)&&state.evals.filter(vigente).every(e=>e.hours*60-doneFor(state,e.id)<10))hero=`<section class="hero"><span class="eyebrow">Todo al día</span><span class="hero-t">Ya estudiaste lo que pedían tus evaluaciones.</span><span style="opacity:.9">Si se viene otra, agrégala y Lía reparte tus horas.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   else if(state.evals.some(vigente))hero='';  // queda estudio, pero ya no hay tiempo antes de la evaluación (p. ej., el día del examen)
-  else if(compl)hero=state.commitments.length||state.evals.length?'':`<section class="hero"><span class="eyebrow">Empecemos</span><span class="hero-t">Tu semana está en blanco.</span><span style="opacity:.9">Cuéntale a Lía tus rutinas y tu próxima evaluación: con eso arma tu horario de estudio en tus horas libres.</span></section>`;
   else hero=`<section class="hero"><span class="eyebrow">Sin evaluaciones próximas</span><span class="hero-t">No tienes exámenes ni entregas por ahora.</span><span style="opacity:.9">Agrega la próxima y Lía reparte tus horas de estudio.</span><div style="height:6px"></div><button class="btn light" data-a="add-eval">Agregar evaluación</button></section>`;
   // Si hay un bloque próximo pero algo no entró, se avisa aparte (después de preguntar por los bloques sin marcar).
   let faltaH='';if(next&&pend.length&&!(p.perdidos&&p.perdidos.length)){const tot=pend.reduce((a,x)=>a+x.min,0),c=consejoFalta(pend);
@@ -949,7 +901,7 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),c
   const cf=conflicts()[0];let cfH='';
   if(cf){const mismo=cf[0].date===cf[1].date,cfPend=cf.some(e=>pend.some(x=>x.e.id===e.id));
     cfH=`<div class="${cfPend?'warn':'note'}"><span class="ico" style="color:var(${cfPend?'--exam-ink':'--pri'})">${cfPend?I.alert:I.cal}</span><div class="small"><b>${mismo?`Tienes dos evaluaciones el ${fechaCorta(cf[0].date)}`:`Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}`}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van ${mismo?'el mismo día':'seguidos'}. ${cfPend?'Aún les falta tiempo de estudio.':'Ya repartí sus horas de estudio en tu horario.'}</div></div>`;}
-  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${freeBanner()}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+  return `${demoBanner()}<div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${freeBanner()}${perdidosHTML(p)}${hero}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
 function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
@@ -1033,11 +985,10 @@ function sheetCommit(id,pre){const c=state.commitments.find(x=>x.id===id)||{id:'
   <div class="two"><label class="f">Desde<input type="time" id="c-start" name="start" required value="${c.start}"></label><label class="f">Hasta<input type="time" id="c-end" name="end" required value="${c.end}" aria-describedby="c-noche"></label></div>
   <p class="small muted" id="c-noche" style="margin:-6px 0 0"${toMin(c.end)<toMin(c.start)?'':' hidden'}>Termina al día siguiente.</p>
   <button class="btn pri" type="submit">Guardar</button>${c.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${c.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
-// Las horas de estudio son opcionales: si quedan vacías, Lía usa lo usual para ese tipo de evaluación.
-function sheetEval(id,pre){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:'',...(pre?{type:pre.type,course:pre.course,date:pre.date||t,time:pre.time,hours:pre.hours}:{})};
+function sheetEval(id,pre){const t=ymd(addDays(now(),3));const e=state.evals.find(x=>x.id===id)||{id:'',type:'parcial',course:'',date:t,time:'09:00',hours:5,...(pre?{type:pre.type,course:pre.course,date:pre.date||t,time:pre.time,hours:pre.hours}:{})};
   return `<form class="stack" data-form="eval" data-id="${e.id}" style="gap:14px"><div class="grab"></div><h2>${e.id?'Editar evaluación':'Nueva evaluación'}</h2>
   <div class="two"><label class="f">Tipo<select id="e-type" name="type" data-a-change="etype">${Object.entries(EVAL_TYPES).map(([k,v])=>`<option value="${k}" ${e.type===k?'selected':''}>${v.label}</option>`).join('')}</select></label>
-  <label class="f">Horas de estudio (opcional)<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" inputmode="decimal" value="${e.hours}" placeholder="${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).h}, lo usual"></label></div>
+  <label class="f">Horas de estudio<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" value="${e.hours}"></label></div>
   <label class="f">Curso<input id="e-course" name="course" required value="${esc(e.course)}" placeholder="Cálculo II"></label>
   <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"${e.id?'':` min="${ymd(now())}"`}></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
   <button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
@@ -1106,7 +1057,7 @@ function sheetFail(){return `<div class="grab"></div><span class="eyebrow" style
 function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
   const rows=[['Precio','S/ 0',`${soles(PRICES.mes.amount)} al mes o ${soles(PRICES.ciclo.amount)} por ciclo (4 meses, ${SAVE_PCT}% menos)`],
    ['Horario fijo y evaluaciones',`Hasta ${FREE_EVALS} evaluaciones`,'Ilimitadas'],
-   ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas entran solas en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
+   ['Horario de estudio','Lo armas una vez por semana','Lía lo arma y lo reorganiza sola cuando algo cambia'],
    ['Voz','—',`Dictado ilimitado. Notas de voz ${soon}`],
    ['Sílabos y aula virtual','—',`Lía los lee y agrega las evaluaciones ${soon}`],
    ['Recordatorios',`Básicos ${soon}`,`Modo sesión. Silenciar apps y avisos antes del examen ${soon}`]];
@@ -1243,16 +1194,8 @@ function moveBlock(b){const before=P().blocks.filter(x=>x.evalId===b.ev).map(x=>
   const after=P();const nb=after.blocks.find(x=>x.evalId===b.ev&&!before.includes(x.date+x.s));const e=evById(b.ev);
   const msg=nb?`Moví ${e.course} a ${nb.date===b.d?'las':fechaCorta(nb.date)+','} ${fmt(nb.s)}.`:after.unmet[b.ev]>0?`No encontré otro hueco para ${e.course}: te ${faltaTxt(after.unmet[b.ev])}.`:`Reorganicé ${e.course}: ya está cubierto en otros bloques.`;
   ui.sheet=null;rerenderKeepScroll();toast(msg,true);return msg;}
-// Guarda lo que Lía entendió. En Gratis, las evaluaciones nuevas entran solas al horario armado; devuelve sus minutos agendados.
-function applyItems(items){snapshot();const ids=[];
-  for(const it of items){if(it.kind==='eval'){const id=uid();ids.push(id);state.evals.push({id,type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});}
-    else state.commitments.push({id:uid(),name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}
-  save();return{ids,agendado:agendarNuevas(ids)};}
-// Cuánto estudio quedó agendado para esas evaluaciones y cuánto falta, en el plan que se ve (Pro o Gratis).
-function agendadoPara(ids){const p=P(),min=p.blocks.filter(b=>ids.includes(b.evalId)).reduce((a,b)=>a+b.e-b.s,0),falta=ids.reduce((a,id)=>a+((p.unmet&&p.unmet[id])||0),0);return{min,falta};}
-// Lo que dice Lía después de agregar evaluaciones: lo que agendó y lo que no encontró.
-function textoAgendado(ids){if(!ids.length)return '';const{min,falta}=agendadoPara(ids);if(!min&&!falta)return '';
-  return min&&falta?` Agendé ${hrs(min)} de estudio; ${faltaTxt(falta)} sin hueco libre.`:min?` Agendé ${hrs(min)} de estudio en tus horas libres.`:` Todavía no encontré horas libres para estudiar: ${faltaTxt(falta)}.`;}
+function applyItems(items){snapshot();for(const it of items){if(it.kind==='eval')state.evals.push({id:uid(),type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});
+  else state.commitments.push({id:uid(),name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}save();}
 function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();anunciar(`Lía: ${text}`);}
 // Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
 function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
@@ -1272,8 +1215,10 @@ function responder(q,from,r,n,{eco=true}={}){
     if(errs.length&&!ok.length){if(from==='chat'){liaSay(errs[0].error);render();}else toast(errs[0].error);return;}
     if(newEvalCount(ok)>evalRoom()){ui.blockedItems=ok;if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else openPaywall('evals',{items:ok});return;}
     if(from==='chat'){ui.pending={items:ok,q};save();render();anunciar(`Lía entendió: ${ok.map(resumenItem).join('; ')}. Confirma o corrige.`);return;}
-    const hecho=applyItems(ok);
-    toast(`Lía agregó: ${ok.map(resumenItem).join('; ')}.${textoAgendado(hecho.ids)}`,true);rerenderKeepScroll();return;}
+    applyItems(ok);const p=P();const evs=ok.filter(i=>i.kind==='eval');
+    const agendado=p.frozen?0:p.blocks.filter(b=>{const e=evById(b.evalId);return e&&evs.some(i=>i.course===e.course&&i.date===e.date);}).reduce((a,b)=>a+b.e-b.s,0);
+    const fin=!evs.length?'':p.frozen?' Entra a tu horario cuando rearmes tu semana.':agendado?` Agendé ${hrs(agendado)} de estudio.`:' Todavía no encontré horas libres para estudiar.';
+    toast(`Lía agregó: ${ok.map(resumenItem).join('; ')}.${fin}`,true);rerenderKeepScroll();return;}
   if(from!=='chat'){toast(from==='commit'?'No te entendí. Prueba: “clases de lunes a viernes de 8 a 1”.':'No te entendí. Prueba: “parcial de Química el viernes a las 10”.');return;}
   if(r.intent==='except'){const exs=r.exs;
     if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();anunciar(`Lía entendió: ${exs.map(x=>`${x.label}, ${fechaCorta(x.date)}, ${horario(x)}`).join('; ')}. Confirma o corrige.`);return;}
@@ -1366,13 +1311,9 @@ const A={
  'start-own':()=>{if(state.mode==='example'&&!ui.welcome){ui.sheet=sheetOwn();render();return;}A['own-go']();},
  'own-go':()=>{const sub=state.sub,cuenta=state.cuenta;state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
  'ob-back':()=>{if(ui.ob<=1){ui.welcome=true;}else ui.ob--;render();},
- // Quien pasa el paso 1 con sus rutinas ya vio sus horas de sueño; quien lo salta las revisa después en «Completa tu semana».
- 'ob-next':d=>{if(ui.ob===1&&d.v!=='saltar'&&state.settings.suenoListo===false){state.settings.suenoListo=true;save();}ui.ob++;render();document.getElementById('view').scrollTop=0;},
+ 'ob-next':()=>{ui.ob++;render();document.getElementById('view').scrollTop=0;},
  'ob-finish':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='semana';ui.sel=null;render();},
- // Registro sin evaluaciones: se termina en Hoy, donde «Completa tu semana» muestra lo que falta.
- 'ob-saltar':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
  'add-commit':()=>{ui.sheet=sheetCommit();render();},
- sueno:()=>{ui.sheet=sheetSueno();render();},
  'edit-commit':d=>{ui.sheet=sheetCommit(d.id);render();},
  'del-commit':d=>{snapshot();state.commitments=state.commitments.filter(c=>c.id!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Compromiso eliminado.',true);},
  'add-eval':()=>{if(evalRoom()<1){openPaywall('evals');return;}ui.sheet=sheetEval();render();},
@@ -1417,10 +1358,8 @@ const A={
  'ia-prender':()=>{ui.sheet=sheetIA();render();},
  confirm:()=>{const p=ui.pending;ui.pending=null;if(p.exs){const m=aplicarCambio(p.exs);liaSay(m.texto,m.opts);render();return;}
    if(newEvalCount(p.items)>evalRoom()){ui.blockedItems=p.items;liaSay(limitMsg(),{cta:'evals'});render();return;}
-   const hecho=applyItems(p.items),what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
-   // Una rutina nueva en Gratis no mueve lo ya armado: se toma en cuenta al rearmar la semana.
-   const rutina=p.items.some(i=>i.kind==='commit'),rearmar=rutina&&!isPro()&&!!state.frozen&&planStale();
-   liaSay(`Listo, agregué ${what}.${textoAgendado(hecho.ids)}${rearmar?` En Gratis, tu estudio tiene en cuenta lo nuevo cuando rearmas tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`:''}`,{undo:true});render();},
+   applyItems(p.items);const P1=P();const what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
+   liaSay(P1.frozen?`Listo, agregué ${what}. En Gratis entra a tu horario cuando rearmes tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`:`Listo, agregué ${what}. Ahora tienes ${hrs(P1.blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio repartidas en tus horas libres.`,{undo:true});render();},
  cancel:()=>{const p=ui.pending;ui.pending=null;
    // Corregir: si entendió una sola cosa, abre el formulario ya lleno; si no, devuelve la frase para editarla.
    if(p&&p.items&&p.items.length===1){const it=p.items[0];ui.sheet=it.kind==='eval'?sheetEval(null,it):sheetCommit(null,it);render();return;}
@@ -1469,9 +1408,6 @@ document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if
 document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();const fd=new FormData(f);
   if(f.dataset.form==='cuenta'){enviarCuenta(String(fd.get('email')||'').trim(),String(fd.get('password')||''));return;}
   if(f.dataset.form==='chat'||f.dataset.form==='dictar'){const q=fd.get('q')||'';handleText(String(q),f.dataset.form==='chat'?'chat':f.dataset.kind);return;}
-  if(f.dataset.form==='sueno'){const w=String(fd.get('wake')||''),s=String(fd.get('sleep')||'');if(!w||!s)return;
-    snapshot();Object.assign(state.settings,{wake:w,sleep:s,suenoListo:true});save();ui.sheet=null;rerenderKeepScroll();
-    toast(`Listo: duermes de ${s} a ${w}. Lía no te pone a estudiar en esas horas.`,true);return;}
   if(f.dataset.form==='perdidos'){const l=P().perdidos||[],sel=new Set(fd.getAll('b')),fz=state.frozen;ui.sheet=null;if(!l.length||!fz){rerenderKeepScroll();return;}
     snapshot();fz.vistos=Array.isArray(fz.vistos)?fz.vistos:[];let min=0;
     for(const b of l){const k=claveBloque(b);if(sel.has(k)){state.done.push(hechoDeBloque(b.evalId,b.date,b.s,b.e));min+=b.e-b.s;}else fz.vistos.push(k);}
@@ -1481,22 +1417,20 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     snapshot();const o={name:String(fd.get('name')).trim(),type:fd.get('type'),days,start:fd.get('start'),end:fd.get('end')};
     const cur=f.dataset.id&&state.commitments.find(c=>c.id===f.dataset.id);if(cur)Object.assign(cur,o);else state.commitments.push({id:uid(),...o});
     save();ui.sheet=null;rerenderKeepScroll();toast(P().frozen?'Guardado. Tu horario Gratis se actualiza cuando rearmes tu semana.':'Guardado. Lía reorganizó tu semana.',true);return;}
-  if(f.dataset.form==='eval'){const h=+fd.get('hours'),type=EVAL_TYPES[fd.get('type')]?fd.get('type'):'parcial';
-    const o={type,course:String(fd.get('course')).trim(),date:fd.get('date'),time:fd.get('time'),hours:h>0?Math.min(40,Math.max(.5,h)):EVAL_TYPES[type].h};
+  if(f.dataset.form==='eval'){const o={type:fd.get('type'),course:String(fd.get('course')).trim(),date:fd.get('date'),time:fd.get('time'),hours:Math.max(.5,+fd.get('hours')||1)};
     // Para el límite de Gratis cuenta toda evaluación que pasa a ser próxima: una nueva o una pasada a la que se le cambia la fecha.
     const cur=f.dataset.id&&state.evals.find(e=>e.id===f.dataset.id),hoy=ymd(now());
     if(o.date>=hoy&&(!cur||cur.date<hoy)&&evalRoom()<1){ui.sheet=null;openPaywall('evals',{items:[{kind:'eval',...o}],replace:cur?cur.id:null});return;}
-    snapshot();let id;
-    if(cur){Object.assign(cur,o);id=cur.id;}else{id=uid();state.evals.push({id,...o});}
-    save();if(!cur)agendarNuevas([id]);ui.sheet=null;rerenderKeepScroll();
-    // Una evaluación nueva entra sola (también en Gratis); un cambio a una ya armada en Gratis espera a rearmar la semana.
-    toast(cur&&!isPro()&&state.frozen&&planStale()?'Guardado. Tu horario Gratis se actualiza cuando rearmes tu semana.':`Guardado.${textoAgendado([id])}`,true);}});
+    snapshot();
+    if(cur)Object.assign(cur,o);else state.evals.push({id:uid(),...o});
+    save();ui.sheet=null;const p=P();const e=state.evals.find(x=>x.course===o.course&&x.date===o.date);rerenderKeepScroll();
+    toast(p.frozen?'Guardado. Entra a tu horario cuando rearmes tu semana.':e&&p.unmet[e.id]>0?`Guardado, pero ${faltaTxt(p.unmet[e.id])} sin hueco libre.`:'Guardado. Lía repartió tus horas de estudio.',true);}});
 document.addEventListener('change',ev=>{const el=ev.target;
-  if(el.id==='e-type'){const h=document.getElementById('e-hours');if(h)h.placeholder=`${EVAL_TYPES[el.value].h}, lo usual`;return;}
+  if(el.id==='e-type'){const h=document.getElementById('e-hours');if(h)h.value=EVAL_TYPES[el.value].h;return;}
   if(el.id==='c-start'||el.id==='c-end'){const s=document.getElementById('c-start').value,e=document.getElementById('c-end').value,n=document.getElementById('c-noche');
     if(n)n.hidden=!(s&&e&&toMin(e)<toMin(s));return;}
   const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
-  if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;if(k==='wake'||k==='sleep')state.settings.suenoListo=true;save();
+  if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;save();
   if(k==='autonomy')toast('Ajuste guardado.');
   else if(k!=='name')toast(P().frozen?'Ajuste guardado. Se aplica cuando rearmes tu semana.':'Ajuste guardado. Lía reorganizó tu horario.');});
 function tick(){if(!ui.session)return;const s=ui.session;const left=Math.max(0,s.total-s.elapsed());const c=document.getElementById('clock');const r=document.getElementById('ringp');
