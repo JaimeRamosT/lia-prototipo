@@ -178,3 +178,46 @@ test('«estudié para el parcial de cálculo» sin decir cuánto pregunta el tie
   assert.equal(r.intent, 'log');
   assert.match(r.error, /Cuánto tiempo estudiaste/);
 });
+
+// ---------- Categorías de rutinas (iteración 2) ----------
+for (const [frase, tipo, nombre, ini, fin, dias] of [
+  ['almuerzo de lunes a viernes de 1 a 2', 'comida', 'Almuerzo', '13:00', '14:00', [1, 2, 3, 4, 5]],
+  ['gimnasio martes y jueves de 7 a 8 de la noche', 'deporte', 'Gimnasio', '19:00', '20:00', [2, 4]],
+  ['voy a un curso de inglés los sábados de 9 a 12', 'curso', 'Curso de inglés', '09:00', '12:00', [6]],
+  ['siesta de lunes a viernes de 3 a 4', 'ocio', 'Siesta', '15:00', '16:00', [1, 2, 3, 4, 5]],
+  ['cuido a mi hermano los martes de 5 a 7', 'casa', 'Cuidar a la familia', '17:00', '19:00', [2]],
+  ['tomo el bus de lunes a viernes de 7 a 8 de la mañana', 'traslado', 'Traslado', '07:00', '08:00', [1, 2, 3, 4, 5]],
+  ['fútbol los domingos de 10 a 12', 'deporte', 'Fútbol', '10:00', '12:00', [0]],
+]) {
+  test(`categoría: «${frase}» → ${tipo} «${nombre}»`, () => {
+    const r = L.interpret(frase, estado(), ahora());
+    assert.equal(r.intent, 'add', JSON.stringify(r));
+    const it = r.items[0];
+    assert.deepEqual([it.kind, it.type, it.name, it.start, it.end, it.days, it.error], ['commit', tipo, nombre, ini, fin, dias, undefined]);
+  });
+}
+test('«hoy no voy al gimnasio» libera la rutina por su nombre aunque sea de otra categoría', () => {
+  const st = estado({ compromisos: [{ name: 'Gym', type: 'deporte', days: LUN_A_VIE, start: '20:00', end: '21:00' }, { name: 'Gimnasio', type: 'otro', days: LUN_A_VIE, start: '06:00', end: '07:00' }] });
+  const r = L.interpret('hoy no voy al gimnasio', st, ahora());
+  assert.equal(r.intent, 'except');
+  assert.deepEqual(r.exs.map(x => x.ref), ['c1']);
+});
+test('«hoy no voy al fútbol» sin una rutina con ese nombre libera la de su categoría', () => {
+  const st = estado({ compromisos: [{ name: 'Pichanga', type: 'deporte', days: LUN_A_VIE, start: '20:00', end: '21:00' }] });
+  const r = L.interpret('hoy no voy al fútbol', st, ahora());
+  assert.equal(r.intent, 'except');
+  assert.deepEqual(r.exs.map(x => [x.ref, x.label]), [['c0', 'Sin Pichanga']]);
+});
+test('tipoPorNombre(): la categoría que sugiere el nombre de una rutina', () => {
+  assert.equal(L.tipoPorNombre('Almuerzo'), 'comida');
+  assert.equal(L.tipoPorNombre('Gimnasio Smart Fit'), 'deporte');
+  assert.equal(L.tipoPorNombre('Inglés en el ICPNA'), 'curso');
+  assert.equal(L.tipoPorNombre('Reunión del grupo'), null);
+  assert.equal(L.tipoPorNombre(''), null);
+});
+test('un tipo de rutina que la app no conoce se trata como «Otro»', () => {
+  assert.equal(L.tipoRutina('submarinismo'), 'otro');
+  assert.equal(L.tipoRutina('comida'), 'comida');
+  const st = estado({ compromisos: [{ name: 'Algo nuevo', type: 'submarinismo', days: LUN_A_VIE, start: '20:00', end: '21:00' }] });
+  assert.equal(L.busyFor(st, '2026-10-26')[0].kind, 'otro');
+});

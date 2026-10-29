@@ -13,7 +13,7 @@ export const LIMITES = { cuerpo: 16000, mensaje: 500, historial: 6, textoHistori
 
 // Deben coincidir con EVAL_TYPES y COMMIT_TYPES de index.html (lo revisa pruebas/ia.test.mjs).
 export const TIPOS_EVAL = ['parcial', 'examen', 'final', 'practica', 'control', 'entrega', 'exposicion'];
-export const TIPOS_COMPROMISO = ['clase', 'trabajo', 'traslado', 'otro'];
+export const TIPOS_COMPROMISO = ['clase', 'trabajo', 'traslado', 'comida', 'curso', 'deporte', 'ocio', 'casa', 'otro'];
 export const INTENCIONES = ['add', 'except', 'log', 'agenda', 'progress', 'next', 'replan', 'pregunta', 'aviso', 'fuera', 'help'];
 
 // Direcciones desde las que la app puede llamar: producción, vistas previas de Cloudflare y pruebas en la computadora.
@@ -97,7 +97,7 @@ Reglas:
 3. Fechas en AAAA-MM-DD y horas en HH:MM de 24 horas. Calcula las fechas con el calendario del contexto. "Pasado mañana" es hoy más dos días. "El otro jueves" (u otro día) es el de la semana siguiente, no el más cercano. "Este jueves" o "el jueves" es el próximo jueves.
 4. Horas: "a las 9" para una clase o un examen es 09:00 salvo que diga "de la noche"; "salgo del trabajo a las 10" después de un turno de tarde es 22:00. Si de verdad no se puede saber, pregunta.
 5. Intenciones:
-   - "add": evaluaciones nuevas en "evaluaciones" (tipo: parcial, examen, final, practica para PC o práctica calificada, control, entrega para tarea, informe, trabajo, proyecto, monografía o ensayo, y exposicion). Si no dice la hora: 09:00, o 23:59 si es una entrega. Compromisos que se repiten cada semana en "compromisos" (tipo: clase, trabajo para chamba o turno, traslado, otro), con "dias" de 0 (domingo) a 6 (sábado).
+   - "add": evaluaciones nuevas en "evaluaciones" (tipo: parcial, examen, final, practica para PC o práctica calificada, control, entrega para tarea, informe, trabajo, proyecto, monografía o ensayo, y exposicion). Si no dice la hora: 09:00, o 23:59 si es una entrega. Compromisos que se repiten cada semana en "compromisos" (tipo: clase; trabajo para chamba o turno; traslado; comida para almuerzo, desayuno o cena; curso para cursos, talleres, academias o idiomas fuera de la universidad; deporte para gimnasio, fútbol u otro deporte; ocio para descanso, siesta o pasatiempos; casa para familia o cuidar a alguien; otro para lo demás), con "dias" de 0 (domingo) a 6 (sábado).
    - "except": algo que cambia un solo día, en "cambios". Si un compromiso del horario fijo no va ese día ("mañana no tengo clases", "hoy no voy a la chamba"), un cambio por cada compromiso con libera true y su compromisoId. Si sale antes o entra más tarde a un compromiso, libera true con su compromisoId, y inicio y fin del tramo que queda libre. Si algo ocupa tiempo ("el sábado tengo un cumpleaños de 3 a 7", "hoy salgo del trabajo a las 10"), libera false con inicio, fin y un motivo corto; si alarga un compromiso, inicio es la hora en que ese compromiso terminaba.
    - "log": estudio que ya hizo, en "estudio" con evaluacionId (del contexto), fecha y minutos. Si no sabes de qué evaluación, pregunta.
    - "agenda": quiere saber qué tiene un día; pon ese día en "fecha".
