@@ -393,6 +393,13 @@ deno_version = 2
 enabled = true
 verify_jwt = true
 
+# Recordatorios en el teléfono (docs/notificaciones.md). La llaman pg_cron (con su secreto de Vault) y la app
+# (con la sesión de una cuenta Pro); la función revisa cada caso, por eso verify_jwt está apagado.
+# Las claves VAPID las crea la propia función y viven en Vault: no hay secretos que configurar.
+[functions.lia-avisos]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
