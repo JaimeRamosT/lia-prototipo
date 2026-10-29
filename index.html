@@ -710,6 +710,74 @@ function evalMencionada(ns,state,now){const t=ymd(now);let mejor=null,peso=0;
   for(const e of orden){const c=norm(e.course).replace(/[^a-z0-9 ]/g,' ').trim();const w=c.split(/\s+/).find(x=>x.length>2);
     const p=c&&new RegExp(`\\b${c}\\b`).test(ns)?2:w&&new RegExp(`\\b${w}\\b`).test(ns)?1:0;if(p>peso){mejor=e;peso=p;}}
   return mejor;}
+// ---------- Cambiar o quitar una evaluación que ya está ----------
+// «Me cambiaron el examen de cálculo al viernes», «ya no tengo el parcial de física». Antes Lía lo leía como una
+// evaluación nueva y la duplicaba. Solo cuenta si lo que cambió va junto a una evaluación («cambiaron el examen»,
+// «el parcial de física ahora es…»), para no confundirlo con «ya no tengo tiempo para el examen».
+// Los verbos firmes bastan («me cambiaron el examen»: Lía pregunta la fecha nueva); los débiles («pasaron», «ahora es»)
+// necesitan una fecha o una hora nueva.
+const MUEVE_FIRME=/^(cambiaron|cambio|cambie|cambia|cambiar|movieron|movio|movi|mueve|mover|postergaron|postergo|posterga|postergar|aplazaron|aplazo|aplaza|aplazar|reprogramaron|reprogramo|reprograma|reprogramar|adelantaron|retrasaron|corrieron)$/;
+const MUEVE_DEBIL=/^(pasaron|paso|pasa|pasar)$/;
+const QUITA_EVAL=/^(cancelaron|cancelo|suspendieron|suspendio|anularon|anulo|borra|borrar|elimina|eliminar|quita|quitar|saca|sacar)$/;
+const JUNTO_PASA=new Set(['el','la','los','las','lo','le','me','mi','mis','su','sus','un','una','ese','esa','este','esta','fecha','hora','dia','del','de','proximo','proxima']);
+const JUNTO_CORTA=new Set(['y',',','que','para','tiempo','pero','porque','cuando','si','ni','o']);
+// Una palabra que nombra una evaluación: «examen», «pc2», «informe»; «trabajo» solo si es «trabajo final» y parecidos.
+function esEvalTok(toks,j){const t=toks[j];if(!t)return false;
+  return !!EVAL_KW[t.n]||(ENTREGA_N.has(t.n)&&(t.n!=='trabajo'||TRABAJO_ENTREGA.test((toks[j+1]||{}).n||'')));}
+// ¿La evaluación va junto a lo que cambió? Después (salteando artículos y la fecha vieja) o poco antes, sin otra idea en medio.
+function evalJunto(toks,i0,i1){
+  for(let j=i1;j<toks.length&&j<i1+6;j++){if(esEvalTok(toks,j))return true;const n=toks[j].n;
+    if(!(JUNTO_PASA.has(n)||DAYW[n]!==undefined||MESN[n]||/^\d{1,2}$/.test(n)))break;}
+  for(let j=i0-1;j>=0&&j>=i0-7;j--){if(esEvalTok(toks,j))return true;const n=toks[j].n;if(JUNTO_CORTA.has(n)||COMMIT_KW[n])break;}
+  // «…y lo pasaron al jueves»: el pronombre apunta a la evaluación que se nombró antes.
+  return /^(lo|la|los|las)$/.test((toks[i0-1]||{}).n||'')&&toks.slice(0,i0).some((_,j)=>esEvalTok(toks,j));}
+// Lo que dice la frase que cambió: [{accion:'mover'|'quitar', firme}] (solo los que van junto a una evaluación).
+function disparadores(toks){const out=[];
+  for(let i=0;i<toks.length;i++){const w=toks[i].n,a=(toks[i+1]||{}).n||'',b=(toks[i+2]||{}).n||'';let d=null;
+    if(w==='ya'&&a==='no'&&/^(tengo|tendre|hay|habra|va|sera|es)$/.test(b))d={accion:/^(sera|es)$/.test(b)?'mover':'quitar',firme:!/^(sera|es)$/.test(b),i1:i+3};
+    else if(w==='ahora'&&/^(es|sera)$/.test(a))d={accion:'mover',firme:false,i1:i+2};
+    else if(w==='nueva'&&a==='fecha')d={accion:'mover',firme:false,i1:i+2};
+    else if(MUEVE_FIRME.test(w))d={accion:'mover',firme:true,i1:i+1};
+    else if(MUEVE_DEBIL.test(w))d={accion:'mover',firme:false,i1:i+1};
+    else if(QUITA_EVAL.test(w))d={accion:'quitar',firme:true,i1:i+1};
+    if(d&&evalJunto(toks,i,d.i1))out.push(d);}
+  return out;}
+// La fecha y la hora nuevas. Lo nuevo va después de «al», «para», «ahora es» o «es el» («del lunes al jueves»,
+// «ya no es el lunes, es el martes»); si no hay esas palabras, la única fecha que se dijo (suelta) puede ser la vieja.
+function fechaHoraNueva(ns,now){const partes=ns.replace(/\bya no (?:es|sera)\b/g,' ya-no ').split(/\b(?:al|para|ahora es|ahora sera|es|sera)\b/);let date='';  // «ya no es el lunes»: el lunes es la vieja
+  for(let i=partes.length-1;i>=1&&!date;i--)date=parseDate(partes[i],now)||'';
+  const hs=[...ns.matchAll(new RegExp(`\\b(?:a las|a la)\\s+${HQ}`,'g'))],h=hs[hs.length-1];
+  return{date,suelta:partes.length===1?parseDate(ns,now)||'':'',antes:parseDate(partes[0],now)||'',time:h?fmt(adj(h[1],h[2],h[3],h[4]||partOf(ns))):''};}
+// Las evaluaciones próximas a las que se refiere la frase: por su curso y, si hay varias, por su tipo y su fecha.
+// «Examen» vale también para un parcial o un final (así les dicen muchos).
+function evalesAludidas(dicho,toks,ns,antes,state,now){const t=ymd(now),prox=state.evals.filter(e=>e.date>=t);
+  const tipos=new Set(toks.filter((x,j)=>esEvalTok(toks,j)).map(x=>EVAL_KW[x.n]||'entrega'));
+  if(tipos.has('examen')){tipos.add('parcial');tipos.add('final');}
+  const palabras=c=>norm(c).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w.length>2&&!SKIPW.has(w)&&!EVAL_KW[w]&&!ENTREGA_N.has(w));
+  let cs=prox.filter(e=>palabras(e.course).some(w=>new RegExp(`\\b${w}\\b`).test(ns)));
+  if(cs.length){const c2=cs.filter(e=>tipos.has(e.type));if(c2.length)cs=c2;}
+  else if(dicho&&palabras(dicho.course).length)return[];  // nombró un curso que no está
+  else cs=prox.filter(e=>tipos.has(e.type));
+  // «El parcial del miércoles»: el de esa fecha o, si no hay, el que cae ese día de la semana (puede ser el de la otra semana).
+  if(cs.length>1&&antes){const wd=fromYmd(antes).getDay(),diaDicho=Object.keys(DAYW).some(w=>DAYW[w]===wd&&new RegExp(`\\b${w}\\b`).test(ns));
+    const c2=cs.filter(e=>e.date===antes),c3=diaDicho?cs.filter(e=>fromYmd(e.date).getDay()===wd):[];if(c2.length)cs=c2;else if(c3.length)cs=c3;}
+  return cs.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));}
+// Devuelve la intención (cambiaEval, quitaEval, la pregunta de lo que falta o un aviso), o null si la frase no cambia
+// ni quita una evaluación. Si no encuentra la evaluación que cambió, devuelve null y la frase se lee como una nueva.
+function cambioDeEval(text,state,now){const toks=tokenize(text),ns=toks.map(t=>t.n).join(' ');
+  const ds=disparadores(toks);if(!ds.length)return null;
+  const nv=fechaHoraNueva(ns,now),hay=!!(nv.date||nv.suelta||nv.time);
+  const mover=ds.find(d=>d.accion==='mover'&&(d.firme||hay)),quitar=ds.find(d=>d.accion==='quitar');
+  const accion=mover&&(!quitar||hay)?'mover':quitar?'quitar':null;if(!accion)return null;
+  const dicho=parseClause(toks,now,null,state.settings),ref=dicho&&dicho.kind==='eval'?dicho:{type:'parcial',course:''};
+  const cs=evalesAludidas(dicho&&dicho.kind==='eval'?dicho:null,toks,ns,nv.antes,state,now);
+  if(!cs.length)return accion==='quitar'?{intent:'aviso',texto:`No encontré ${nombreEval(ref)} entre tus evaluaciones próximas, así que no hay nada que quitar.`,deCambio:true}:null;
+  const it={kind:'cambio',accion,evalId:'',type:ref.type,course:ref.course,date:'',time:'',cands:cs.slice(0,4).map(e=>e.id)};
+  if(cs.length===1)Object.assign(it,{evalId:cs[0].id,type:cs[0].type,course:cs[0].course});
+  if(accion==='mover'){const una=cs.length===1?cs[0]:null;
+    it.date=nv.date||(nv.suelta&&!cs.some(e=>e.date===nv.suelta)?nv.suelta:'');
+    it.time=nv.time&&!(una&&!it.date&&nv.time===una.time)?nv.time:'';}
+  return continuarBorrador({intent:'cambio',items:[it]},state,now);}
 // ---------- Lía pide lo que falta (iteración 2) ----------
 // Lo que necesita cada cosa para guardarse; nada se guarda sin hora (decisión 4). Si falta algo, Lía lo pregunta, una
 // cosa a la vez y con respuestas rápidas, y guarda lo entendido como borrador por 10 minutos (state.borrador).
@@ -722,6 +790,7 @@ function faltaDe(it){if(!it)return null;
   if(it.kind==='commit')return !(it.days&&it.days.length)?'dias':!(it.start&&it.end)?'horario':null;
   if(it.kind==='evento')return !it.date?'fecha':!(it.start&&it.end)?'horario':null;
   if(it.kind==='log')return !it.evalId?'evaluacion':!it.min?'minutos':null;
+  if(it.kind==='cambio')return !it.evalId?'evaluacion':it.accion==='mover'&&!it.date&&!it.time?'fecha':null;
   return null;}
 const minus=s=>s.charAt(0).toLowerCase()+s.slice(1);
 // «tu examen de Inglés», «tu informe de Química» (una entrega con nombre propio ya lo dice).
@@ -735,6 +804,11 @@ const otra=(t,ph)=>({t,otra:true,ph});
 function preguntaPara(it,falta,state,now){
   const dias=()=>[1,2,3].map(k=>{const f=ymd(addDays(now,k)),d=fromYmd(f);return{t:`${cap(DIAS[d.getDay()].slice(0,3))} ${d.getDate()}`,set:{date:f}};});
   const franja=(F,ls)=>ls.map(([k,l])=>({t:`${l} (${fmt(F[k][0])}–${fmt(F[k][1])})`,set:{start:fmt(F[k][0]),end:fmt(F[k][1])}}));
+  if(it.kind==='cambio'){
+    if(falta==='evaluacion'){const es=(it.cands||[]).map(id=>state.evals.find(e=>e.id===id)).filter(Boolean);
+      return{texto:it.accion==='quitar'?'¿Cuál de estas evaluaciones quito?':'¿Cuál de estas evaluaciones cambió?',
+        opciones:es.map(e=>({t:`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label} de ${e.course} · ${fechaCorta(e.date)}`,set:{evalId:e.id,type:e.type,course:e.course}}))};}
+    return{texto:`¿Para cuándo es ahora ${nombreEval(it)}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha y la hora, por ejemplo: el viernes a las 8')]};}
   if(it.kind==='eval'){const n=nombreEval(it),ent=it.type==='entrega';
     if(falta==='curso')return{texto:`¿De qué curso es ${n}${it.date?' '+delDia(it.date,now):''}?`,opciones:[]};
     if(falta==='fecha')return{texto:ent?`¿Para qué día es ${n}?`:`¿Qué día es ${n}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha, por ejemplo: el 12 de noviembre')]};
@@ -756,6 +830,7 @@ function continuarBorrador(b,state,now){const i=b.items.findIndex(x=>faltaDe(x))
   if(i>=0){const it=b.items[i],q=preguntaPara(it,faltaDe(it),state,now);return{intent:'pregunta',texto:q.texto,opciones:q.opciones,borrador:{intent:b.intent,items:b.items,i}};}
   if(b.intent==='except'){const exs=b.items.map(x=>({date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{})}));return{intent:'except',exs,ex:exs[0]};}
   if(b.intent==='log'){const x=b.items[0];return{intent:'log',evalId:x.evalId,course:x.course,date:x.date,min:x.min};}
+  if(b.intent==='cambio'){const x=b.items[0];return x.accion==='quitar'?{intent:'quitaEval',evalId:x.evalId}:{intent:'cambiaEval',evalId:x.evalId,date:x.date||'',time:x.time||''};}
   return{intent:'add',items:b.items};}
 // La respuesta a lo que Lía preguntó: completa el borrador con lo que se entiende, o null si no responde.
 // Si el mensaje nombra otra actividad, es otra cosa y el borrador queda de lado.
@@ -768,10 +843,11 @@ function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falt
   const rango=tm.range||(tm.at!=null&&p.kind==='evento'?[tm.at,tm.at+60]:null)||(tm.part?(p.kind==='commit'?FRANJA_RUTINA:FRANJA_EVENTO)[tm.part]:null);
   if(falta==='curso'){let j=0;while(j<toks.length&&(SKIPW.has(toks[j].n)||STOPW.has(toks[j].n)))j++;  // «es de estadística»
     const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=c;}
-  else if(falta==='fecha'){if(!d)return null;p.date=d;}
+  else if(falta==='fecha'){if(d)p.date=d;else if(p.kind==='cambio'&&hora!=null)p.time=fmt(hora);else return null;}  // a una evaluación que cambió le basta la hora
   else if(falta==='hora'){const h=hora!=null?hora:p.type==='entrega'&&/\bmedianoche\b/.test(ns)?1439:null;if(h==null)return null;p.time=fmt(h);}
   else if(falta==='horario'){if(!rango)return null;p.start=fmt(rango[0]);p.end=fmt(rango[1]);}
   else if(falta==='dias'){const ds=parseDays(ns);if(!ds.length)return null;p.days=ds;}
+  else if(falta==='evaluacion'&&p.kind==='cambio'){const e=cualDeEstas(p.cands,toks,ns,d,state);if(!e)return null;Object.assign(p,{evalId:e.id,type:e.type,course:e.course});}
   else if(falta==='evaluacion'){const e=evalMencionada(ns,state,now);if(!e)return null;p.evalId=e.id;p.course=e.course;}
   else if(falta==='minutos'){const m=minutosDichos(ns);if(!m)return null;p.min=m;}
   // Lo demás que diga la misma respuesta también cuenta («el jueves a las 9»).
@@ -779,7 +855,14 @@ function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falt
   if(p.kind==='evento'){if(!p.date&&d)p.date=d;if(!p.start&&rango){p.start=fmt(rango[0]);p.end=fmt(rango[1]);}}
   if(p.kind==='commit'&&!p.start&&tm.range){p.start=fmt(tm.range[0]);p.end=fmt(tm.range[1]);}
   if(p.kind==='log'&&!p.min){const m=minutosDichos(ns);if(m)p.min=m;}
+  if(p.kind==='cambio'&&falta==='fecha'&&!p.time&&hora!=null)p.time=fmt(hora);
   return continuarBorrador({...b,items:b.items.map((x,k)=>k===b.i?p:x)},state,now);}
+// «¿Cuál de estas evaluaciones cambió?» respondida con palabras: la única de la lista que coincide por curso, tipo o fecha.
+function cualDeEstas(ids,toks,ns,d,state){const es=(ids||[]).map(id=>state.evals.find(e=>e.id===id)).filter(Boolean);
+  const tipos=new Set(toks.filter((x,j)=>esEvalTok(toks,j)).map(x=>EVAL_KW[x.n]||'entrega'));
+  const nombra=e=>norm(e.course).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).some(w=>w.length>2&&new RegExp(`\\b${w}\\b`).test(ns));
+  for(const f of [e=>d&&e.date===d,e=>tipos.has(e.type),nombra]){const c=es.filter(f);if(c.length===1)return c[0];}
+  return null;}
 // Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'pregunta',texto,opciones,borrador}, {intent:'help'}…
 function interpret(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
@@ -787,6 +870,8 @@ function interpret(text,state,now){
   if(/\b(que tengo|que me toca|mi agenda|como esta mi)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
+  // Una evaluación que ya está y cambió o se canceló («me cambiaron el examen de cálculo al viernes»).
+  const ce=cambioDeEval(text,state,now);if(ce)return ce;
   const hasEval=toks.some(t=>EVAL_KW[t.n]);
   // Estudio que ya hiciste: "ayer estudié 2 horas de cálculo".
   if(ESTUDIE.test(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns)||0,date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
@@ -1289,6 +1374,10 @@ function resumenItem(i){return i.kind==='eval'?`${EVAL_TYPES[i.type].label} de $
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
   return `${it.name} — ${diasTxt(it.days)} · ${horario(it)}`;}
 function pendingHTML(){const pe=ui.pending;
+  // Una evaluación que cambia o se quita: qué pasa con ella y los botones con la acción.
+  if(pe.cambio){const c=pe.cambio,e=evById(c.evalId);if(!e)return '';const quita=c.accion==='quitar';
+    return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span><div class="blk ${e.type==='entrega'?'k-trabajo':'k-examen'}"><b>${esc((EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label+' · '+e.course)}</b><small>${esc(quita?`${cap(fechaCorta(e.date))} · ${e.time} · se quita con su estudio`:`Pasa del ${fechaCorta(e.date)}, ${e.time}, al ${fechaCorta(c.date)}, ${c.time}`)}</small></div>
+   <div class="row-h"><button class="pill solid" data-a="confirm">${quita?'Quitar':'Confirmar'}</button><button class="pill ghost" data-a="cancel">${quita?'Mantener':'Corregir'}</button></div></div></div>`;}
   if(pe.exs)return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${pe.exs.map(x=>`<div class="blk ${x.libre?'k-libre':'k-excepcion'}"><b>${esc(x.label)}</b><small>${esc(`${cap(fechaCorta(x.date))} · ${horario(x)}`)}</small></div>`).join('')}
    <div class="row-h"><button class="pill solid" data-a="confirm">Confirmar</button><button class="pill ghost" data-a="cancel">Corregir</button></div></div></div>`;
   const it=pe.items;return `<div class="msg">${AV(28)}<div class="bub"><span class="eyebrow">Lía entendió</span>${it.map(i=>`<div class="blk ${i.kind==='eval'?(i.type==='entrega'?'k-trabajo':'k-examen'):'k-'+tipoRutina(i.type)}"><b>${i.kind==='eval'?'':icoRutina(i.type)}${esc(i.kind==='eval'?EVAL_TYPES[i.type].label+' · '+i.course:i.name)}${i.kind==='eval'?'':`<span class="sr-only"> (${COMMIT_TYPES[tipoRutina(i.type)]})</span>`}</b><small>${esc(i.kind==='eval'?`${cap(fechaCorta(i.date))} · ${i.time} · ${i.hours} h de estudio`:`${diasTxt(i.days)} · ${horario(i)}`)}</small></div>`).join('')}
@@ -1411,8 +1500,10 @@ function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaCorta
    <button class="btn sec" data-a="close">Cancelar</button>`;}
 // Las horas de estudio son opcionales: si quedan vacías, Lía usa lo usual para ese tipo de evaluación.
 // Nada se guarda sin fecha ni hora (decisión del 28-oct): en una evaluación nueva vienen vacías, salvo que se sepan.
+// Con pre, el formulario se abre con esos datos encima: los de una evaluación nueva o los que cambian en una que ya está.
 function sheetEval(id,pre){const base={id:'',type:'parcial',course:'',date:'',time:'',hours:''},desde=pre||{};
-  const e=state.evals.find(x=>x.id===id)||{...base,...Object.fromEntries(Object.keys(base).filter(k=>k!=='id'&&desde[k]!==undefined&&desde[k]!==null).map(k=>[k,desde[k]]))};
+  const dato=Object.fromEntries(Object.keys(base).filter(k=>k!=='id'&&desde[k]!==undefined&&desde[k]!==null&&desde[k]!=='').map(k=>[k,desde[k]]));
+  const cur=state.evals.find(x=>x.id===id),e=cur?{...cur,...dato}:{...base,...dato};
   return `<form class="stack" data-form="eval" data-id="${e.id}" style="gap:14px"><div class="grab"></div><h2>${e.id?'Editar evaluación':'Nueva evaluación'}</h2>
   <div class="two"><label class="f">Tipo<select id="e-type" name="type" data-a-change="etype">${Object.entries(EVAL_TYPES).map(([k,v])=>`<option value="${k}" ${e.type===k?'selected':''}>${v.label}</option>`).join('')}</select></label>
   <label class="f">Horas de estudio (opcional)<input type="number" id="e-hours" name="hours" min="1" max="40" step="0.5" inputmode="decimal" value="${e.hours}" placeholder="${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).h}, lo usual"></label></div>
@@ -1629,6 +1720,18 @@ function applyItems(items){snapshot();const ids=[];
   for(const it of items){if(it.kind==='eval'){const id=uid();ids.push(id);state.evals.push({id,type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours});}
     else state.commitments.push({id:uid(),name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}
   save();return{ids,agendado:agendarNuevas(ids)};}
+// Quita una evaluación con lo que se estudió para ella (Deshacer la devuelve).
+function quitarEval(id){snapshot();state.evals=state.evals.filter(e=>e.id!==id);state.done=state.done.filter(x=>x.evalId!==id);save();}
+// Cambia la fecha o la hora de una evaluación, o la quita, y devuelve lo que dice Lía. Igual que al editarla en
+// Evaluaciones: en Pro el estudio se reorganiza solo; en Gratis, el cambio entra cuando se rearma la semana.
+function aplicarCambioEval(c){const e=evById(c.evalId);if(!e)return 'No encontré esa evaluación. Revísala en Evaluaciones.';
+  const n=nombreEval(e),congelado=()=>!isPro()&&state.onboarded&&!!state.frozen;
+  if(c.accion==='quitar'){quitarEval(e.id);return congelado()?`Listo, quité ${n}. Las horas que tenía agendadas quedan libres.`:`Listo, quité ${n} y reorganicé tu estudio.`;}
+  snapshot();e.date=c.date;e.time=c.time;save();
+  const dicho=`Listo, pasé ${n} al ${fechaCorta(e.date)} a las ${e.time}`;
+  if(congelado()&&planStale())return `${dicho}. En Gratis, tu estudio tiene en cuenta el cambio cuando rearmas tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`;
+  const f=(P().unmet||{})[e.id]||0;
+  return `${dicho} y reorganicé tu estudio.${f?` Aún ${faltaTxt(f)} sin hueco libre.`:''}`;}
 // Cuánto estudio quedó agendado para esas evaluaciones y cuánto falta, en el plan que se ve (Pro o Gratis).
 function agendadoPara(ids){const p=P(),min=p.blocks.filter(b=>ids.includes(b.evalId)).reduce((a,b)=>a+b.e-b.s,0),falta=ids.reduce((a,id)=>a+((p.unmet&&p.unmet[id])||0),0);return{min,falta};}
 // Lo que dice Lía después de agregar evaluaciones: lo que agendó y lo que no encontró.
@@ -1643,6 +1746,8 @@ function handleText(q,from){q=q.trim();if(!q)return;
   if(b){const r=respuestaBorrador(b,q,state,n0);if(r){responder(q,from,r,n0);return;}}
   if(from==='chat'&&iaPosible()&&navigator.onLine!==false){
     if(ui.pensando){const i=document.getElementById('chat-in');if(i&&!i.value)i.value=q;anunciar('Espera un momento: Lía está respondiendo.');return;}
+    // Cambiar o quitar una evaluación lo resuelven las reglas: la IA todavía no lo sabe hacer y lo leería como una evaluación nueva.
+    const c=cambioDeEval(q,state,n0);if(c){responder(q,from,c,n0);return;}
     const el=iaEleccion();
     if(el===null){ui.iaPendiente=q;ui.sheet=sheetIA();render();return;}
     if(el==='si'){conIA(q);return;}}
@@ -1658,6 +1763,16 @@ function responder(q,from,r,n,{eco=true}={}){
   if(r.intent==='help'&&b){const it=b.items[b.i],p=preguntaPara(it,faltaDe(it),state,n);
     if(from==='chat'){liaSay(`No te entendí. ${p.texto}`,{opciones:p.opciones});render();}else toast(`No te entendí. ${p.texto}`);return;}
   state.borrador=null;
+  // Una evaluación que cambió o se canceló: en el chat, Lía propone y la persona confirma; en la caja de Evaluaciones
+  // se aplica de una vez, con Deshacer (como lo que se agrega ahí).
+  if(r.intent==='cambiaEval'||r.intent==='quitaEval'){const e=evById(r.evalId),decir=t=>{if(from==='chat'){liaSay(t);render();}else toast(t);};
+    if(!e){decir('No encontré esa evaluación. Revísala en Evaluaciones.');return;}
+    const c=r.intent==='quitaEval'?{accion:'quitar',evalId:e.id}:{accion:'mover',evalId:e.id,date:r.date||e.date,time:r.time||e.time};
+    if(c.accion==='mover'&&c.date===e.date&&c.time===e.time){decir(`${cap(nombreEval(e))} ya es el ${fechaCorta(e.date)} a las ${e.time}.`);return;}
+    if(from==='chat'){ui.pending={cambio:c,q};save();render();
+      anunciar(c.accion==='quitar'?`Lía entendió: quitar ${nombreEval(e)} del ${fechaCorta(e.date)}. Elige Quitar o Mantener.`:`Lía entendió: ${nombreEval(e)} pasa del ${fechaCorta(e.date)} a las ${e.time} al ${fechaCorta(c.date)} a las ${c.time}. Confirma o corrige.`);return;}
+    toast(aplicarCambioEval(c),true);rerenderKeepScroll();return;}
+  if(r.intent==='aviso'&&r.deCambio&&from!=='chat'){toast(r.texto);return;}
   if(r.intent==='add'){const ok=r.items;
     if(newEvalCount(ok)>evalRoom()){ui.blockedItems=ok;if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else openPaywall('evals',{items:ok});return;}
     if(from==='chat'){ui.pending={items:ok,q};save();render();anunciar(`Lía entendió: ${ok.map(resumenItem).join('; ')}. Confirma o corrige.`);return;}
@@ -1684,7 +1799,7 @@ function responder(q,from,r,n,{eco=true}={}){
     else liaSay(`Ya armaste tu semana. En Gratis puedes volver a armarla desde el ${fechaLarga(nextArmDate())}. Con LIA Pro la reorganizo cuando quieras.`,{cta:'rearm'});
     render();return;}
   if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
-  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.');render();}
+  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Pasaron mi parcial de Cálculo al viernes”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.');render();}
 // ---------- Lía con IA: envío a la función lia-ia ----------
 const IA_TIEMPO=15000;  // ms; la función corta a los 12 s, esto cubre la red del teléfono
 const IA_NIVEL_GRATUITO=true;  // nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
@@ -1797,7 +1912,7 @@ const A={
  'del-commit':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c)return;snapshot();quitarRutinas(c.grupo?state.commitments.filter(x=>x.grupo===c.grupo).map(x=>x.id):[c.id]);save();ui.sheet=null;ui.rutina=null;rerenderKeepScroll();toast('Rutina eliminada.',true);},
  'add-eval':()=>{if(evalRoom()<1){openPaywall('evals');return;}const p=ui.agregarPre;ui.agregarPre=null;ui.sheet=sheetEval(null,p&&p.date?{date:p.date}:null);render();},
  'edit-eval':d=>{ui.sheet=sheetEval(d.id);render();},
- 'del-eval':d=>{snapshot();state.evals=state.evals.filter(e=>e.id!==d.id);state.done=state.done.filter(x=>x.evalId!==d.id);save();ui.sheet=null;rerenderKeepScroll();toast('Evaluación eliminada.',true);},
+ 'del-eval':d=>{quitarEval(d.id);ui.sheet=null;rerenderKeepScroll();toast('Evaluación eliminada.',true);},
  // Deshacer un rato de ocio que se usó para estudiar devuelve el ocio: en Gratis, ese estudio busca otro hueco (decisión 5).
  'del-ex':d=>{const x=state.exceptions.find(y=>y.id===d.id),fresco=!!state.frozen&&!planStale();snapshot();state.exceptions=state.exceptions.filter(y=>y.id!==d.id&&!(y.libre&&y.ref===d.id));save();
    const ocio=x&&x.libre?reubicarOcio():'';if(x&&x.libre)alDiaSiNoChoca(fresco);ui.sheet=null;ui.evento=null;rerenderKeepScroll();
@@ -1838,12 +1953,17 @@ const A={
  'ia-apagar':()=>{iaElegir('no');rerenderKeepScroll();toast('Listo: Lía te responde sin IA.');},
  'ia-prender':()=>{ui.sheet=sheetIA();render();},
  confirm:()=>{const p=ui.pending;ui.pending=null;if(p.exs){const m=aplicarCambio(p.exs);liaSay(m.texto,m.opts);render();return;}
+   if(p.cambio){liaSay(aplicarCambioEval(p.cambio),{undo:true});render();return;}
    if(newEvalCount(p.items)>evalRoom()){ui.blockedItems=p.items;liaSay(limitMsg(),{cta:'evals'});render();return;}
    const hecho=applyItems(p.items),what=p.items.map(i=>i.kind==='eval'?`${EVAL_TYPES[i.type].label.toLowerCase()} de ${i.course}`:i.name.toLowerCase()).join(' y ');
    // Una rutina nueva en Gratis no mueve lo ya armado: se toma en cuenta al rearmar la semana.
    const rutina=p.items.some(i=>i.kind==='commit'),rearmar=rutina&&!isPro()&&!!state.frozen&&planStale();
    liaSay(`Listo, agregué ${what}.${textoAgendado(hecho.ids)}${rearmar?` En Gratis, tu estudio tiene en cuenta lo nuevo cuando rearmas tu semana${canArm()?' (puedes hacerlo ahora desde Hoy)':` (desde el ${fechaCorta(nextArmDate())})`}.`:''}`,{undo:true});render();},
  cancel:()=>{const p=ui.pending;ui.pending=null;
+   // Un cambio: «Corregir» abre la evaluación con la fecha y la hora que entendió Lía; «Mantener» la deja como estaba.
+   if(p&&p.cambio){const e=evById(p.cambio.evalId);
+     if(e&&p.cambio.accion==='mover'){ui.sheet=sheetEval(e.id,{date:p.cambio.date,time:p.cambio.time});render();return;}
+     liaSay(e?`Ok, ${nombreEval(e)} sigue igual.`:'Ok, no cambié nada.');render();return;}
    // Corregir: si entendió una sola cosa, abre el formulario ya lleno; si no, devuelve la frase para editarla.
    if(p&&p.items&&p.items.length===1){const it=p.items[0];if(it.kind==='eval'){ui.sheet=sheetEval(null,it);render();}else abrirRutina(null,it);return;}
    liaSay('Ok, no guardé nada. Corrige tu mensaje y envíalo otra vez.');render();
