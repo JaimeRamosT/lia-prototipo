@@ -1488,23 +1488,9 @@ function guardarPagoPendiente(p){try{localStorage.setItem(KEY_PAGO,JSON.stringif
 function tomarPagoPendiente(){let p=null;try{p=JSON.parse(localStorage.getItem(KEY_PAGO));localStorage.removeItem(KEY_PAGO);}catch(e){p=null;}
   if(!p||!PRICES[p.period]||!(Date.now()-p.t<3*864e5))return null;
   return{why:p.why||'plans',ctx:p.ctx||null,period:p.period,method:METHODS[p.method]?p.method:'yape'};}
-// Quien crea la cuenta en este navegador queda anotado: al volver del correo se sabe si el enlace se abrió en el mismo lugar.
-const KEY_REG='lia.registro';
-function anotarRegistro(){try{localStorage.setItem(KEY_REG,String(Date.now()));}catch(e){}}
-function tomarRegistro(){let t=0;try{t=+localStorage.getItem(KEY_REG)||0;localStorage.removeItem(KEY_REG);}catch(e){}return t>0&&Date.now()-t<7*864e5;}
-// Al volver del enlace del correo: una pantalla que se queda hasta que la persona decide, en vez de un aviso que se va solo.
-// Si el enlace se abrió en otro navegador (por ejemplo, dentro de la app del correo), explica que vuelva al de siempre.
-function alConfirmarCorreo(){const mismo=tomarRegistro(),p=tomarPagoPendiente();
-  if(ui.sheet||ui.session||ui.listen){toast('Listo, confirmaste tu correo y ya iniciaste sesión.');return;}
-  ui.correoOk={mismo:mismo||!!p,pago:p&&!isPro()?p:null};ui.sheet=sheetCorreoOk();render();}
-function sheetCorreoOk(){const c=ui.correoOk||{},email=state.cuenta&&state.cuenta.email,cuenta=email?`Tu cuenta <b style="overflow-wrap:anywhere">${esc(email)}</b>`:'Tu cuenta',ok=`<span class="big-check" aria-hidden="true">${I.check}</span>`;
-  if(!c.mismo)return `<div class="grab"></div>${ok}<h2 style="text-align:center">Confirmaste tu correo</h2>
-   <p class="muted" style="margin:0;text-align:center">${cuenta} ya está activa.</p>
-   <p class="muted" style="margin:0;text-align:center">Si la creaste en otro celular o navegador, vuelve allí e inicia sesión con tu correo y tu contraseña: tus horarios están guardados en ese dispositivo.</p>
-   <button class="btn pri" data-a="close">Entendido</button>`;
-  return `<div class="grab"></div>${ok}<h2 style="text-align:center">¡Listo! Confirmaste tu correo</h2>
-   <p class="muted" style="margin:0;text-align:center">${cuenta} está activa y ya iniciaste sesión.${c.pago?' Ahora sigue tu pago para pasarte a LIA Pro.':''}</p>
-   ${c.pago?'<button class="btn pri" data-a="correo-pago">Seguir con mi pago</button><button class="btn sec" data-a="close">Ahora no</button>':'<button class="btn pri" data-a="close">Seguir</button>'}`;}
+function alConfirmarCorreo(){const p=tomarPagoPendiente();
+  if(p&&!isPro()&&!ui.sheet&&!ui.session&&!ui.listen){ui.pay=p;ui.sheet=sheetCheckout();render();toast('Listo, confirmaste tu correo. Sigue con tu pago.');}
+  else toast('Listo, confirmaste tu correo y ya iniciaste sesión.');}
 // Cambios de sesión que no inició un formulario: al abrir la app, al volver de un enlace del correo o al vencer la sesión.
 function alCambiarSesion(ev,session){if(ui.authBusy)return;const u=session&&session.user;
   if(u&&(ui.desdeRecuperar||ev==='PASSWORD_RECOVERY')){ui.desdeRecuperar=false;setCuenta(u);refrescarPlan(false).catch(()=>{});  // enlace para crear una contraseña nueva
@@ -1575,7 +1561,7 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
       if(!data.session){listo();f.pass='';
         // Con la confirmación activada, Auth no dice que el correo ya tiene cuenta: responde sin identidades y no envía nada.
         if(reg&&data.user&&Array.isArray(data.user.identities)&&!data.user.identities.length){f.modo='ingreso';f.error='Ya hay una cuenta con ese correo. Inicia sesión o, si no recuerdas la contraseña, recupérala.';if(abierta())pintarCuenta();else toast(f.error);return;}
-        f.modo='confirmar';f.esperaHasta=Date.now()+60000;anotarRegistro();if(abierta())pintarCuenta();else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
+        f.modo='confirmar';f.esperaHasta=Date.now()+60000;if(abierta())pintarCuenta();else toast('Te enviamos un correo para confirmar tu cuenta.');return;}
       setCuenta(data.session.user);
       return refrescarPlan(false).catch(()=>null).then(()=>{const seguia=abierta();listo();
         const pend=tomarPagoPendiente(),p=ui.pay||pend,paraPro=f.paraPro||!!pend;
@@ -1588,13 +1574,12 @@ function cuentaCard(){if(!cuentasActivas())return '';
   if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este teléfono. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
   return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este teléfono</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
- 'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=sheetCheckout();render();}else A.close();},
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
  'cuenta-ingresar':d=>abrirCuenta('ingreso',d.pro==='1'),
  'cuenta-recuperar':()=>{const f=ui.cuentaForm;abrirCuenta('recuperar',!!(f&&f.paraPro));},
  'cuenta-reenviar':()=>{const f=ui.cuentaForm;if(!f||f.cargando||f.esperaHasta>Date.now())return;f.error=null;f.aviso=null;f.cargando=true;
    sb().then(c=>c.auth.resend({type:'signup',email:f.email,options:{emailRedirectTo:location.origin+location.pathname}})).then(({error})=>{if(error)throw error;
-       anotarRegistro();f.cargando=false;f.esperaHasta=Date.now()+60000;f.aviso='Te lo volvimos a enviar. Si no llega en unos minutos, revisa la carpeta de spam.';if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();})
+       f.cargando=false;f.esperaHasta=Date.now()+60000;f.aviso='Te lo volvimos a enviar. Si no llega en unos minutos, revisa la carpeta de spam.';if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();})
      .catch(e=>{f.cargando=false;f.error=mensajeError(e);if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();});},
  'ver-clave':(d,el)=>{const i=document.getElementById('cu-pass'),f=ui.cuentaForm;if(!i)return;const ver=i.type==='password';i.type=ver?'text':'password';
    el.textContent=ver?'Ocultar':'Mostrar';el.setAttribute('aria-label',`${ver?'Ocultar':'Mostrar'} contraseña`);if(f){f.ver=ver;f.pass=i.value;ui.sheet=sheetCuenta();}},
