@@ -116,40 +116,32 @@ test('«no tengo clases el domingo» avisa que ese día no hay clases', () => {
   assert.match(r.texto, /no tienes clases/i);
 });
 
-// Evaluaciones y entregas. Sin hora, Lía la pregunta (decisión 4): ni 09:00 ni 23:59 por su cuenta.
+// Evaluaciones y entregas
 const EVALS = [
-  ['trabajo final de marketing para el viernes', 'entrega', 'Trabajo final de Marketing', '2026-10-30', 'hora'],
-  ['informe de laboratorio el jueves', 'entrega', 'Informe de Laboratorio', '2026-10-29', 'hora'],
-  ['proyecto de software el 20/11', 'entrega', 'Proyecto de Software', '2026-11-20', 'hora'],
-  ['monografía de historia para el 5 de noviembre', 'entrega', 'Monografía de Historia', '2026-11-05', 'hora'],
-  ['tarea de algoritmos para el domingo', 'entrega', 'Tarea de Algoritmos', '2026-11-01', 'hora'],
-  ['entrego el informe de Marketing el viernes', 'entrega', 'Informe de Marketing', '2026-10-30', 'hora'],
-  ['tengo examen de estadística el lunes', 'examen', 'Estadística', '2026-11-02', 'hora'],
-  ['parcial de Cálculo el jueves a las 9', 'parcial', 'Cálculo', '2026-10-29', null],
-  ['entrego el ensayo de filosofía el viernes a medianoche', 'entrega', 'Ensayo de Filosofía', '2026-10-30', null],
+  ['trabajo final de marketing para el viernes', 'entrega', 'Trabajo final de Marketing', '2026-10-30'],
+  ['informe de laboratorio el jueves', 'entrega', 'Informe de Laboratorio', '2026-10-29'],
+  ['proyecto de software el 20/11', 'entrega', 'Proyecto de Software', '2026-11-20'],
+  ['monografía de historia para el 5 de noviembre', 'entrega', 'Monografía de Historia', '2026-11-05'],
+  ['tarea de algoritmos para el domingo', 'entrega', 'Tarea de Algoritmos', '2026-11-01'],
+  ['entrego el informe de Marketing el viernes', 'entrega', 'Informe de Marketing', '2026-10-30'],
+  ['tengo examen de estadística el lunes', 'examen', 'Estadística', '2026-11-02'],
+  ['parcial de Cálculo el jueves a las 9', 'parcial', 'Cálculo', '2026-10-29'],
 ];
-const itemDe = r => (r.intent === 'add' ? r.items[0] : r.borrador.items[r.borrador.i]);
-for (const [frase, tipo, curso, fecha, falta] of EVALS) {
-  test(`evaluación: «${frase}» → ${tipo} «${curso}»${falta ? `, pregunta la ${falta}` : ''}`, () => {
+for (const [frase, tipo, curso, fecha] of EVALS) {
+  test(`evaluación: «${frase}» → ${tipo} «${curso}»`, () => {
     const r = L.interpret(frase, estado(), ahora());
-    assert.equal(r.intent, falta ? 'pregunta' : 'add');
-    const it = itemDe(r);
-    assert.deepEqual([it.kind, it.type, it.course, it.date, L.faltaDe(it)], ['eval', tipo, curso, fecha, falta]);
+    assert.equal(r.intent, 'add');
+    const it = r.items[0];
+    assert.deepEqual([it.kind, it.type, it.course, it.date, it.error], ['eval', tipo, curso, fecha, undefined]);
   });
 }
-test('«el otro jueves» es el de la semana siguiente', () => {
-  assert.equal(itemDe(L.interpret('el otro jueves entrego el ensayo de filosofía', estado(), ahora())).date, '2026-11-05');
-  assert.equal(itemDe(L.interpret('el jueves entrego el ensayo de filosofía', estado(), ahora())).date, '2026-10-29');
-});
-test('dos evaluaciones en una frase comparten la fecha (y Lía pregunta la hora de cada una)', () => {
+test('dos evaluaciones en una frase comparten la fecha', () => {
   const r = L.interpret('parcial de Contabilidad I y final de Economía el viernes', estado(), ahora());
-  assert.deepEqual(r.borrador.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Contabilidad I', '2026-10-30'], ['final', 'Economía', '2026-10-30']]);
-  assert.equal(r.texto, '¿A qué hora es tu parcial de Contabilidad I del viernes?');
+  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Contabilidad I', '2026-10-30'], ['final', 'Economía', '2026-10-30']]);
 });
-test('parcial y entrega en la misma frase: pregunta solo lo que le falta a la entrega', () => {
+test('parcial y entrega en la misma frase', () => {
   const r = L.interpret('tengo parcial de cálculo el jueves 9am y entrego el informe el viernes', estado(), ahora());
-  assert.deepEqual(r.borrador.items.map(i => [i.type, i.course, i.date, i.time]), [['parcial', 'Cálculo', '2026-10-29', '09:00'], ['entrega', 'Informe', '2026-10-30', '']]);
-  assert.deepEqual([r.borrador.i, r.texto], [1, '¿A qué hora vence tu informe?']);
+  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Cálculo', '2026-10-29'], ['entrega', 'Informe', '2026-10-30']]);
 });
 
 // Compromisos de un solo día
@@ -176,15 +168,15 @@ for (const [frase, evalId, fecha, min] of [
     assert.deepEqual([r.evalId, r.date, r.min, r.error], [evalId, fecha, min, undefined]);
   });
 }
-test('«ayer estudié 2 horas» sin decir de qué pregunta por la evaluación, con las próximas como respuestas rápidas', () => {
+test('«ayer estudié 2 horas» sin decir de qué pregunta por la evaluación', () => {
   const r = L.interpret('ayer estudié 2 horas', EJEMPLO(), ahora());
-  assert.deepEqual([r.intent, r.texto], ['pregunta', '¿Para qué evaluación estudiaste?']);
-  assert.deepEqual(r.opciones.map(o => o.t), ['Parcial de Cálculo II', 'Práctica de Física II']);
-  assert.deepEqual(r.borrador.items[0], { kind: 'log', evalId: '', course: '', date: '2026-10-25', min: 120 });
+  assert.equal(r.intent, 'log');
+  assert.match(r.error, /Cálculo II/);
 });
 test('«estudié para el parcial de cálculo» sin decir cuánto pregunta el tiempo (no crea otro parcial)', () => {
   const r = L.interpret('estudié para el parcial de cálculo', EJEMPLO(), ahora());
-  assert.deepEqual([r.intent, r.texto], ['pregunta', '¿Cuánto tiempo estudiaste para Cálculo II?']);
+  assert.equal(r.intent, 'log');
+  assert.match(r.error, /Cuánto tiempo estudiaste/);
 });
 
 // ---------- Categorías de rutinas (iteración 2) ----------

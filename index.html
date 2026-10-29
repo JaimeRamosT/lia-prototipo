@@ -614,7 +614,7 @@ function parseDate(ns,now){
   if(m)return mk(+m[1],+m[2]);
   m=ns.match(/\b(\d{1,2}) de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/);
   if(m)return mk(+m[1],MESN[m[2]]);
-  for(const [w,wd] of Object.entries(DAYW)){if(new RegExp(`\\b${w}\\b`).test(ns2)){const prox=new RegExp(`\\b(proximo|siguiente|otro)\\s+${w}\\b`).test(ns2);let d=nextWeekday(now,wd,false);if(prox&&dayDiff(ymd(now),d)<7)d=ymd(addDays(fromYmd(d),7));return d;}}
+  for(const [w,wd] of Object.entries(DAYW)){if(new RegExp(`\\b${w}\\b`).test(ns2)){const prox=new RegExp(`\\b(proximo|siguiente)\\s+${w}\\b`).test(ns2);let d=nextWeekday(now,wd,false);if(prox&&dayDiff(ymd(now),d)<7)d=ymd(addDays(fromYmd(d),7));return d;}}
   m=ns.match(/\bel (\d{1,2})\b(?!\s*(?::|am|pm|h\b|horas))/);
   if(m){const d=+m[1];let dt=new Date(now.getFullYear(),now.getMonth(),d);if(dt<addDays(now,-1))dt=new Date(now.getFullYear(),now.getMonth()+1,d);return ymd(dt);}
   return null;}
@@ -653,10 +653,10 @@ function splitClauses(toks){const parts=[];let cur=[];
 // Entregas con nombre propio: "informe de laboratorio", "trabajo final de marketing", "tarea de algoritmos".
 const ENTREGA_N=new Set(['tarea','tareas','proyecto','monografia','informe','ensayo','trabajo']);
 const TRABAJO_ENTREGA=/^(final|grupal|escrito|monografico|aplicativo)$/;
-// Lo que no se dijo queda vacío (decisión 4: nada se guarda sin hora) y Lía lo pregunta (continuarBorrador).
-function evalDe(ns,now,type,course){const date=parseDate(ns,now)||'';const tm=parseTimes(ns);
-  const time=tm.at!=null?fmt(tm.at):tm.range?fmt(tm.range[0]):type==='entrega'&&/\bmedianoche\b/.test(ns)?'23:59':'';
+function evalDe(ns,now,type,course){const date=parseDate(ns,now);const tm=parseTimes(ns);
+  const time=tm.at!=null?fmt(tm.at):tm.range?fmt(tm.range[0]):(type==='entrega'?'23:59':'09:00');
   const hm=ns.match(/\b(\d{1,2})\s*(?:h|hrs|horas)\b/);const hours=hm?Math.min(+hm[1],40):EVAL_TYPES[type].h;
+  if(!date)return{kind:'eval',type,course,time,hours,sinFecha:true,error:type==='entrega'?`¿Para qué día es ${course}? Por ejemplo: “para el viernes”.`:`¿Qué día es tu ${EVAL_TYPES[type].label.toLowerCase()} de ${course}? Por ejemplo: “el jueves a las 9”.`};
   return{kind:'eval',type,course,date,time,hours};}
 // Nombre de una rutina dicha en una frase: «Clases», «Trabajo» y «Traslado» por su tipo; las demás, por la palabra
 // que se usó («Almuerzo», «Gimnasio») y, si es un curso, con su tema («Curso de inglés»).
@@ -679,13 +679,15 @@ function parseClause(toks,now,prev,S){
     const nombre=cap(toks[iN].o.toLowerCase()+(doble?' '+toks[iN+1].o.toLowerCase():''))+(resto?' de '+resto:'');
     return evalDe(ns,now,'entrega',nombre);}
   if(iE>=0){let k=iE;while(k+1<toks.length&&EVAL_KW[toks[k+1].n])k++;const type=EVAL_KW[toks[k].n];
-    return evalDe(ns,now,type,extractCourse(toks,k));}
-  if(iC>=0||(prev&&prev.kind==='commit')){
+    return evalDe(ns,now,type,extractCourse(toks,k)||(type==='entrega'?'Trabajo':'Curso'));}
+  if(iC>=0||(prev&&prev.kind==='commit'&&!prev.error)){
     const type=iC>=0?COMMIT_KW[toks[iC].n]:prev.type;
     const name=iC>=0?nombreRutina(toks,iC,type):prev.name;
     const days=parseDays(ns);const tm=parseTimes(ns);let range=tm.range;
-    if(!range&&tm.part)range=FRANJA_RUTINA[tm.part];
-    return{kind:'commit',type,name,days,start:range?fmt(range[0]):'',end:range?fmt(range[1]):''};}
+    if(!range&&tm.part){range={manana:[540,780],tarde:[840,1080],noche:[1140,1320]}[tm.part];}
+    if(!days.length)return{kind:'commit',type,name,error:`¿Qué días tienes ${name.toLowerCase()}? Por ejemplo: “de lunes a viernes de 3 a 7”.`};
+    if(!range)return{kind:'commit',type,name,error:`¿A qué hora es ${name.toLowerCase()}? Por ejemplo: “de 3 a 7”.`};
+    return{kind:'commit',type,name,days,start:fmt(range[0]),end:fmt(range[1])};}
   return null;}
 // Compromisos de un solo día que no son clases ni trabajo.
 const EVENTO=/\b(cumpleanos|reunion|cita|fiesta|matrimonio|boda|evento|consulta|dentista|entrevista|partido|velorio|tramite|concierto)\b/;
@@ -710,77 +712,7 @@ function evalMencionada(ns,state,now){const t=ymd(now);let mejor=null,peso=0;
   for(const e of orden){const c=norm(e.course).replace(/[^a-z0-9 ]/g,' ').trim();const w=c.split(/\s+/).find(x=>x.length>2);
     const p=c&&new RegExp(`\\b${c}\\b`).test(ns)?2:w&&new RegExp(`\\b${w}\\b`).test(ns)?1:0;if(p>peso){mejor=e;peso=p;}}
   return mejor;}
-// ---------- Lía pide lo que falta (iteración 2) ----------
-// Lo que necesita cada cosa para guardarse; nada se guarda sin hora (decisión 4). Si falta algo, Lía lo pregunta, una
-// cosa a la vez y con respuestas rápidas, y guarda lo entendido como borrador por 10 minutos (state.borrador).
-const BORRADOR_MS=10*60000;
-const FRANJA_RUTINA={manana:[480,720],tarde:[840,1080],noche:[1140,1320]};   // las mismas del formulario de rutinas
-const FRANJA_EVENTO={manana:[480,720],tarde:[900,1140],noche:[1140,1380]};
-const CAT_EVENTO={cumpleanos:'ocio',fiesta:'ocio',matrimonio:'ocio',boda:'ocio',concierto:'ocio',partido:'deporte',velorio:'casa'};
-function faltaDe(it){if(!it)return null;
-  if(it.kind==='eval')return !it.course?'curso':!it.date?'fecha':!it.time?'hora':null;
-  if(it.kind==='commit')return !(it.days&&it.days.length)?'dias':!(it.start&&it.end)?'horario':null;
-  if(it.kind==='evento')return !it.date?'fecha':!(it.start&&it.end)?'horario':null;
-  if(it.kind==='log')return !it.evalId?'evaluacion':!it.min?'minutos':null;
-  return null;}
-const minus=s=>s.charAt(0).toLowerCase()+s.slice(1);
-// «tu examen de Inglés», «tu informe de Química» (una entrega con nombre propio ya lo dice).
-function nombreEval(it){const t=EVAL_TYPES[it.type]||EVAL_TYPES.parcial,propio=it.type==='entrega'&&/^(tareas?|proyecto|monografia|informe|ensayo|trabajo)\b/.test(norm(it.course||''));
-  return `tu ${propio?minus(it.course):t.label.toLowerCase()+(it.course?' de '+it.course:'')}`;}
-const conArticulo=s=>`${/^(cita|reunion|fiesta|boda|consulta|entrevista)\b/.test(norm(s))?'la':'el'} ${minus(s)}`;
-// «de hoy», «de mañana», «del sábado» (esta semana) o «del jue 5 nov».
-function delDia(f,now){const k=dayDiff(ymd(now),f);return k===0?'de hoy':k===1?'de mañana':k>1&&k<7?`del ${DIAS[fromYmd(f).getDay()]}`:`del ${fechaCorta(f)}`;}
-const otra=(t,ph)=>({t,otra:true,ph});
-// Qué preguntar y qué respuestas rápidas ofrecer. Cada respuesta rápida completa el borrador sin volver a leer el texto.
-function preguntaPara(it,falta,state,now){
-  const dias=()=>[1,2,3].map(k=>{const f=ymd(addDays(now,k)),d=fromYmd(f);return{t:`${cap(DIAS[d.getDay()].slice(0,3))} ${d.getDate()}`,set:{date:f}};});
-  const franja=(F,ls)=>ls.map(([k,l])=>({t:`${l} (${fmt(F[k][0])}–${fmt(F[k][1])})`,set:{start:fmt(F[k][0]),end:fmt(F[k][1])}}));
-  if(it.kind==='eval'){const n=nombreEval(it),ent=it.type==='entrega';
-    if(falta==='curso')return{texto:`¿De qué curso es ${n}${it.date?' '+delDia(it.date,now):''}?`,opciones:[]};
-    if(falta==='fecha')return{texto:ent?`¿Para qué día es ${n}?`:`¿Qué día es ${n}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha, por ejemplo: el 12 de noviembre')]};
-    return{texto:ent?`¿A qué hora vence ${n}?`:`¿A qué hora es ${n}${it.date?' '+delDia(it.date,now):''}?`,
-      opciones:[...(ent?['23:59']:['08:00','14:00','19:00']).map(h=>({t:h,set:{time:h}})),otra('Otra hora','Escribe la hora, por ejemplo: a las 7 de la noche')]};}
-  if(it.kind==='commit'){const n=minus(it.name||'eso');
-    if(falta==='dias')return{texto:`¿Qué días tienes ${n}?`,opciones:[{t:'Lun a Vie',set:{days:[1,2,3,4,5]}},{t:'Fines de semana',set:{days:[6,0]}},otra('Otros días','Escribe los días, por ejemplo: martes y jueves')]};
-    return{texto:`¿De qué hora a qué hora tienes ${n}?`,opciones:[...franja(FRANJA_RUTINA,[['manana','Mañana'],['tarde','Tarde'],['noche','Noche']]),otra('Otra hora','Escribe el horario, por ejemplo: de 4 a 8 de la noche')]};}
-  if(it.kind==='evento'){const n=conArticulo(it.label||'Evento');
-    if(falta==='fecha')return{texto:`¿Qué día es ${n}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha, por ejemplo: el sábado')]};
-    return{texto:`Anoto ${n} ${delDia(it.date,now)}. ¿De qué hora a qué hora es?`,opciones:[...franja(FRANJA_EVENTO,[['tarde','Tarde'],['noche','Noche']]),otra('Otra hora','Escribe el horario, por ejemplo: de 4 a 8 de la noche')]};}
-  if(falta==='evaluacion'){const t=ymd(now),pr=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,3);
-    return{texto:'¿Para qué evaluación estudiaste?',opciones:pr.map(e=>({t:`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label} de ${e.course}`,set:{evalId:e.id,course:e.course}}))};}
-  return{texto:`¿Cuánto tiempo estudiaste${it.course?' para '+it.course:''}?`,opciones:[[30,'30 min'],[60,'1 h'],[120,'2 h']].map(([m,t])=>({t,set:{min:m}})).concat(otra('Otro','Escribe cuánto, por ejemplo: 45 minutos'))};}
-// Un borrador sirve por 10 minutos (y si su forma es la de esta versión).
-function borradorVigente(b,now){return!!b&&typeof b==='object'&&Array.isArray(b.items)&&!!b.items[b.i]&&Number.isFinite(b.at)&&now.getTime()-b.at<=BORRADOR_MS&&now.getTime()>=b.at-60000;}
-// Sigue con un borrador: pregunta lo primero que falte o, si ya está todo, devuelve la intención de siempre.
-function continuarBorrador(b,state,now){const i=b.items.findIndex(x=>faltaDe(x));
-  if(i>=0){const it=b.items[i],q=preguntaPara(it,faltaDe(it),state,now);return{intent:'pregunta',texto:q.texto,opciones:q.opciones,borrador:{intent:b.intent,items:b.items,i}};}
-  if(b.intent==='except'){const exs=b.items.map(x=>({date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{})}));return{intent:'except',exs,ex:exs[0]};}
-  if(b.intent==='log'){const x=b.items[0];return{intent:'log',evalId:x.evalId,course:x.course,date:x.date,min:x.min};}
-  return{intent:'add',items:b.items};}
-// La respuesta a lo que Lía preguntó: completa el borrador con lo que se entiende, o null si no responde.
-// Si el mensaje nombra otra actividad, es otra cosa y el borrador queda de lado.
-function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falta=faltaDe(it);if(!falta)return null;
-  const toks=tokenize(q),ns=toks.map(t=>t.n).join(' ');if(!ns.trim())return null;
-  // Para «¿De qué curso?» vale nombrar una entrega («del informe de química»), pero no otro examen.
-  const tema=t=>COMMIT_KW[t.n]||(falta==='curso'?EVAL_KW[t.n]&&EVAL_KW[t.n]!=='entrega':EVAL_KW[t.n]||ENTREGA_N.has(t.n));
-  if(falta!=='evaluacion'&&(toks.some(tema)||EVENTO.test(ns)||ESTUDIE.test(ns)||NO_VA.test(ns)))return null;
-  const p={...it},tm=parseTimes(ns),d=parseDate(ns,now),hora=tm.at!=null?tm.at:tm.range?tm.range[0]:null;
-  const rango=tm.range||(tm.at!=null&&p.kind==='evento'?[tm.at,tm.at+60]:null)||(tm.part?(p.kind==='commit'?FRANJA_RUTINA:FRANJA_EVENTO)[tm.part]:null);
-  if(falta==='curso'){let j=0;while(j<toks.length&&(SKIPW.has(toks[j].n)||STOPW.has(toks[j].n)))j++;  // «es de estadística»
-    const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=c;}
-  else if(falta==='fecha'){if(!d)return null;p.date=d;}
-  else if(falta==='hora'){const h=hora!=null?hora:p.type==='entrega'&&/\bmedianoche\b/.test(ns)?1439:null;if(h==null)return null;p.time=fmt(h);}
-  else if(falta==='horario'){if(!rango)return null;p.start=fmt(rango[0]);p.end=fmt(rango[1]);}
-  else if(falta==='dias'){const ds=parseDays(ns);if(!ds.length)return null;p.days=ds;}
-  else if(falta==='evaluacion'){const e=evalMencionada(ns,state,now);if(!e)return null;p.evalId=e.id;p.course=e.course;}
-  else if(falta==='minutos'){const m=minutosDichos(ns);if(!m)return null;p.min=m;}
-  // Lo demás que diga la misma respuesta también cuenta («el jueves a las 9»).
-  if(p.kind==='eval'){if(!p.date&&d)p.date=d;if(!p.time&&hora!=null&&falta!=='curso')p.time=fmt(hora);}
-  if(p.kind==='evento'){if(!p.date&&d)p.date=d;if(!p.start&&rango){p.start=fmt(rango[0]);p.end=fmt(rango[1]);}}
-  if(p.kind==='commit'&&!p.start&&tm.range){p.start=fmt(tm.range[0]);p.end=fmt(tm.range[1]);}
-  if(p.kind==='log'&&!p.min){const m=minutosDichos(ns);if(m)p.min=m;}
-  return continuarBorrador({...b,items:b.items.map((x,k)=>k===b.i?p:x)},state,now);}
-// Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'pregunta',texto,opciones,borrador}, {intent:'help'}…
+// Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'help'}…
 function interpret(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
@@ -789,9 +721,12 @@ function interpret(text,state,now){
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
   const hasEval=toks.some(t=>EVAL_KW[t.n]);
   // Estudio que ya hiciste: "ayer estudié 2 horas de cálculo".
-  if(ESTUDIE.test(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns)||0,date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
-    if(!e&&!state.evals.some(x=>x.date>=ymd(now)))return{intent:'aviso',texto:'Todavía no tienes evaluaciones. Agrega una y luego anotamos lo que estudiaste.'};
-    return continuarBorrador({intent:'log',items:[{kind:'log',evalId:e?e.id:'',course:e?e.course:'',date,min}]},state,now);}
+  if(ESTUDIE.test(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns);
+    if(!min)return{intent:'log',error:'¿Cuánto tiempo estudiaste? Dime, por ejemplo: “ayer estudié 2 horas de Cálculo”.'};
+    const date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
+    if(!e){const op=state.evals.filter(x=>x.date>=ymd(now)).map(x=>x.course);
+      return{intent:'log',min,date,error:op.length?`¿De qué evaluación? Dime, por ejemplo: “ayer estudié ${hrs(min)} de ${op[0]}”. Tienes: ${op.join(', ')}.`:'Todavía no tienes evaluaciones. Agrega una y luego anotamos lo que estudiaste.'};}
+    return{intent:'log',evalId:e.id,course:e.course,date,min};}
   // Un compromiso que ese día no va: "mañana no tengo clases", "cancelaron mi clase", "hoy no voy a trabajar".
   const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
   if(NO_VA.test(ns)&&!hasEval&&iC>=0){const date=parseDate(ns,now)||ymd(now),tipo=COMMIT_KW[toks[iC].n],palabra=toks[iC].n;
@@ -804,11 +739,9 @@ function interpret(text,state,now){
     if(!cs.length)return{intent:'aviso',texto:`${cap(fechaLarga(date))} no tienes ${cosa} en tu horario, así que no hay nada que liberar.`};
     const exs=cs.map(c=>({date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}));return{intent:'except',exs,ex:exs[0]};}
   const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|no voy a poder|no podre|no tengo tiempo)\b/;
-  // Un evento con nombre se anota si lo dice como algo que tiene («tengo una cita», «el sábado hay fiesta»), no si pregunta
-  // por otra cosa («¿quién ganó el partido?»).
-  const ev=!hasEval&&(parseDate(ns,now)||/\d/.test(ns)||/\b(tengo|tendre|hay|habra|voy|ire|me toca)\b/.test(ns))&&EVENTO.exec(ns);
-  if((busyWords.test(ns)||ev)&&!hasEval){
-    const date=parseDate(ns,now)||(ev&&!busyWords.test(ns)?'':ymd(now));const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=finDelDia(S);
+  const ev=!hasEval&&EVENTO.exec(ns);
+  if((busyWords.test(ns)||ev&&(parseDate(ns,now)||/\d/.test(ns)))&&!hasEval){
+    const date=parseDate(ns,now)||ymd(now);const tm=parseTimes(ns);const wake=toMin(S.wake),sleep=finDelDia(S);
     const nowMin=date===ymd(now)?now.getHours()*60+now.getMinutes():wake,wd=fromYmd(date).getDay();
     let s,e,label=ev?nombreEvento(toks,ev[1]):'No disponible';
     if(tm.range){[s,e]=tm.range;}
@@ -824,21 +757,16 @@ function interpret(text,state,now){
         s=r.e;e=x;label=`${c.name} (más tarde)`;}
       else{s=Math.max(nowMin,wake);e=cands.filter(v=>v>s).sort((a,b)=>a-b)[0];label='Ocupado';}}
     else if(tm.at!=null){s=tm.at;e=tm.at+60;}
-    else if(tm.part&&ev)[s,e]=FRANJA_EVENTO[tm.part];
-    else if(tm.part){[s,e]={manana:[wake,720],tarde:[720,1140],noche:[1140,sleep]}[tm.part];label=`Ocupado (${tm.part==='manana'?'mañana':tm.part})`;}
-    else if(!ev){s=wake;e=sleep;label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
-    // Un evento con nombre (cumpleaños, cita…) necesita fecha y horas: si faltan, Lía las pregunta.
-    if(ev)return continuarBorrador({intent:'except',items:[{kind:'evento',date,start:s!=null&&e>s?fmt(s):'',end:s!=null&&e>s?fmt(e):'',label,cat:CAT_EVENTO[ev[1]]||'otro'}]},state,now);
+    else if(tm.part){[s,e]={manana:[wake,720],tarde:[720,1140],noche:[1140,sleep]}[tm.part];if(!ev)label=`Ocupado (${tm.part==='manana'?'mañana':tm.part})`;}
+    else{s=wake;e=sleep;if(!ev)label=/\blibera|liberame\b/.test(ns)?'Día libre':'Día ocupado';}
     if(!(e>s))return{intent:'help'};
     const ex={date,start:fmt(s),end:fmt(e),label};return{intent:'except',exs:[ex],ex};}  // si e pasa de 1440, termina al día siguiente
   const clauses=splitClauses(toks);let prev=null;const items=[];
   for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
-  // Varias evaluaciones en una frase comparten la fecha si solo una la dice; los horarios de una misma rutina, sus días
-  // («trabajo de 8 a 12 y de 2 a 6 de lunes a viernes»).
+  // Varias evaluaciones en una frase comparten la fecha si solo una la dice.
   const conFecha=items.find(i=>i.kind==='eval'&&i.date);
-  if(conFecha)items.forEach((i,k)=>{if(i.kind==='eval'&&!i.date)items[k]={...i,date:conFecha.date};});
-  items.forEach((i,k)=>{if(i.kind!=='commit'||i.days.length)return;const d=items.find(x=>x.kind==='commit'&&x.name===i.name&&x.days.length);if(d)items[k]={...i,days:[...d.days]};});
-  if(items.length)return continuarBorrador({intent:'add',items},state,now);
+  if(conFecha)items.forEach((i,k)=>{if(i.kind==='eval'&&i.sinFecha){const{error,sinFecha,...r}=i;items[k]={...r,date:conFecha.date};}});
+  if(items.length)return{intent:'add',items};
   if(/\b(reorganiza|reprograma|arma|planifica|ordena)\b/.test(ns))return{intent:'replan'};
   return{intent:'help'};}
 // ---------- Lía con IA (docs/ia-con-gemini.md) ----------
@@ -859,51 +787,32 @@ function textoIA(v,n){return typeof v==='string'?v.replace(/[\u0000-\u001f\u007f
 function validarIA(r,state,now){
   if(!r||typeof r!=='object')return{intent:'help'};
   const texto=textoIA(r.texto,300),entre=(f,a,b)=>!!f&&f>=ymd(addDays(now,a))&&f<=ymd(addDays(now,b)),lista=v=>Array.isArray(v)?v.slice(0,6).filter(x=>x&&typeof x==='object'):[];
-  // Un dato que no vino queda vacío y Lía lo pregunta (decisión 4); uno que vino mal o fuera de rango descarta lo suyo.
-  const fecha=(v,a,b)=>v===undefined||v===null||v===''?'':entre(fechaIA(v),a,b)?v:null;
-  const nuevas=()=>{const items=[];
-    for(const e of lista(r.evaluaciones)){const type=EVAL_TYPES[e.tipo]?e.tipo:null,date=fecha(e.fecha,0,400);if(!type||date===null)continue;
-      const h=Number(e.horas);
-      items.push({kind:'eval',type,course:cap(textoIA(e.curso,60)),date,time:HHMM.test(e.hora)?e.hora:'',hours:h>=0.5&&h<=40?Math.round(h*2)/2:EVAL_TYPES[type].h});}
-    for(const c of lista(r.compromisos)){const type=COMMIT_TYPES[c.tipo]?c.tipo:null;if(!type)continue;
-      const days=[...new Set((Array.isArray(c.dias)?c.dias:[]).filter(d=>Number.isInteger(d)&&d>=0&&d<=6))].sort((x,y)=>x-y),horas=HHMM.test(c.inicio)&&HHMM.test(c.fin)&&c.inicio!==c.fin;
-      items.push({kind:'commit',type,name:cap(textoIA(c.nombre,40))||(type==='otro'?'Otro':COMMIT_TYPES[type]),days,start:horas?c.inicio:'',end:horas?c.fin:''});}
-    return items;};
-  const cambios=()=>{const exs=[],partes=[];
-    for(const x of lista(r.cambios)){const date=fecha(x.fecha,-1,120);if(date===null)continue;
-      if(x.libera===true){const c=state.commitments.find(c=>c.id===x.compromisoId);
-        if(!date||!c||!c.days.includes(fromYmd(date).getDay())||exs.some(e=>e.ref===c.id&&e.date===date))continue;
-        // Sale antes o entra más tarde: solo el tramo libre, si está dentro del compromiso (los de madrugada se liberan enteros).
-        const tramo=HHMM.test(x.inicio)&&HHMM.test(x.fin)&&c.start<c.end&&x.inicio<x.fin&&x.inicio>=c.start&&x.fin<=c.end&&(x.inicio!==c.start||x.fin!==c.end);
-        exs.push(tramo?{date,start:x.inicio,end:x.fin,label:x.fin===c.end?'Salida temprano':`Sin ${c.name}`,libre:true,ref:c.id}:{date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id});}
-      else{const horas=HHMM.test(x.inicio)&&HHMM.test(x.fin)&&x.inicio!==x.fin,label=cap(textoIA(x.motivo,40))||'Ocupado',cat=catEvento(label);
-        if(date&&horas)exs.push({date,start:x.inicio,end:x.fin,label,cat});
-        else partes.push({kind:'evento',date,start:horas?x.inicio:'',end:horas?x.fin:'',label,cat});}}
-    return{exs,partes};};
-  const estudio=()=>{const s=r.estudio&&typeof r.estudio==='object'?r.estudio:null;if(!s)return null;
-    const e=state.evals.find(x=>x.id===s.evaluacionId),date=fecha(s.fecha,-14,0);if(date===null)return null;
-    return{kind:'log',evalId:e?e.id:'',course:e?e.course:'',date:date||ymd(now),min:Number.isInteger(s.minutos)&&s.minutos>=5&&s.minutos<=720?s.minutos:0};};
-  const sinEvals='Todavía no tienes evaluaciones. Agrega una y luego anotamos lo que estudiaste.';
   switch(r.intent){
-    case 'add':{const items=nuevas();return items.length?continuarBorrador({intent:'add',items},state,now):{intent:'help'};}
-    case 'except':{const{exs,partes}=cambios();if(exs.length)return{intent:'except',exs,ex:exs[0]};
-      return partes.length?continuarBorrador({intent:'except',items:partes},state,now):{intent:'help'};}
-    case 'log':{const l=estudio();if(!l)return{intent:'help'};
-      if(!l.evalId&&!state.evals.some(x=>x.date>=ymd(now)))return{intent:'aviso',texto:sinEvals};
-      return continuarBorrador({intent:'log',items:[l]},state,now);}
+    case 'add':{const items=[];
+      for(const e of lista(r.evaluaciones)){const date=fechaIA(e.fecha),type=EVAL_TYPES[e.tipo]?e.tipo:null,course=cap(textoIA(e.curso,60));
+        if(!type||!course||!entre(date,0,400))continue;
+        const h=Number(e.horas);
+        items.push({kind:'eval',type,course,date,time:HHMM.test(e.hora)?e.hora:(type==='entrega'?'23:59':'09:00'),hours:h>=0.5&&h<=40?Math.round(h*2)/2:EVAL_TYPES[type].h});}
+      for(const c of lista(r.compromisos)){const type=COMMIT_TYPES[c.tipo]?c.tipo:null;
+        const days=[...new Set((Array.isArray(c.dias)?c.dias:[]).filter(d=>Number.isInteger(d)&&d>=0&&d<=6))].sort((x,y)=>x-y);
+        if(!type||!days.length||!HHMM.test(c.inicio)||!HHMM.test(c.fin)||c.inicio===c.fin)continue;
+        items.push({kind:'commit',type,name:cap(textoIA(c.nombre,40))||(type==='otro'?'Otro':COMMIT_TYPES[type]),days,start:c.inicio,end:c.fin});}
+      return items.length?{intent:'add',items}:{intent:'help'};}
+    case 'except':{const exs=[];
+      for(const x of lista(r.cambios)){const date=fechaIA(x.fecha);if(!entre(date,-1,120))continue;
+        if(x.libera===true){const c=state.commitments.find(c=>c.id===x.compromisoId);
+          if(!c||!c.days.includes(fromYmd(date).getDay())||exs.some(e=>e.ref===c.id&&e.date===date))continue;
+          // Sale antes o entra más tarde: solo el tramo libre, si está dentro del compromiso (los de madrugada se liberan enteros).
+          const tramo=HHMM.test(x.inicio)&&HHMM.test(x.fin)&&c.start<c.end&&x.inicio<x.fin&&x.inicio>=c.start&&x.fin<=c.end&&(x.inicio!==c.start||x.fin!==c.end);
+          exs.push(tramo?{date,start:x.inicio,end:x.fin,label:x.fin===c.end?'Salida temprano':`Sin ${c.name}`,libre:true,ref:c.id}:{date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id});}
+        else if(HHMM.test(x.inicio)&&HHMM.test(x.fin)&&x.inicio!==x.fin)exs.push({date,start:x.inicio,end:x.fin,label:cap(textoIA(x.motivo,40))||'Ocupado'});}
+      return exs.length?{intent:'except',exs,ex:exs[0]}:{intent:'help'};}
+    case 'log':{const s=r.estudio&&typeof r.estudio==='object'?r.estudio:{},e=state.evals.find(x=>x.id===s.evaluacionId),date=fechaIA(s.fecha),min=s.minutos;
+      return e&&entre(date,-14,0)&&Number.isInteger(min)&&min>=5&&min<=720?{intent:'log',evalId:e.id,course:e.course,date,min}:{intent:'help'};}
     case 'agenda':{const f=fechaIA(r.fecha);return{intent:'agenda',date:entre(f,-7,60)?f:ymd(now)};}
     case 'progress':case 'next':case 'replan':return{intent:r.intent};
-    // Lo que la IA ya entendió queda como borrador y la app ofrece las respuestas rápidas; se usa la pregunta de la IA
-    // cuando pregunta lo mismo que falta.
-    case 'pregunta':{const items=nuevas(),{partes}=cambios(),l=estudio();
-      const b=items.length?{intent:'add',items}:partes.length?{intent:'except',items:partes}:l&&(l.evalId||state.evals.some(x=>x.date>=ymd(now)))?{intent:'log',items:[l]}:null;
-      const c=b&&continuarBorrador(b,state,now);
-      if(c&&c.intent==='pregunta')return texto&&r.falta===faltaDe(c.borrador.items[c.borrador.i])?{...c,texto}:c;
-      return texto?{intent:'aviso',texto}:{intent:'help'};}
-    case 'aviso':case 'fuera':return texto?{intent:'aviso',texto}:{intent:'help'};
+    case 'pregunta':case 'aviso':case 'fuera':return texto?{intent:'aviso',texto}:{intent:'help'};
     default:return{intent:'help'};}}
-// Categoría de algo de un solo día por su nombre («Cumpleaños de Ana» → ocio).
-const catEvento=l=>{for(const w of norm(l||'').split(/[^a-z0-9]+/)){if(CAT_EVENTO[w])return CAT_EVENTO[w];if(COMMIT_KW[w])return tipoRutina(COMMIT_KW[w]);}return'otro';};
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -993,7 +902,6 @@ function ensureState(){const s=state.sub;
   if(!state.cuenta||typeof state.cuenta!=='object'||!state.cuenta.id)state.cuenta=null;
   if(!state.cuenta&&state.sub.tier==='pro')state.sub=freeSub(state.sub.history);
   const f=state.frozen;if(f===undefined||(f&&(!Array.isArray(f.blocks)||!Array.isArray(f.evalIds)||!f.week)))state.frozen=null;
-  if(state.borrador&&!borradorVigente(state.borrador,now()))state.borrador=null;
   if(!isPro()&&state.onboarded&&!state.frozen)armWeek(true);
   if(state.completar&&state.onboarded&&pasosCompletar().every(x=>x.ok)){state.completar=false;save();}
   // Gratis: un plan inicial que aún no tiene bloques se rearma solo (no hay nada que mover), y lo que quedó
@@ -1276,14 +1184,12 @@ function vLia(){const ph='Escríbele a Lía…';
   const sug=['¿Qué tengo mañana?','Hoy salgo del trabajo a las 9','Parcial de Estadística el viernes a las 10','Libera mi sábado','¿Cuánto me falta?'];
   return `<div class="row-h">${AV(40)}<div class="grow"><b>Lía</b><div class="small" style="color:var(--ok-ink)">${iaActiva()?'Tu secretaria · con IA':'Tu secretaria · versión sin IA (entiende frases simples)'}</div></div></div>
   <div class="chat" id="chat">${state.chat.slice(-30).map((m,i,a)=>msgHTML(m,i===a.length-1)).join('')}${ui.pending?pendingHTML():''}${ui.pensando?`<div class="msg">${AV(28)}<div class="bub"><span class="muted">Lía está pensando…</span></div></div>`:''}</div>
-  ${borradorVigente(state.borrador,now())?'':`<div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>`}
+  <div class="chips">${sug.map(s=>`<button class="pill ghost" data-a="chip" data-q="${esc(s)}">${esc(s)}</button>`).join('')}</div>
   <form class="inbar" data-form="chat"><input id="chat-in" name="q" placeholder="${ph}" autocomplete="off" aria-label="Mensaje para Lía"><button type="button" class="mic${isPro()?'':' lock'}" data-a="mic" data-target="chat-in" aria-label="${isPro()?'Hablar con Lía':'Hablar con Lía (LIA Pro)'}">${I.mic}</button><button type="submit" class="mic" aria-label="Enviar" style="background:var(--pri-soft);color:var(--pri)">${I.send}</button></form>`;}
 function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class="bub">${esc(m.text)}</div></div>`;
   const undoB=m.undo&&last&&undoStack?'<button class="pill ghost" data-a="undo">Deshacer</button>':'';
   const ctaB=m.cta&&!isPro()?`<button class="pill solid" data-a="paywall" data-why="${esc(m.cta)}">Ver LIA Pro</button>`:'';
-  // Respuestas rápidas: solo en la última pregunta de Lía mientras su borrador sigue vigente; al responder, se van.
-  const ops=last&&Array.isArray(m.opciones)&&m.opciones.length&&borradorVigente(state.borrador,now())?`<div class="chips" role="group" aria-label="Respuestas rápidas" style="margin-top:8px">${m.opciones.map((o,k)=>`<button class="pill ghost" data-a="rapida" data-i="${k}">${esc(o.t)}</button>`).join('')}</div>`:'';
-  return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${ops}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
+  return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
 // "Trabajo, Lun a Vie, 22:00 – 06:00 del día siguiente" o "Parcial de Cálculo, jue 29 oct a las 09:00".
 function resumenItem(i){return i.kind==='eval'?`${EVAL_TYPES[i.type].label} de ${i.course}, ${fechaCorta(i.date)} a las ${i.time}`:`${i.name}, ${diasTxt(i.days)}, ${horario(i)}`;}
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
@@ -1638,9 +1544,6 @@ function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();
 // Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
 function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
 function handleText(q,from){q=q.trim();if(!q)return;
-  // Si Lía preguntó algo hace poco, la respuesta completa lo que ya entendió (sin gastar un mensaje con IA).
-  const n0=now(),b=borradorVigente(state.borrador,n0)?state.borrador:null;
-  if(b){const r=respuestaBorrador(b,q,state,n0);if(r){responder(q,from,r,n0);return;}}
   if(from==='chat'&&iaPosible()&&navigator.onLine!==false){
     if(ui.pensando){const i=document.getElementById('chat-in');if(i&&!i.value)i.value=q;anunciar('Espera un momento: Lía está respondiendo.');return;}
     const el=iaEleccion();
@@ -1650,15 +1553,10 @@ function handleText(q,from){q=q.trim();if(!q)return;
 // Responde una intención (de las reglas o de la IA). Con eco:false, el mensaje de la persona ya está en el chat.
 function responder(q,from,r,n,{eco=true}={}){
   if(from==='chat'&&eco)state.chat.push({from:'me',text:q});
-  // Falta un dato: Lía lo pregunta y guarda lo entendido. En el chat, con respuestas rápidas.
-  if(r.intent==='pregunta'){state.borrador={intent:r.borrador.intent,items:r.borrador.items,i:r.borrador.i,at:n.getTime()};ui.pending=null;  // la pregunta reemplaza una propuesta sin confirmar
-    if(from==='chat'){liaSay(r.texto,{opciones:r.opciones||[]});render();}else{save();toast(r.texto);}return;}
-  // Si no entendió la respuesta a su pregunta, la repite (el borrador sigue).
-  const b=borradorVigente(state.borrador,n)?state.borrador:null;
-  if(r.intent==='help'&&b){const it=b.items[b.i],p=preguntaPara(it,faltaDe(it),state,n);
-    if(from==='chat'){liaSay(`No te entendí. ${p.texto}`,{opciones:p.opciones});render();}else toast(`No te entendí. ${p.texto}`);return;}
-  state.borrador=null;
-  if(r.intent==='add'){const ok=r.items;
+  const kindOnly=from==='commit'?'commit':from==='eval'?'eval':null;
+  if(r.intent==='add'){let items=r.items;const errs=items.filter(i=>i.error);const ok=items.filter(i=>!i.error);
+    if(kindOnly&&ok.some(i=>i.kind!==kindOnly)&&!ok.some(i=>i.kind===kindOnly)){}
+    if(errs.length&&!ok.length){if(from==='chat'){liaSay(errs[0].error);render();}else toast(errs[0].error);return;}
     if(newEvalCount(ok)>evalRoom()){ui.blockedItems=ok;if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else openPaywall('evals',{items:ok});return;}
     if(from==='chat'){ui.pending={items:ok,q};save();render();anunciar(`Lía entendió: ${ok.map(resumenItem).join('; ')}. Confirma o corrige.`);return;}
     const hecho=applyItems(ok);
@@ -1668,7 +1566,7 @@ function responder(q,from,r,n,{eco=true}={}){
     if(isPro()&&state.settings.autonomy==='ask'){ui.pending={exs,q};render();anunciar(`Lía entendió: ${exs.map(x=>`${x.label}, ${fechaCorta(x.date)}, ${horario(x)}`).join('; ')}. Confirma o corrige.`);return;}
     const m=aplicarCambio(exs);liaSay(m.texto,m.opts);ui.pending=null;render();return;}
   if(r.intent==='aviso'){liaSay(r.texto);render();return;}
-  if(r.intent==='log'){
+  if(r.intent==='log'){if(r.error){liaSay(r.error);render();return;}
     const e=evById(r.evalId),hoy=r.date===ymd(n);snapshot();
     state.done.push({id:uid(),evalId:e.id,date:r.date,start:hoy?fmt(Math.max(0,n.getHours()*60+n.getMinutes()-r.min)):'20:00',min:r.min});save();
     const falta=Math.max(0,Math.round(e.hours*60)-doneFor(state,e.id));
@@ -1776,10 +1674,6 @@ const A={
  'tipo-no':d=>{const c=state.commitments.find(x=>x.id===d.id);if(!c)return;const n=norm(c.name);
    sinMoverHoras(()=>{for(const x of state.commitments)if(norm(x.name)===n)x.sugerido=true;});rerenderKeepScroll();},
  'edit-commit':d=>abrirRutina(d.id),
- // Respuesta rápida a lo que Lía preguntó: completa el borrador como si se hubiera escrito; «Otra …» deja escribirla.
- rapida:d=>{const n=now(),b=borradorVigente(state.borrador,n)?state.borrador:null,m=state.chat[state.chat.length-1],o=b&&m&&Array.isArray(m.opciones)?m.opciones[+d.i]:null;if(!o)return;
-   if(o.otra){const i=document.getElementById('chat-in');if(i){i.placeholder=o.ph||'Escríbele a Lía…';i.focus();}return;}
-   responder(o.t,'chat',continuarBorrador({...b,items:b.items.map((x,k)=>k===b.i?{...x,...o.set}:x)},state,n),n);},
  // «Casi listo»: usar un rato de ocio (solo si la persona dice que sí) u otra forma de hacer espacio.
  'usar-ocio':d=>{const e=evById(d.ev),o=e&&ocioParaEstudio(state,P(),e.id,now());ui.sheet=null;if(!o){rerenderKeepScroll();return;}
    const fresco=!!state.frozen&&!planStale();snapshot();
@@ -2102,7 +1996,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.5.0';
+const APP_VERSION='0.4.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);

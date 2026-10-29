@@ -218,33 +218,3 @@ test('leerPedido limpia el contexto: tipos desconocidos, días fuera de rango, h
 test('el calendario cruza meses y años', () => {
   assert.deepEqual(F.calendario('2026-12-30T10:00:00-05:00', 4), ['miércoles 2026-12-30 (hoy)', 'jueves 2026-12-31 (mañana)', 'viernes 2027-01-01', 'sábado 2027-01-02']);
 });
-
-// ---------- Lía pide lo que falta (iteración 2) ----------
-test('el esquema deja fuera lo que no se sabe y pide «falta» al preguntar', () => {
-  const e = F.esquema();
-  assert.deepEqual(e.properties.evaluaciones.items.required, ['tipo']);
-  assert.deepEqual(e.properties.compromisos.items.required, ['tipo', 'nombre']);
-  assert.deepEqual(e.properties.cambios.items.required, ['libera']);
-  assert.equal(e.properties.estudio.required, undefined);
-  assert.deepEqual(e.properties.falta.enum, ['curso', 'fecha', 'hora', 'dias', 'horario', 'evaluacion', 'minutos']);
-  // Las instrucciones ya no dan una hora por defecto: piden preguntar.
-  assert.ok(!/Si no dice la hora: 09:00/.test(F.INSTRUCCIONES));
-  assert.match(F.INSTRUCCIONES, /nada se guarda sin hora/);
-  assert.match(F.INSTRUCCIONES, /"fuera": solo si el mensaje no habla de horarios/);
-});
-
-test('leerGemini conserva «falta» (solo si es uno conocido) y lo entendido a medias', () => {
-  const leer = obj => F.leerGemini(gemini(obj)).respuesta;
-  const r = leer({ intent: 'pregunta', falta: 'hora', texto: '¿A qué hora vence?', evaluaciones: [{ tipo: 'entrega', curso: 'Informe de Química', fecha: '2026-11-05' }] });
-  assert.deepEqual(r, { intent: 'pregunta', texto: '¿A qué hora vence?', falta: 'hora', evaluaciones: [{ tipo: 'entrega', curso: 'Informe de Química', fecha: '2026-11-05', hora: undefined }] });
-  assert.equal('falta' in leer({ intent: 'pregunta', falta: 'contraseña', texto: '¿?' }), false);
-});
-
-test('el registro dice qué dato faltó, nunca el texto', async () => {
-  const pregunta = { intent: 'pregunta', falta: 'horario', texto: 'Anoto el cumpleaños de Ana del sábado. ¿De qué hora a qué hora es?', cambios: [{ fecha: '2026-10-31', libera: false, motivo: 'Cumpleaños de Ana' }] };
-  const { deps, logs } = entorno({ geminiResp: () => new Response(JSON.stringify(gemini(pregunta)), { status: 200 }) });
-  const b = await (await pedir(deps)).json();
-  assert.equal(b.respuesta.falta, 'horario');
-  assert.deepEqual([logs.at(-1).intent, logs.at(-1).falta], ['pregunta', 'horario']);
-  assert.ok(!JSON.stringify(logs).includes('Ana') && !JSON.stringify(logs).includes('cumpleaños'), 'sin el texto');
-});
