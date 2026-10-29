@@ -12,7 +12,7 @@
 //   --meta=0.9                       exactitud mínima para aprobar
 //   --detalle                        muestra la respuesta de Gemini en las frases que fallan
 //   --salida=resultado.json          guarda todos los resultados en ese archivo
-//   --solo-reglas                    sin Gemini: solo cuánto entienden hoy las reglas (no necesita clave)
+//   --solo-reglas                    sin Gemini: cuánto entienden las reglas y qué frases irían a la IA (no necesita clave)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { L, estado } from '../logica.mjs';
@@ -116,7 +116,7 @@ export function reglasConCharla(f, s, n) {
 export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo = MODELO, tiempo = TIEMPO_GEMINI, soloReglas = false } = {}) {
   const s = estadoEval(), n = ahoraLocal();
   const reglas = reglasConCharla(f, s, n);
-  const base = { id: f.id, frase: f.frase, reglas: revisar(f.espera, { r: reglas, origen: 'reglas', ia: null }), resumenReglas: resumir(reglas) };
+  const base = { id: f.id, frase: f.frase, reglas: revisar(f.espera, { r: reglas, origen: 'reglas', ia: null }), resumenReglas: resumir(reglas), vaIA: L.pideIA(reglas) };
   if (soloReglas) return base;
   const pedido = leerPedido(JSON.stringify({ mensaje: f.frase, historial: f.historial || [], contexto: contextoEval(s) }));
   if (pedido.error) throw new Error(`La frase ${f.id} no pasa leerPedido()`);
@@ -125,7 +125,9 @@ export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo 
   const ms = Date.now() - t0;
   if (g.error) return { ...base, ms, error: g.error, httpStatus: g.httpStatus || null, soloIA: false, conRespaldo: base.reglas, origen: 'reglas', resumenIA: `(error: ${g.error})` };
   const v = L.validarIA(g.respuesta, s, n), ia = g.respuesta.intent, faltaIA = g.respuesta.falta || null;
-  const usaIA = v.intent !== 'help';  // como en la app: si la revisión no deja nada útil, responde con las reglas
+  // Como en la app: primero las reglas (pideIA). La IA responde solo si las reglas no entienden y si su propuesta,
+  // revisada, deja algo útil. Gemini se consulta igual en todas las frases para informar «Solo la IA».
+  const usaIA = L.pideIA(reglas) && v.intent !== 'help';
   return {
     ...base, ms, error: null, uso: g.uso, formato: g.formato, ia, respuesta: g.respuesta, resumenIA: resumir(v),
     soloIA: revisar(f.espera, { r: v, origen: 'ia', ia, faltaIA }),
@@ -142,15 +144,17 @@ export function informe(res, { modelo, meta, soloReglas }) {
   const lineas = [];
   if (soloReglas) {
     lineas.push(`Solo las reglas (sin Gemini): ${cuenta('reglas')}/${n} (${pct(cuenta('reglas'), n)})`);
+    lineas.push(`Van a la IA (las reglas no entienden): ${res.filter(r => r.vaIA).length} (${res.filter(r => r.vaIA).map(r => r.id).join(', ') || 'ninguna'})`);
     return { lineas, aprueba: true };
   }
-  const ok = cuenta('conRespaldo'), errores = res.filter(r => r.error), esquema = errores.filter(r => ['esquema', 'larga', 'bloqueado', 'vacia'].includes(r.error));
+  const ok = cuenta('conRespaldo'), vanIA = res.filter(r => r.vaIA), errores = res.filter(r => r.error), esquema = errores.filter(r => ['esquema', 'larga', 'bloqueado', 'vacia'].includes(r.error));
   const empeora = res.filter(r => r.reglas && !r.conRespaldo), ms = res.filter(r => r.ms !== undefined).map(r => r.ms);
   const tok = k => { const xs = res.map(r => r.uso && r.uso[k]).filter(x => typeof x === 'number'); return xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0; };
   const aprueba = ok / n >= meta && esquema.length === 0;
   lineas.push(`Modelo ${modelo} · ${n} frases · contexto del lunes 26 de octubre de 2026`);
-  lineas.push(`Lo que ve la persona (IA, y reglas si la IA no sirve): ${ok}/${n} (${pct(ok, n)}) · meta ${pct(meta * 100, 100)}: ${aprueba ? 'CUMPLE' : 'NO CUMPLE'}`);
+  lineas.push(`Lo que ve la persona (reglas, y la IA si las reglas no entienden): ${ok}/${n} (${pct(ok, n)}) · meta ${pct(meta * 100, 100)}: ${aprueba ? 'CUMPLE' : 'NO CUMPLE'}`);
   lineas.push(`Solo la IA: ${cuenta('soloIA')}/${n} (${pct(cuenta('soloIA'), n)}) · Solo las reglas (hoy): ${cuenta('reglas')}/${n} (${pct(cuenta('reglas'), n)})`);
+  lineas.push(`Van a la IA (las reglas no entienden): ${vanIA.length} · la IA acierta en ${vanIA.filter(r => r.conRespaldo).length}`);
   lineas.push(`Peor que las reglas: ${empeora.length}${empeora.length ? ' (' + empeora.map(r => r.id).join(', ') + ')' : ''}`);
   lineas.push(`Respuestas que no siguen el esquema: ${esquema.length} · Otros errores de Gemini: ${errores.length - esquema.length}${errores.length ? ' (' + errores.map(r => `${r.id}: ${r.error}`).join(', ') + ')' : ''}`);
   lineas.push(`Tiempo de Gemini: mediana ${percentil(ms, 50)} ms · 95 % ≤ ${percentil(ms, 95)} ms (meta: 2000 y 5000 ms)`);
