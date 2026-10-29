@@ -60,11 +60,12 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - La base de datos se define en `supabase/migrations/`. Cada cambio es una migración nueva que se pueda aplicar dos veces sin error; no edites migraciones que ya llegaron a `main`.
 - La integración con GitHub aplica las migraciones a producción al integrar en `main`: antes, usa `engineering:deploy-checklist`.
 - Si aplicas una migración con el MCP de Supabase (`apply_migration`), Supabase la registra con la hora en que se aplicó. Renombra el archivo local con esa versión (`list_migrations`) antes de integrar en `main`, para que la integración no falle ni la repita.
-- Después de cada migración, corre los asesores de seguridad y de rendimiento. Los avisos 0029 de las cuatro funciones que usan las cuentas son esperados: no les quites el permiso (ver `docs/cuentas-y-planes.md`).
+- Después de cada migración, corre los asesores de seguridad y de rendimiento. Los avisos 0029 de las funciones que llaman las cuentas son esperados: no les quites el permiso. Son `mi_suscripcion`, `simular_pago`, `cambiar_renovacion`, `simular_fin_periodo` y `usar_ia` (ver `docs/cuentas-y-planes.md`), y `clave_publica_avisos`, `guardar_dispositivo`, `quitar_dispositivo` y `programar_avisos` (ver `docs/notificaciones.md`).
 - El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
 - La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat.
 - El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
 - La función `lia-ia` nunca escribe en sus registros el texto de los mensajes.
-- Especificación y diseño: `docs/cuentas-y-planes.md` (cuentas y planes) y `docs/ia-con-gemini.md` (IA).
+- Recordatorios (`docs/notificaciones.md`): el servidor solo guarda hora, tipo y una referencia de cada aviso, nunca nombres de cursos. La Edge Function `lia-avisos` tiene `verify_jwt` apagado porque la llaman `pg_cron` (con el secreto `lia_avisos_secreto` de Vault) y la app (revisa la sesión). Las claves VAPID las crea la función y viven en Vault: no las copies ni las reemplaces, o todos los teléfonos tendrán que volver a activar los avisos.
+- Especificación y diseño: `docs/cuentas-y-planes.md` (cuentas y planes), `docs/ia-con-gemini.md` (IA) y `docs/notificaciones.md` (recordatorios).

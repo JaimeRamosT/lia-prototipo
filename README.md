@@ -89,8 +89,8 @@ En macOS o Linux: `GEMINI_API_KEY=tu-clave node pruebas/ia/evaluar.mjs`. Tarda u
 | `fonts/` | Fuente Inter y su licencia. |
 | `config.js` | URL y clave publicable de Supabase. Ambas son públicas; nunca pongas aquí la clave secreta. |
 | `vendor/` | Cliente de Supabase (2.118.0, licencia MIT). Solo se descarga cuando alguien usa su cuenta. |
-| `supabase/` | Configuración de la CLI de Supabase, migraciones de la base de datos y la Edge Function `lia-ia` (Lía con IA). |
-| `docs/` | Especificaciones: cuentas y planes, y Lía con IA. |
+| `supabase/` | Configuración de la CLI de Supabase, migraciones de la base de datos y las Edge Functions `lia-ia` (Lía con IA) y `lia-avisos` (recordatorios). |
+| `docs/` | Especificaciones: cuentas y planes, Lía con IA y recordatorios en el teléfono. |
 | `pruebas/` | Pruebas del motor de horarios, del plan de Gratis, de la lectura de frases y de Lía con IA (`node --test`). En `pruebas/ia/`, la evaluación con el modelo real. |
 | `wrangler.jsonc`, `.assetsignore`, `_headers` | Publicación en Cloudflare (ver [Dónde se publica](#dónde-se-publica)). |
 | `.gitignore` | Deja fuera de Git lo que crea `npx wrangler dev` en tu computadora. |
@@ -112,13 +112,15 @@ Funciona:
 - **Pantallas.** Hoy, Semana, Evaluaciones, chat con Lía (entiende frases simples; con IA, solo en pruebas) y modo sesión con temporizador.
 - **Dictado por voz.** Solo en navegadores con reconocimiento de voz, como Chrome. En los demás, la app pide usar el micrófono del teclado.
 - **App instalable.** Se agrega a la pantalla de inicio y abre sin internet.
+- **Recordatorios en el teléfono (Pro).** Avisos en la pantalla bloqueada, aunque la app esté cerrada: la noche antes y 2 horas antes de cada evaluación, 15 minutos antes de cada bloque de estudio, un resumen al despertar y, antes de dormir, si quedó estudio sin marcar. Se activan en Perfil; cada tipo se puede apagar. El servidor solo guarda la hora y el tipo de cada aviso, nunca el nombre del curso (ver [docs/notificaciones.md](docs/notificaciones.md)).
 
 Límites de esta versión:
 
 - **Datos solo en el dispositivo.** Viven en el navegador de cada dispositivo, no se sincronizan entre dispositivos y se pierden si se borran los datos del sitio.
 - **iPhone sin instalar.** Si LIA no está instalada, Safari borra los datos de un sitio que no se abre en 7 días de uso. Instalada en la pantalla de inicio, eso no pasa.
 - **La cuenta solo lleva el plan.** Los horarios todavía no viajan entre dispositivos.
-- **Sin cobro real ni recordatorios.** El pago es una simulación y aún no hay avisos con la app cerrada.
+- **Sin cobro real.** El pago es una simulación.
+- **Recordatorios solo en Pro.** En iPhone, solo con LIA instalada en la pantalla de inicio (iOS 16.4 o más nuevo).
 
 ## Créditos
 
