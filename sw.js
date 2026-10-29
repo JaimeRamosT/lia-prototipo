@@ -3,7 +3,7 @@
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
 // El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.5.3';
+const VERSION = '0.5.4';
 const CACHE = `lia-${VERSION}`;
 // La app se guarda y se pide por la raíz del sitio ('./'), no por './index.html': en Cloudflare, /index.html
 // redirige a la raíz, y una copia que viene de una redirección no sirve para abrir la página sin internet.
