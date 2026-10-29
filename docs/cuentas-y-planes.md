@@ -51,7 +51,8 @@ Con la bandera `pagos`, la diferencia entre Gratis y Pro no se podía probar com
 - [x] **Reenviar el correo de confirmación** desde *Revisa tu correo* y desde el error de iniciar sesión sin haber confirmado. Entre un envío y otro se espera un minuto, como exige Auth.
 - [x] **Mostrar la contraseña** en todos los campos de contraseña. Si hay un error, lo escrito no se pierde.
 - [x] **Mensajes claros** para correo no válido, envío fallido, correo no autorizado (correo integrado de Supabase), límite de envíos, espera entre correos, contraseña repetida y correo que ya tiene cuenta. Con la confirmación activada, Auth no dice que un correo ya existe: responde un usuario sin identidades y no envía nada. La app lo detecta y pasa a *Inicia sesión*.
-- [x] **Seguir al pago después de confirmar el correo.** Si la cuenta se creó desde el muro de pago, al volver del enlace se abre el pago con el plan elegido, aunque la página se haya recargado. El pago pendiente se guarda en `lia.alConfirmar` y vence a los 3 días.
+- [x] **Seguir al pago después de confirmar el correo.** Si la cuenta se creó desde el muro de pago, al volver del enlace la pantalla *Correo confirmado* ofrece *Seguir con mi pago*, que abre el pago con el plan elegido, aunque la página se haya recargado. El pago pendiente se guarda en `lia.alConfirmar` y vence a los 3 días.
+- [x] **Pantalla *Correo confirmado*** (iteración 2, rama `fix/correo-confirmado`). Al volver del enlace, una pantalla que no se cierra sola dice que la cuenta está activa y ofrece *Seguir*. Si el enlace se abrió en otro navegador (por ejemplo, dentro de la app del correo), explica que vuelva al dispositivo donde creó la cuenta e inicie sesión, porque sus horarios están guardados allí. Para saberlo, el registro anota `lia.registro` en ese navegador; la marca vence a los 7 días.
 - [x] **Herramientas del equipo solo en modo pruebas.** *Simular el fin del periodo* aparece solo al abrir la app con `?pruebas=1`. El modo se recuerda en ese navegador (`lia.pruebas`) y `?pruebas=0` lo apaga.
 
 Queda para después: borrar la cuenta y cambiar la contraseña desde Perfil.
@@ -133,7 +134,8 @@ Supabase
 - [ ] Abrir la app con `?pruebas=1` → Perfil → *Pruebas: simular el fin del periodo* → vuelve a Gratis. Sin `?pruebas=1`, ese enlace no aparece.
 - [ ] *Iniciar sesión* → *¿Olvidaste tu contraseña?* → abrir el enlace del correo en el mismo dispositivo → guardar una contraseña nueva → iniciar sesión con ella.
 - [ ] Crear una cuenta con la confirmación activada → *Reenviar el correo* (después de un minuto) → llega un segundo correo.
-- [ ] Desde el muro de pago, crear una cuenta → abrir el enlace de confirmación → se abre el pago con el plan elegido.
+- [ ] Desde el muro de pago, crear una cuenta → abrir el enlace de confirmación → *Correo confirmado* → *Seguir con mi pago* abre el pago con el plan elegido.
+- [ ] Crear una cuenta en el celular y abrir el enlace de confirmación en la computadora: la pantalla explica que vuelva al celular e inicie sesión.
 - [ ] Cerrar sesión e iniciarla en otro navegador o teléfono: el plan acompaña a la cuenta.
 - [ ] `otorgar_pro('otro-correo')` y luego iniciar sesión con esa cuenta: Pro de cortesía.
 
