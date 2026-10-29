@@ -116,32 +116,40 @@ test('«no tengo clases el domingo» avisa que ese día no hay clases', () => {
   assert.match(r.texto, /no tienes clases/i);
 });
 
-// Evaluaciones y entregas
+// Evaluaciones y entregas. Sin hora, Lía la pregunta (decisión 4): ni 09:00 ni 23:59 por su cuenta.
 const EVALS = [
-  ['trabajo final de marketing para el viernes', 'entrega', 'Trabajo final de Marketing', '2026-10-30'],
-  ['informe de laboratorio el jueves', 'entrega', 'Informe de Laboratorio', '2026-10-29'],
-  ['proyecto de software el 20/11', 'entrega', 'Proyecto de Software', '2026-11-20'],
-  ['monografía de historia para el 5 de noviembre', 'entrega', 'Monografía de Historia', '2026-11-05'],
-  ['tarea de algoritmos para el domingo', 'entrega', 'Tarea de Algoritmos', '2026-11-01'],
-  ['entrego el informe de Marketing el viernes', 'entrega', 'Informe de Marketing', '2026-10-30'],
-  ['tengo examen de estadística el lunes', 'examen', 'Estadística', '2026-11-02'],
-  ['parcial de Cálculo el jueves a las 9', 'parcial', 'Cálculo', '2026-10-29'],
+  ['trabajo final de marketing para el viernes', 'entrega', 'Trabajo final de Marketing', '2026-10-30', 'hora'],
+  ['informe de laboratorio el jueves', 'entrega', 'Informe de Laboratorio', '2026-10-29', 'hora'],
+  ['proyecto de software el 20/11', 'entrega', 'Proyecto de Software', '2026-11-20', 'hora'],
+  ['monografía de historia para el 5 de noviembre', 'entrega', 'Monografía de Historia', '2026-11-05', 'hora'],
+  ['tarea de algoritmos para el domingo', 'entrega', 'Tarea de Algoritmos', '2026-11-01', 'hora'],
+  ['entrego el informe de Marketing el viernes', 'entrega', 'Informe de Marketing', '2026-10-30', 'hora'],
+  ['tengo examen de estadística el lunes', 'examen', 'Estadística', '2026-11-02', 'hora'],
+  ['parcial de Cálculo el jueves a las 9', 'parcial', 'Cálculo', '2026-10-29', null],
+  ['entrego el ensayo de filosofía el viernes a medianoche', 'entrega', 'Ensayo de Filosofía', '2026-10-30', null],
 ];
-for (const [frase, tipo, curso, fecha] of EVALS) {
-  test(`evaluación: «${frase}» → ${tipo} «${curso}»`, () => {
+const itemDe = r => (r.intent === 'add' ? r.items[0] : r.borrador.items[r.borrador.i]);
+for (const [frase, tipo, curso, fecha, falta] of EVALS) {
+  test(`evaluación: «${frase}» → ${tipo} «${curso}»${falta ? `, pregunta la ${falta}` : ''}`, () => {
     const r = L.interpret(frase, estado(), ahora());
-    assert.equal(r.intent, 'add');
-    const it = r.items[0];
-    assert.deepEqual([it.kind, it.type, it.course, it.date, it.error], ['eval', tipo, curso, fecha, undefined]);
+    assert.equal(r.intent, falta ? 'pregunta' : 'add');
+    const it = itemDe(r);
+    assert.deepEqual([it.kind, it.type, it.course, it.date, L.faltaDe(it)], ['eval', tipo, curso, fecha, falta]);
   });
 }
-test('dos evaluaciones en una frase comparten la fecha', () => {
-  const r = L.interpret('parcial de Contabilidad I y final de Economía el viernes', estado(), ahora());
-  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Contabilidad I', '2026-10-30'], ['final', 'Economía', '2026-10-30']]);
+test('«el otro jueves» es el de la semana siguiente', () => {
+  assert.equal(itemDe(L.interpret('el otro jueves entrego el ensayo de filosofía', estado(), ahora())).date, '2026-11-05');
+  assert.equal(itemDe(L.interpret('el jueves entrego el ensayo de filosofía', estado(), ahora())).date, '2026-10-29');
 });
-test('parcial y entrega en la misma frase', () => {
+test('dos evaluaciones en una frase comparten la fecha (y Lía pregunta la hora de cada una)', () => {
+  const r = L.interpret('parcial de Contabilidad I y final de Economía el viernes', estado(), ahora());
+  assert.deepEqual(r.borrador.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Contabilidad I', '2026-10-30'], ['final', 'Economía', '2026-10-30']]);
+  assert.equal(r.texto, '¿A qué hora es tu parcial de Contabilidad I del viernes?');
+});
+test('parcial y entrega en la misma frase: pregunta solo lo que le falta a la entrega', () => {
   const r = L.interpret('tengo parcial de cálculo el jueves 9am y entrego el informe el viernes', estado(), ahora());
-  assert.deepEqual(r.items.map(i => [i.type, i.course, i.date]), [['parcial', 'Cálculo', '2026-10-29'], ['entrega', 'Informe', '2026-10-30']]);
+  assert.deepEqual(r.borrador.items.map(i => [i.type, i.course, i.date, i.time]), [['parcial', 'Cálculo', '2026-10-29', '09:00'], ['entrega', 'Informe', '2026-10-30', '']]);
+  assert.deepEqual([r.borrador.i, r.texto], [1, '¿A qué hora vence tu informe?']);
 });
 
 // Compromisos de un solo día
@@ -168,13 +176,56 @@ for (const [frase, evalId, fecha, min] of [
     assert.deepEqual([r.evalId, r.date, r.min, r.error], [evalId, fecha, min, undefined]);
   });
 }
-test('«ayer estudié 2 horas» sin decir de qué pregunta por la evaluación', () => {
+test('«ayer estudié 2 horas» sin decir de qué pregunta por la evaluación, con las próximas como respuestas rápidas', () => {
   const r = L.interpret('ayer estudié 2 horas', EJEMPLO(), ahora());
-  assert.equal(r.intent, 'log');
-  assert.match(r.error, /Cálculo II/);
+  assert.deepEqual([r.intent, r.texto], ['pregunta', '¿Para qué evaluación estudiaste?']);
+  assert.deepEqual(r.opciones.map(o => o.t), ['Parcial de Cálculo II', 'Práctica de Física II']);
+  assert.deepEqual(r.borrador.items[0], { kind: 'log', evalId: '', course: '', date: '2026-10-25', min: 120 });
 });
 test('«estudié para el parcial de cálculo» sin decir cuánto pregunta el tiempo (no crea otro parcial)', () => {
   const r = L.interpret('estudié para el parcial de cálculo', EJEMPLO(), ahora());
-  assert.equal(r.intent, 'log');
-  assert.match(r.error, /Cuánto tiempo estudiaste/);
+  assert.deepEqual([r.intent, r.texto], ['pregunta', '¿Cuánto tiempo estudiaste para Cálculo II?']);
+});
+
+// ---------- Categorías de rutinas (iteración 2) ----------
+for (const [frase, tipo, nombre, ini, fin, dias] of [
+  ['almuerzo de lunes a viernes de 1 a 2', 'comida', 'Almuerzo', '13:00', '14:00', [1, 2, 3, 4, 5]],
+  ['gimnasio martes y jueves de 7 a 8 de la noche', 'deporte', 'Gimnasio', '19:00', '20:00', [2, 4]],
+  ['voy a un curso de inglés los sábados de 9 a 12', 'curso', 'Curso de inglés', '09:00', '12:00', [6]],
+  ['siesta de lunes a viernes de 3 a 4', 'ocio', 'Siesta', '15:00', '16:00', [1, 2, 3, 4, 5]],
+  ['cuido a mi hermano los martes de 5 a 7', 'casa', 'Cuidar a la familia', '17:00', '19:00', [2]],
+  ['tomo el bus de lunes a viernes de 7 a 8 de la mañana', 'traslado', 'Traslado', '07:00', '08:00', [1, 2, 3, 4, 5]],
+  ['fútbol los domingos de 10 a 12', 'deporte', 'Fútbol', '10:00', '12:00', [0]],
+]) {
+  test(`categoría: «${frase}» → ${tipo} «${nombre}»`, () => {
+    const r = L.interpret(frase, estado(), ahora());
+    assert.equal(r.intent, 'add', JSON.stringify(r));
+    const it = r.items[0];
+    assert.deepEqual([it.kind, it.type, it.name, it.start, it.end, it.days, it.error], ['commit', tipo, nombre, ini, fin, dias, undefined]);
+  });
+}
+test('«hoy no voy al gimnasio» libera la rutina por su nombre aunque sea de otra categoría', () => {
+  const st = estado({ compromisos: [{ name: 'Gym', type: 'deporte', days: LUN_A_VIE, start: '20:00', end: '21:00' }, { name: 'Gimnasio', type: 'otro', days: LUN_A_VIE, start: '06:00', end: '07:00' }] });
+  const r = L.interpret('hoy no voy al gimnasio', st, ahora());
+  assert.equal(r.intent, 'except');
+  assert.deepEqual(r.exs.map(x => x.ref), ['c1']);
+});
+test('«hoy no voy al fútbol» sin una rutina con ese nombre libera la de su categoría', () => {
+  const st = estado({ compromisos: [{ name: 'Pichanga', type: 'deporte', days: LUN_A_VIE, start: '20:00', end: '21:00' }] });
+  const r = L.interpret('hoy no voy al fútbol', st, ahora());
+  assert.equal(r.intent, 'except');
+  assert.deepEqual(r.exs.map(x => [x.ref, x.label]), [['c0', 'Sin Pichanga']]);
+});
+test('tipoPorNombre(): la categoría que sugiere el nombre de una rutina', () => {
+  assert.equal(L.tipoPorNombre('Almuerzo'), 'comida');
+  assert.equal(L.tipoPorNombre('Gimnasio Smart Fit'), 'deporte');
+  assert.equal(L.tipoPorNombre('Inglés en el ICPNA'), 'curso');
+  assert.equal(L.tipoPorNombre('Reunión del grupo'), null);
+  assert.equal(L.tipoPorNombre(''), null);
+});
+test('un tipo de rutina que la app no conoce se trata como «Otro»', () => {
+  assert.equal(L.tipoRutina('submarinismo'), 'otro');
+  assert.equal(L.tipoRutina('comida'), 'comida');
+  const st = estado({ compromisos: [{ name: 'Algo nuevo', type: 'submarinismo', days: LUN_A_VIE, start: '20:00', end: '21:00' }] });
+  assert.equal(L.busyFor(st, '2026-10-26')[0].kind, 'otro');
 });

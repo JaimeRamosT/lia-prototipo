@@ -90,3 +90,57 @@ test('un bloque que pasa la medianoche sigue agendado hasta que termina al día 
   assert.equal(despues.perdidos.length, 1);
   assert.equal(despues.unmet.e0 - durante.unmet.e0, 60);
 });
+
+// ---------- Decisión del 28-oct: en Gratis, las evaluaciones nuevas entran solas sin mover lo ya armado ----------
+const conPausa = (bs, x) => bs.some(b => b.date === x.date && x.s < b.e + 10 && x.e > b.s);
+const enDia = (bs, d) => bs.filter(b => b.date === d).reduce((a, b) => a + b.e - b.s, 0);
+
+test('una evaluación nueva entra en los huecos libres, sin pisar lo armado ni sus pausas', () => {
+  const st = semana(), f = armar(st, lunes);
+  st.evals.push({ id: 'e9', type: 'parcial', course: 'Estadística', date: '2026-10-30', time: '09:00', hours: 4 });
+  const r = L.sumarAlCongelado(st, f, ['e9'], miercoles);
+  assert.ok(r.blocks.length > 0, 'encontró huecos');
+  assert.ok(r.blocks.every(b => b.evalId === 'e9' && b.date >= '2026-10-28' && b.date <= '2026-10-29'), 'antes del parcial del viernes');
+  for (const b of r.blocks) {
+    assert.ok(!conPausa(f.blocks, b), `choca con lo armado: ${JSON.stringify(b)}`);
+    for (const x of L.busyFor(st, b.date)) assert.ok(b.e <= x.s || b.s >= x.e, `choca con ${x.label}`);
+  }
+  for (const d of ['2026-10-28', '2026-10-29']) assert.ok(enDia(f.blocks, d) + enDia(r.blocks, d) <= st.settings.maxDay, `${d} pasa el máximo diario`);
+  const ag = r.blocks.reduce((a, b) => a + b.e - b.s, 0);
+  assert.equal(r.unmet.e9, 240 - ag >= 10 ? 240 - ag : 0);
+});
+
+test('lo ya armado cuenta para el máximo de estudio del día', () => {
+  const st = semana(); st.settings.maxDay = 120; const f = armar(st, lunes);
+  st.evals.push({ id: 'e9', type: 'entrega', course: 'Informe', date: '2026-10-31', time: '23:59', hours: 6 });
+  const r = L.sumarAlCongelado(st, f, ['e9'], miercoles);
+  for (const d of new Set(r.blocks.map(b => b.date))) assert.ok(enDia(f.blocks, d) + enDia(r.blocks, d) <= 120, d);
+});
+
+test('no pone estudio a la hora del examen de otra evaluación', () => {
+  const st = estado({ evaluaciones: [{ course: 'Química', date: '2026-10-28', time: '14:00', hours: 1 }] });
+  const f = armar(st, lunes);
+  st.evals.push({ id: 'e9', type: 'entrega', course: 'Ensayo', date: '2026-10-29', time: '23:59', hours: 8 });
+  const r = L.sumarAlCongelado(st, f, ['e9'], miercoles);
+  assert.ok(r.blocks.filter(b => b.date === '2026-10-28').every(b => b.e <= 13 * 60 + 30 || b.s >= 16 * 60), JSON.stringify(r.blocks));
+});
+
+test('una evaluación que ya estaba en el plan armado no se vuelve a agendar', () => {
+  const st = semana(), f = armar(st, lunes);
+  assert.deepEqual(L.sumarAlCongelado(st, f, ['e0', 'e1'], miercoles), { blocks: [], unmet: {} });
+});
+
+test('si no hay hueco, todo lo que pide queda como faltante', () => {
+  const st = semana(); st.settings.maxDay = 30; const f = armar(st, lunes);
+  st.evals.push({ id: 'e9', type: 'parcial', course: 'Estadística', date: '2026-10-29', time: '09:00', hours: 40 });
+  const r = L.sumarAlCongelado(st, f, ['e9'], miercoles);
+  const agendado = r.blocks.reduce((a, b) => a + b.e - b.s, 0);
+  assert.equal(r.unmet.e9, 2400 - agendado);
+  assert.ok(r.unmet.e9 > 2000);
+});
+
+test('plan() con soloIds reparte solo esas evaluaciones', () => {
+  const st = semana(), p = L.plan(st, lunes, ['e1']);
+  assert.ok(p.blocks.length && p.blocks.every(b => b.evalId === 'e1'));
+  assert.deepEqual(Object.keys(p.unmet), ['e1']);
+});
