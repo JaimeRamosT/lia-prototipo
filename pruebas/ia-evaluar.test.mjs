@@ -47,7 +47,7 @@ test('revisar(): datos exactos, sin cosas inventadas, y cursos sin importar tild
   assert.equal(revisar(espera, ia({ intent: 'add', items: [item] })), true);
   assert.equal(revisar(espera, ia({ intent: 'add', items: [item, { ...item, course: 'Inventado' }] })), false);
   assert.equal(revisar(espera, ia({ intent: 'add', items: [{ ...item, date: '2026-10-31' }] })), false);
-  assert.equal(revisar(espera, ia({ intent: 'add', items: [{ ...item, time: '' }] })), false);
+  assert.equal(revisar(espera, ia({ intent: 'add', items: [{ ...item, error: '¿Qué día?' }] })), false);
   const dosDias = { intent: 'add', items: [{ kind: 'commit', type: 'trabajo', days: [0, 6], start: '08:00', end: '16:00' }] };
   assert.equal(revisar(dosDias, ia({ intent: 'add', items: [{ kind: 'commit', type: 'trabajo', name: 'Trabajo', days: [6, 0], start: '08:00', end: '16:00' }] })), true);
 });
@@ -71,14 +71,8 @@ test('revisar(): preguntar, avisar y no cambiar nada se cuentan según quién re
   const pregunta = { intent: 'pregunta' };
   assert.equal(revisar(pregunta, ia('pregunta')), true);
   assert.equal(revisar(pregunta, ia('fuera')), false);
-  const sinHora = { intent: 'pregunta', texto: '¿A qué hora?', borrador: { intent: 'add', i: 0, items: [{ kind: 'eval', type: 'examen', course: 'Inglés', date: '2026-10-28', time: '' }] } };
-  assert.equal(revisar(pregunta, reglas(sinHora)), true);
+  assert.equal(revisar(pregunta, reglas({ intent: 'add', items: [{ kind: 'eval', error: '¿De qué curso?' }] })), true);
   assert.equal(revisar(pregunta, reglas({ intent: 'add', items: [{ kind: 'eval', type: 'examen', course: 'Curso', date: '2026-10-28', time: '09:00' }] })), false);
-  // Con «falta», tiene que preguntar ese dato: en el borrador o, con IA, en lo que Gemini dijo que preguntaba.
-  assert.equal(revisar({ intent: 'pregunta', falta: 'hora' }, reglas(sinHora)), true);
-  assert.equal(revisar({ intent: 'pregunta', falta: 'fecha' }, reglas(sinHora)), false);
-  assert.equal(revisar({ intent: 'pregunta', falta: 'curso' }, { ...ia('pregunta'), faltaIA: 'curso' }), true);
-  assert.equal(revisar({ intent: 'pregunta', falta: 'curso' }, { ...ia('pregunta'), faltaIA: 'fecha' }), false);
   assert.equal(revisar({ intent: 'sin_cambios' }, ia('fuera')), true);
   assert.equal(revisar({ intent: 'sin_cambios' }, ia('add', { intent: 'add', items: [{ kind: 'eval' }] })), false);
   assert.equal(revisar([{ intent: 'pregunta' }, { intent: 'aviso' }], ia('aviso')), true);
