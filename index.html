@@ -999,6 +999,31 @@ function validarIA(r,state,now){
       return texto?{intent:'aviso',texto}:{intent:'help'};}
     case 'aviso':case 'fuera':return texto?{intent:'aviso',texto}:{intent:'help'};
     default:return{intent:'help'};}}
+// ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
+// Los avisos de los próximos 8 días con su hora, su tipo, una referencia interna (lo único que va al servidor) y el
+// texto que mostrará el teléfono (se queda en el teléfono). tipos: {examen, sesion, resumen, sinMarcar} prendidos o no.
+const AVISOS_DEF={examen:true,sesion:true,resumen:true,sinMarcar:true};
+function avisosDe(state,p,now,tipos){const T={...AVISOS_DEF,...(tipos||{})},S=state.settings,out=[],fin=addDays(now,8),hoy=ymd(now);
+  const en=(f,min)=>{const d=fromYmd(f);d.setMinutes(min);return d;};  // la fecha f a esa hora (los minutos pueden pasar de 1440)
+  const agregar=(cuando,tipo,ref,titulo,cuerpo)=>{if(cuando>now&&cuando<fin)out.push({cuando:cuando.toISOString(),tipo,ref,titulo,cuerpo});};
+  const que=e=>nombreEval(e).replace(/^tu /,''),ent=e=>e.type==='entrega',wake=toMin(S.wake);
+  const evs=state.evals.filter(e=>e.date>=hoy&&e.time);
+  if(T.examen)for(const e of evs){const hora=en(e.date,toMin(e.time));
+    agregar(en(ymd(addDays(fromYmd(e.date),-1)),20*60),'examen_manana',e.id,ent(e)?`Mañana vence: ${que(e)}`:`Mañana: ${que(e)}`,ent(e)?`A las ${e.time}.`:`A las ${e.time}. Repasa lo justo y duerme bien.`);
+    const antes=new Date(hora.getTime()-2*3600000);   // 2 h antes, pero no antes de la hora de despertar de ese día
+    if(antes.getHours()*60+antes.getMinutes()>=wake||ymd(antes)!==e.date)agregar(antes,'examen_pronto',e.id,ent(e)?`En 2 horas vence: ${que(e)}`:`En 2 horas: ${que(e)}`,ent(e)?`A las ${e.time}.`:`A las ${e.time}. ¡Éxitos!`);}
+  const porId=new Map(state.evals.map(e=>[e.id,e]));
+  const bloques=(p&&p.blocks||[]).filter(b=>porId.has(b.evalId)).sort((a,b)=>(a.date+String(a.s).padStart(4,'0')).localeCompare(b.date+String(b.s).padStart(4,'0')));
+  if(T.sesion)for(const b of bloques){if(estudiado(state,b))continue;const e=porId.get(b.evalId);
+    agregar(new Date(en(b.date,b.s).getTime()-15*60000),'sesion',`b${b.date}${b.s}`,`En 15 min: estudia ${e.course}`,`De ${fmt(b.s)} a ${fmt(b.e)}, para ${nombreEval(e)} del ${fechaCorta(e.date)}.`);}
+  for(let k=0;k<8;k++){const f=ymd(addDays(now,k)),bs=bloques.filter(b=>b.date===f&&b.s<1440),ex=evs.filter(e=>e.date===f);
+    if(T.resumen&&(bs.length||ex.length)){const min=bs.reduce((a,b)=>a+b.e-b.s,0);
+      const lista=bs.slice(0,3).map(b=>`${porId.get(b.evalId).course} a las ${fmt(b.s)}`),y=l=>l.length>1?l.slice(0,-1).join(', ')+' y '+l[l.length-1]:l[0]||'';
+      const titulo=min?`Hoy estudias ${hrs(min)}`:`Hoy: ${que(ex[0])}`;
+      const cuerpo=[lista.length?cap(y(lista))+'.':'',ex.length?`${cap(y(ex.map(e=>`${que(e)} a las ${e.time}`)))}.`:''].filter(Boolean).join(' ');
+      agregar(en(f,wake),'resumen',`r${f}`,titulo,cuerpo||'Abre LIA para ver tu día.');}
+    if(T.sinMarcar&&bs.some(b=>!estudiado(state,b)))agregar(en(f,finDelDia(S)-30),'sin_marcar',`m${f}`,'¿Estudiaste hoy?','Si estudiaste, márcalo en LIA para que Lía cuente tu avance.');}
+  return out.sort((a,b)=>a.cuando.localeCompare(b.cuando)).slice(0,150);}
 // Categoría de algo de un solo día por su nombre («Cumpleaños de Ana» → ocio).
 const catEvento=l=>{for(const w of norm(l||'').split(/[^a-z0-9]+/)){if(CAT_EVENTO[w])return CAT_EVENTO[w];if(COMMIT_KW[w])return tipoRutina(COMMIT_KW[w]);}return'otro';};
 /*LOGIC-END*/
@@ -1399,7 +1424,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   const studied=state.done.reduce((a,x)=>a+x.min,0);
   return `${demoBanner()}<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · ${isPro()?'LIA Pro':'LIA Gratis'}</div></div></div>
   <div class="stats"><div class="card stat"><b class="tnum">${covered}/${up}</b><span>evaluaciones con tiempo de estudio completo</span></div><div class="card stat"><b class="tnum">${hrs(studied)}</b><span>estudiadas con LIA</span></div></div>
-  ${planCard()}${cuentaCard()}${iaCard()}
+  ${planCard()}${cuentaCard()}${avisosCard()}${iaCard()}
   <div class="between"><h2 class="eyebrow" style="margin:0">Tus rutinas</h2><button class="pill" data-a="add-commit" aria-label="Agregar una rutina">${I.plus.replace('<svg','<svg width="14" height="14" aria-hidden="true"')} Agregar</button></div>
   <div class="stack">${listaRutinas()||'<div class="card small muted">Sin rutinas.</div>'}</div>
   <span class="eyebrow">Ajustes de Lía</span>
@@ -1545,6 +1570,7 @@ const WHY={
  reorg:{t:'Deja que Lía reorganice tu semana',d:'Con Pro, cuando algo cambia, Lía mueve tus bloques de estudio al instante.'},
  session:{t:'Modo sesión con LIA Pro',d:'Temporizador y modo concentración para cada bloque. Al terminar, Lía suma lo que estudiaste.'},
  rearm:{t:'Rearma tu semana cuando quieras',d:''},
+ avisos:{t:'Recordatorios en tu teléfono',d:'Con Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.'},
  plans:{t:'Pásate a LIA Pro',d:'Lía arma tu horario y lo reorganiza sola cuando algo cambia. Sin límite de evaluaciones, con voz y modo sesión.'}};
 function openPaywall(why,ctx){const prev=ui.pay||{};ui.pay={why,ctx:ctx||null,period:prev.period||'ciclo',method:prev.method||'yape'};ui.sheet=sheetPaywall();render();}
 function rememberChoice(name,key){const el=document.querySelector(`input[name="${name}"]:checked`);if(el&&ui.pay)ui.pay[key]=el.value;}
@@ -1590,7 +1616,7 @@ function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
    ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas entran solas en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
    ['Voz','—',`Dictado ilimitado. Notas de voz ${soon}`],
    ['Sílabos y aula virtual','—',`Lía los lee y agrega las evaluaciones ${soon}`],
-   ['Recordatorios',`Básicos ${soon}`,`Modo sesión. Silenciar apps y avisos antes del examen ${soon}`]];
+   ['Recordatorios','Dentro de la app','En tu teléfono, aunque la app esté cerrada: exámenes, cada sesión de estudio y un resumen cada mañana. Modo sesión']];
   return `<div class="grab"></div><h2>LIA Gratis y LIA Pro</h2>
   <div style="overflow-x:auto"><table class="cmp"><thead><tr><th scope="col"><span class="sr-only">Función</span></th><th scope="col">Gratis${pro?'':' · tu plan'}</th><th scope="col">Pro${pro?' · tu plan':''}</th></tr></thead>
   <tbody>${rows.map(r=>`<tr><th scope="row">${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table></div>
@@ -1620,6 +1646,77 @@ function iaCard(){if(!iaPosible())return '';const on=iaActiva(),r=ui.iaRestantes
   return `<div class="card stack"><span class="eyebrow">Lía con IA</span>
    <div class="small muted">${on?`Lía entiende tus mensajes con Gemini.${typeof r==='number'?` Hoy te quedan ${r} ${r===1?'mensaje':'mensajes'} con IA.`:''}`:'Lía entiende solo frases simples. Con la IA entiende tus mensajes como los escribes.'}</div>
    ${on?'<button class="btn sec sm" data-a="ia-apagar">Apagar la IA</button>':'<button class="btn sec sm" data-a="ia-prender">Usar Lía con IA</button>'}</div>`;}
+// ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
+// Cada teléfono se registra para recibir avisos (Web Push) y programa los suyos en Supabase: solo hora, tipo y una
+// referencia. Los textos con los nombres de los cursos quedan en este teléfono (Cache Storage), y sw.js los usa al
+// mostrar el aviso. Lo que es de este teléfono (si se activó y la última programación) vive en localStorage.
+const KEY_AVISOS='lia.avisos',KEY_AVISOS_FIRMA='lia.avisos.firma',CACHE_AVISOS='datos-avisos';
+function avisosLocal(){try{return JSON.parse(localStorage.getItem(KEY_AVISOS))||null;}catch(e){return null;}}
+function guardarAvisosLocal(v){try{if(v)localStorage.setItem(KEY_AVISOS,JSON.stringify(v));else{localStorage.removeItem(KEY_AVISOS);localStorage.removeItem(KEY_AVISOS_FIRMA);}}catch(e){}}
+function avisosSoportados(){return 'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;}
+function permisoAvisos(){try{return Notification.permission;}catch(e){return 'default';}}
+function avisosActivos(){return isPro()&&cuentasActivas()&&!!avisosLocal()&&avisosSoportados()&&permisoAvisos()==='granted';}
+const deB64u=t=>{t=String(t).replace(/-/g,'+').replace(/_/g,'/');const b=atob(t+'='.repeat((4-t.length%4)%4));return Uint8Array.from(b,c=>c.charCodeAt(0));};
+const aB64u=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+// «Activar recordatorios»: el permiso se pide aquí, al tocar el botón (iPhone no lo permite de otra forma).
+async function activarAvisos(){if(!isPro()){openPaywall('avisos');return;}if(!avisosSoportados()||ui.avisosOcupado){rerenderKeepScroll();return;}
+  ui.avisosOcupado=true;rerenderKeepScroll();
+  try{const permiso=await Notification.requestPermission();
+    if(permiso!=='granted'){toast(permiso==='denied'?'Bloqueaste los avisos de LIA. Puedes permitirlos en los ajustes de tu teléfono.':'No activé los avisos. Puedes hacerlo cuando quieras.');return;}
+    const pub=await sbRpc('clave_publica_avisos');
+    if(!pub){toast('Los recordatorios todavía se están preparando. Inténtalo otra vez en un minuto.');return;}
+    const reg=await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
+    if(sub&&sub.options&&sub.options.applicationServerKey&&aB64u(sub.options.applicationServerKey)!==pub){await sub.unsubscribe();sub=null;}  // cambió la clave del servidor
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:deB64u(pub)});
+    const j=sub.toJSON();
+    await sbRpc('guardar_dispositivo',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+    guardarAvisosLocal({endpoint:j.endpoint});
+    await programarAvisos(true);
+    toast('Listo: Lía te avisará en este teléfono.');}
+  catch(e){const m=String((e&&(e.message||e.hint))||'');
+    toast(/LIA Pro|solo_pro/.test(m)?'Los recordatorios en el teléfono son parte de LIA Pro.':mensajeError(e).startsWith('No pudimos')?'No pude activar los avisos en este teléfono. Inténtalo otra vez.':mensajeError(e));}
+  finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
+async function desactivarAvisos(){const l=avisosLocal();guardarAvisosLocal(null);
+  try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe();}catch(e){}
+  try{if(l&&l.endpoint)await sbRpc('quitar_dispositivo',{p_endpoint:l.endpoint});}catch(e){}
+  try{await caches.delete(CACHE_AVISOS);}catch(e){}
+  rerenderKeepScroll();toast('Listo: ya no recibirás avisos en este teléfono.');}
+// Programa los avisos de los próximos 8 días: los textos, en este teléfono; hora, tipo y referencia, en Supabase.
+// Solo se envía si algo cambió desde la última vez. Sin internet, queda para la próxima.
+async function programarAvisos(forzar){if(!avisosActivos()||state.mode==='example')return;
+  const lista=avisosDe(state,P(),now(),state.settings.avisos),firma=JSON.stringify(lista.map(a=>[a.cuando,a.tipo,a.ref,a.titulo,a.cuerpo]));
+  let previa=null;try{previa=localStorage.getItem(KEY_AVISOS_FIRMA);}catch(e){}
+  if(!forzar&&firma===previa)return;
+  try{const c=await caches.open(CACHE_AVISOS);
+    await c.put('./avisos.json',new Response(JSON.stringify(Object.fromEntries(lista.map(a=>[`${a.tipo}|${a.ref}`,{titulo:a.titulo,cuerpo:a.cuerpo}]))),{headers:{'Content-Type':'application/json'}}));}catch(e){}
+  try{await sbRpc('programar_avisos',{p_avisos:lista.map(({cuando,tipo,ref})=>({cuando,tipo,ref}))});try{localStorage.setItem(KEY_AVISOS_FIRMA,firma);}catch(e){}}catch(e){}}
+let avisosT=null;
+function avisosLuego(){if(!avisosActivos())return;clearTimeout(avisosT);avisosT=setTimeout(()=>{programarAvisos(false);},2000);}
+async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
+  try{const c=await sb(),{data}=await c.auth.getSession(),t=data&&data.session&&data.session.access_token;
+    if(!t){toast('Tu sesión venció. Vuelve a iniciarla en Perfil.');return;}
+    const r=await fetch(`${SB_CFG.url}/functions/v1/lia-avisos`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify({accion:'prueba'})});
+    const d=await r.json().catch(()=>null);
+    toast(d&&d.ok?'Te envié un aviso de prueba: debería llegar en unos segundos.':d&&d.error==='sin_dispositivos'?'Este teléfono ya no está registrado. Desactiva y vuelve a activar los recordatorios.':d&&d.error==='solo_pro'?'Los recordatorios en el teléfono son parte de LIA Pro.':'No pude enviar el aviso de prueba. Inténtalo otra vez en un rato.');}
+  catch(e){toast(mensajeError(e));}
+  finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
+function avisosCard(){if(!cuentasActivas()||state.mode==='example')return '';const titulo='<span class="eyebrow">Recordatorios en tu teléfono</span>';
+  if(!isPro())return `<div class="card stack"><div class="between">${titulo}<span class="pro" aria-hidden="true">PRO</span></div>
+   <div class="small muted">Con LIA Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.</div>
+   <button class="btn sec sm" data-a="paywall" data-why="avisos">Ver LIA Pro</button></div>`;
+  const ocupado=ui.avisosOcupado?' disabled':'';let cuerpo;
+  if(!avisosSoportados())cuerpo=isIOS()&&!isStandalone()
+    ?'<div class="small muted">En iPhone, los avisos llegan solo con LIA instalada. En Safari, toca <strong>Compartir</strong> y luego <strong>Agregar a inicio</strong>. Después abre LIA desde su ícono y vuelve aquí.</div>'
+    :'<div class="small muted">Este navegador no permite avisos. Usa Chrome en Android o, en iPhone, LIA instalada en tu pantalla de inicio.</div>';
+  else if(permisoAvisos()==='denied')cuerpo='<div class="small muted">Bloqueaste los avisos de LIA. Para recibirlos, entra a los ajustes de tu teléfono, busca LIA (o tu navegador) en Notificaciones y permítelos. Luego vuelve aquí.</div>';
+  else if(!avisosActivos())cuerpo=`<div class="small muted">Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: tus exámenes, cada sesión de estudio y un resumen cada mañana.</div>
+   <button class="btn pri sm" data-a="avisos-activar"${ocupado}>${ui.avisosOcupado?'Activando…':'Activar recordatorios'}</button>`;
+  else{const T={...AVISOS_DEF,...(state.settings.avisos||{})};
+    const op=(k,t,d)=>`<label class="opt"><input type="checkbox" data-aviso="${k}" ${T[k]?'checked':''}><span><b>${t}</b><br><span class="small muted">${d}</span></span></label>`;
+    cuerpo=`<div class="small muted">Activos en este teléfono.</div><div class="stack" style="gap:8px">
+     ${op('examen','Exámenes y entregas','La noche anterior, a las 20:00, y 2 horas antes')}${op('sesion','Antes de estudiar','15 minutos antes de cada bloque de estudio')}${op('resumen','Resumen de la mañana','Al despertar, los días que estudias o tienes evaluación')}${op('sinMarcar','Estudio sin marcar','30 minutos antes de dormir, si quedó estudio sin marcar')}</div>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="avisos-prueba"${ocupado}>Enviarme un aviso de prueba</button><button class="btn sec sm" data-a="avisos-desactivar"${ocupado}>Desactivar en este teléfono</button></div>`;}
+  return `<div class="card stack">${titulo}${cuerpo}</div>`;}
 function modoPruebas(){try{const q=new URLSearchParams(location.search).get('pruebas');if(q==='1')localStorage.setItem('lia.pruebas','1');else if(q==='0')localStorage.removeItem('lia.pruebas');
   return localStorage.getItem('lia.pruebas')==='1';}catch(e){return false;}}
 function freeBanner(){if(isPro()||!state.frozen)return '';
@@ -1677,7 +1774,7 @@ function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
   const d=el.dataset;if(!d.a)return null;
   return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
 let abridor=null;
-function render(){ensureState();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+function render(){ensureState();avisosLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
   dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
   const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
@@ -1962,6 +2059,9 @@ const A={
  chip:d=>{handleText(d.q,'chat');},
  'ia-si':()=>{iaElegir('si');ui.sheet=null;const q=ui.iaPendiente;ui.iaPendiente=null;if(q)conIA(q);else{rerenderKeepScroll();toast('Listo: Lía usa la IA para entenderte.');}},
  'ia-no':()=>{iaElegir('no');ui.sheet=null;soltarPendienteIA();},
+ 'avisos-activar':()=>{activarAvisos();},
+ 'avisos-desactivar':()=>{desactivarAvisos();},
+ 'avisos-prueba':()=>{avisoDePrueba();},
  'ia-apagar':()=>{iaElegir('no');rerenderKeepScroll();toast('Listo: Lía te responde sin IA.');},
  'ia-prender':()=>{ui.sheet=sheetIA();render();},
  confirm:()=>{const p=ui.pending;ui.pending=null;if(p.exs){const m=aplicarCambio(p.exs);liaSay(m.texto,m.opts);render();return;}
@@ -2058,6 +2158,7 @@ document.addEventListener('change',ev=>{const el=ev.target;
   if(el.closest&&el.closest('form[data-form="rutina"]')){if(el.name==='ru-tipo'){const n=document.getElementById('c-name');if(n)n.placeholder=COMMIT_TYPES[el.value]||'';}refrescarTramos();return;}
   if(el.id==='ev-start'||el.id==='ev-end'){const a=document.getElementById('ev-start').value,b=document.getElementById('ev-end').value,n=document.getElementById('ev-noche');
     if(n)n.hidden=!(a&&b&&toMin(b)<toMin(a));return;}
+  if(el.dataset&&el.dataset.aviso){state.settings.avisos={...AVISOS_DEF,...(state.settings.avisos||{}),[el.dataset.aviso]:el.checked};save();programarAvisos(true);toast(el.checked?'Listo: te avisaré.':'Listo: ya no te aviso eso.');return;}
   const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
   if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;if(k==='wake'||k==='sleep')state.settings.suenoListo=true;save();
   if(k==='autonomy')toast('Ajuste guardado.');
