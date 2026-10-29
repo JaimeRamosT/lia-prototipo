@@ -10,6 +10,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 |---|---|
 | Vas a cambiar `plan()`, `planCongelado()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
 | Terminas cualquier cambio en `index.html` o `sw.js` | `engineering:code-review` |
+| Alguien reporta un error al probar la app (en el celular, en otro navegador o en la app instalada) | `engineering:debug`. Antes de cambiar el código, reprodúcelo en Playwright simulando un celular (iPhone y Android, también abierta como app instalada) |
 | Tocas pantallas, componentes, colores o tamaños | `design:accessibility-review` y `design:design-critique` |
 | Escribes o cambias texto que ve la persona (Lía, errores, estados vacíos) | `design:ux-copy`, en español peruano |
 | Vas a hacer un commit | `anthropic-skills:conventional-commit` |
@@ -49,6 +50,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Cada cambio va en una rama corta que sale de `main` (`feat/…`, `fix/…`, `chore/…`), dura uno o dos días y vuelve pronto a `main`.
 - Commits pequeños. Integra a `main` seguido en vez de acumular cambios.
 - Lo que aún no debe ver el público entra a `main` apagado detrás de una bandera, no en una rama larga.
+- Una bandera guardada en el navegador no llega a la app instalada: abre sin parámetros y, en iPhone, tiene su propio almacenamiento. Si hay que probarla en el celular, la bandera va en la cuenta.
 - Antes de integrar a `main`, corre las pruebas: `node --test` para la lógica y una revisión en la vista previa que Cloudflare comenta en el pull request.
 - En esta carpeta, usa `git -c core.autocrlf=true`: la copia se clonó en Windows y sus archivos tienen fin de línea CRLF.
 
