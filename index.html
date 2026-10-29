@@ -547,7 +547,7 @@ const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const DAYW={domingo:0,domingos:0,lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,sabados:6};
 const EVAL_KW={parcial:'parcial',parciales:'parcial',examen:'examen',examenes:'examen',tarea:'entrega',tareas:'entrega',proyecto:'entrega',monografia:'entrega',informe:'entrega',ensayo:'entrega',final:'final',finales:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',control:'control',quiz:'control',lab:'control',laboratorio:'control',entrega:'entrega',entrego:'entrega',entregar:'entrega',entregable:'entrega',exposicion:'exposicion',expongo:'exposicion',sustentacion:'exposicion',sustento:'exposicion'};
 const COMMIT_KW={trabajo:'trabajo',trabajar:'trabajo',trabajando:'trabajo',chamba:'trabajo',chambeo:'trabajo',turno:'trabajo',clase:'clase',clases:'clase',
-  traslado:'traslado',viaje:'traslado',bus:'traslado',combi:'traslado',micro:'traslado',metro:'traslado',metropolitano:'traslado',movilidad:'traslado',
+  traslado:'traslado',traslados:'traslado',demoro:'traslado',viaje:'traslado',bus:'traslado',combi:'traslado',micro:'traslado',metro:'traslado',metropolitano:'traslado',movilidad:'traslado',
   almuerzo:'comida',almorzar:'comida',desayuno:'comida',cena:'comida',cenar:'comida',lonche:'comida',comida:'comida',refrigerio:'comida',
   curso:'curso',cursos:'curso',taller:'curso',talleres:'curso',academia:'curso',ingles:'curso',idioma:'curso',idiomas:'curso',diplomado:'curso',cepre:'curso',
   frances:'curso',portugues:'curso',aleman:'curso',italiano:'curso',chino:'curso',japones:'curso',
@@ -705,7 +705,7 @@ function nombreEvento(toks,w){const i=toks.findIndex(t=>t.n===w);if(i<0)return c
   return cap(toks[i].o.toLowerCase()+(sig&&/^(medica|medico|familiar)$/.test(sig.n)?' '+sig.o.toLowerCase():''));}
 // "No tengo clases", "cancelaron mi clase", "hoy no voy a trabajar": ese compromiso no va ese día.
 const NO_VA=/\b(cancelaron|cancelo|suspendieron|suspendio|no hay|no tengo|no tendre|no voy a (?:ir|tener|trabajar)|no voy al?|no ire|no trabajo|no entro)\b/;
-const ESTUDIE=/\b(estudie|repase|avance|practique|adelante)\b/;
+const ESTUDIE=/\b(estudie|repase|avance|practique|adelante|le meti)\b/;
 function minutosDichos(ns){let m=ns.match(/\b(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hora|horas)\b(\s*y\s*media)?/);
   if(m)return Math.round(parseFloat(m[1].replace(',','.'))*60)+(m[2]?30:0);
   m=ns.match(/\b(\d+)\s*(?:min|mins|minuto|minutos)\b/);if(m)return +m[1];
@@ -713,7 +713,7 @@ function minutosDichos(ns){let m=ns.match(/\b(\d+(?:[.,]\d+)?)\s*(?:h|hr|hrs|hor
   if(/\bmedia hora\b/.test(ns))return 30;
   m=ns.match(/\b(una|un|dos|tres|cuatro|cinco)\s+horas?\b(\s+y\s+media)?/);if(m)return(m[1]==='un'?1:NUMW[m[1]])*60+(m[2]?30:0);
   return null;}
-function fechaPasada(ns,now){if(/\banteayer\b/.test(ns))return ymd(addDays(now,-2));if(/\bayer\b/.test(ns))return ymd(addDays(now,-1));
+function fechaPasada(ns,now){if(/\banteayer\b/.test(ns))return ymd(addDays(now,-2));if(/\b(ayer|anoche)\b/.test(ns))return ymd(addDays(now,-1));
   for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns))return ymd(addDays(now,-((now.getDay()-wd+7)%7)));
   return ymd(now);}
 // La evaluación que menciona la frase: por su nombre completo o por su primera palabra ("cálculo" → "Cálculo II").
@@ -879,7 +879,7 @@ function cualDeEstas(ids,toks,ns,d,state){const es=(ids||[]).map(id=>state.evals
 function interpret(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
-  if(/\b(que tengo|que me toca|mi agenda|como esta mi)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
+  if(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
   // Una evaluación que ya está y cambió o se canceló («me cambiaron el examen de cálculo al viernes»).
@@ -897,7 +897,12 @@ function interpret(text,state,now){
     const wd=fromYmd(date).getDay();
     // Clases, trabajo y traslados se buscan por su tipo; lo demás («no voy al gimnasio»), por su nombre y, si no aparece, por su tipo.
     const delDia=state.commitments.filter(c=>c.days.includes(wd)),porNombre=delDia.filter(c=>norm(c.name).includes(palabra));
-    const cs=porTipo?delDia.filter(c=>c.type===tipo):porNombre.length?porNombre:delDia.filter(c=>c.type===tipo);
+    // Una rutina nombrada por su nombre propio va primero («no hay clase de inglés» → Inglés, aunque su tipo no sea clase).
+    // No cuenta el nombre que es solo su tipo («Clases», «Trabajo»): esas se buscan por tipo, abajo.
+    const nombrada=delDia.filter(c=>norm(c.name).split(/[^a-z0-9]+/).some(w=>w.length>3&&COMMIT_KW[w]!==c.type&&new RegExp(`\\b${w}\\b`).test(ns)));
+    // «No voy a trabajar ni a clases»: todas las rutinas que nombra la frase.
+    const tipos=[...new Set(toks.filter(t=>COMMIT_KW[t.n]).map(t=>COMMIT_KW[t.n]))];
+    const cs=nombrada.length?nombrada:porTipo?delDia.filter(c=>tipos.includes(c.type)):porNombre.length?porNombre:delDia.filter(c=>c.type===tipo);
     if(!cs.length)return{intent:'aviso',texto:`${cap(fechaLarga(date))} no tienes ${cosa} en tu horario, así que no hay nada que liberar.`};
     const exs=cs.map(c=>({date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}));return{intent:'except',exs,ex:exs[0]};}
   const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|no voy a poder|no podre|no tengo tiempo)\b/;
@@ -936,9 +941,13 @@ function interpret(text,state,now){
   if(conFecha)items.forEach((i,k)=>{if(i.kind==='eval'&&!i.date)items[k]={...i,date:conFecha.date};});
   items.forEach((i,k)=>{if(i.kind!=='commit'||i.days.length)return;const d=items.find(x=>x.kind==='commit'&&x.name===i.name&&x.days.length);if(d)items[k]={...i,days:[...d.days]};});
   if(items.length)return continuarBorrador({intent:'add',items},state,now);
-  if(/\b(reorganiza|reprograma|arma|planifica|ordena)\b/.test(ns))return{intent:'replan'};
+  if(/\b(reorganiza|reorganizame|reprograma|reprogramame|arma|armame|rearma|rearmame|planifica|planificame|ordena|ordename)\b/.test(ns))return{intent:'replan'};
   return{intent:'help'};}
 // ---------- Lía con IA (docs/ia-con-gemini.md) ----------
+// Primero las reglas; la IA solo cuando las reglas no entienden. La evaluación del 29-oct mostró que la IA leía peor
+// 20 frases que las reglas ya entendían (74 % frente a 88 %). Así la IA solo suma: entiende lo que las reglas no,
+// responde al instante lo demás y gasta cupo solo cuando hace falta. La usan la app (handleText) y evaluar.mjs.
+function pideIA(r){return !r||r.intent==='help';}
 // Lo que se envía a la función lia-ia: fecha y hora con su zona, horas de dormir, horario fijo y evaluaciones
 // de las últimas dos semanas en adelante. Nunca el nombre ni el correo.
 function contextoIA(state,now){const off=-now.getTimezoneOffset(),a=Math.abs(off),desde=ymd(addDays(now,-14));
@@ -1758,8 +1767,9 @@ function handleText(q,from){q=q.trim();if(!q)return;
   if(b){const r=respuestaBorrador(b,q,state,n0);if(r){responder(q,from,r,n0);return;}}
   if(from==='chat'&&iaPosible()&&navigator.onLine!==false){
     if(ui.pensando){const i=document.getElementById('chat-in');if(i&&!i.value)i.value=q;anunciar('Espera un momento: Lía está respondiendo.');return;}
-    // Cambiar o quitar una evaluación lo resuelven las reglas: la IA todavía no lo sabe hacer y lo leería como una evaluación nueva.
-    const c=cambioDeEval(q,state,n0);if(c){responder(q,from,c,n0);return;}
+    // Primero las reglas (pideIA). Si entienden, responden al instante y sin gastar cupo; esto incluye cambiar o quitar
+    // una evaluación, que la IA todavía no sabe hacer y leería como una nueva.
+    const r0=interpret(q,state,n0);if(!pideIA(r0)){responder(q,from,r0,n0);return;}
     const el=iaEleccion();
     if(el===null){ui.iaPendiente=q;ui.sheet=sheetIA();render();return;}
     if(el==='si'){conIA(q);return;}}
