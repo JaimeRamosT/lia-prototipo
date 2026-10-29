@@ -1505,13 +1505,13 @@ function planCard(){const s=state.sub;
    <div class="row-h" style="flex-wrap:wrap">${act}<button class="btn sec sm" data-a="plans">Comparar planes</button></div>
    ${modoPruebas()?'<button class="linkbtn" style="color:var(--mute);text-align:left;font-weight:500" data-a="sub-expire">Pruebas: simular el fin del periodo</button>':''}</div>`;}
 // Modo pruebas (?pruebas=1): herramientas del equipo, como simular el fin del periodo. Se recuerda en este navegador; ?pruebas=0 lo apaga.
-// Lía con IA (?ia=1): bandera del equipo mientras se evalúa. Se recuerda en este navegador; ?ia=0 la apaga.
-function iaBandera(){try{const q=new URLSearchParams(location.search).get('ia');if(q==='1')localStorage.setItem('lia.ia.bandera','1');else if(q==='0')localStorage.removeItem('lia.ia.bandera');
-  return localStorage.getItem('lia.ia.bandera')==='1';}catch(e){return false;}}
+// Lía con IA: para toda cuenta Pro. La bandera del equipo (?ia=1) se quitó en 0.5.1: vivía en cada navegador y no llegaba
+// a la app instalada (en iPhone tiene su propio almacenamiento). Se borra lo que dejó guardado.
+try{localStorage.removeItem('lia.ia.bandera');}catch(e){}
 // Lo que eligió la persona en el aviso: 'si', 'no' o null si todavía no eligió.
 function iaEleccion(){try{const v=localStorage.getItem('lia.ia');return v==='si'||v==='no'?v:null;}catch(e){return null;}}
 function iaElegir(v){try{localStorage.setItem('lia.ia',v);}catch(e){}}
-function iaPosible(){return iaBandera()&&isPro()&&cuentasActivas();}
+function iaPosible(){return isPro()&&cuentasActivas();}
 function iaActiva(){return iaPosible()&&iaEleccion()==='si';}
 function iaCard(){if(!iaPosible())return '';const on=iaActiva(),r=ui.iaRestantes;
   return `<div class="card stack"><span class="eyebrow">Lía con IA</span>
@@ -2102,7 +2102,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.5.0';
+const APP_VERSION='0.5.1';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);

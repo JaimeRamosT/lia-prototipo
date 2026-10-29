@@ -61,7 +61,7 @@ Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al pr
 
 ## Lía con IA (en pruebas)
 
-Con una cuenta Pro, Lía puede entender los mensajes del chat con Gemini, la IA de Google. Mientras se evalúa, solo aparece si abres la app con `?ia=1`; se recuerda en ese navegador y `?ia=0` la vuelve a ocultar. El diseño completo está en [docs/ia-con-gemini.md](docs/ia-con-gemini.md).
+Con una cuenta Pro, Lía puede entender los mensajes del chat con Gemini, la IA de Google. Funciona en cualquier dispositivo, también en la app instalada. El diseño completo está en [docs/ia-con-gemini.md](docs/ia-con-gemini.md).
 
 - **Cómo funciona.** La app envía el mensaje a la Edge Function `lia-ia` de Supabase con la sesión de la cuenta. La función revisa el cupo, le pregunta a Gemini y devuelve una propuesta, que la app vuelve a revisar. Después, Lía la trata igual que una frase que entienden las reglas: Confirmar, Corregir, Deshacer y la autonomía de Perfil funcionan como siempre.
 - **Permiso.** Antes del primer uso, Lía explica qué envía (el mensaje y un resumen del horario, nunca el nombre ni el correo) y pide permiso. Se puede apagar en Perfil.
@@ -70,7 +70,7 @@ Con una cuenta Pro, Lía puede entender los mensajes del chat con Gemini, la IA 
 - **Nivel gratuito.** Por ahora se usa el nivel gratuito de Gemini, así que Google puede usar los mensajes para mejorar sus productos. El aviso lo dice.
 - **La clave.** `GEMINI_API_KEY` vive solo como secreto de las Edge Functions en Supabase. Nunca va en `config.js`, en el repositorio ni en un chat.
 
-**Evaluar con el modelo real.** Antes de quitar la bandera, y cada vez que cambien las instrucciones, el esquema o el modelo (`supabase/functions/lia-ia/`), pasa las frases de `pruebas/ia/frases.json` por Gemini. Usa tu clave de Google AI Studio (la misma que guardaste en Supabase). En PowerShell:
+**Evaluar con el modelo real.** Cada vez que cambien las instrucciones, el esquema o el modelo (`supabase/functions/lia-ia/`), pasa las frases de `pruebas/ia/frases.json` por Gemini. Usa tu clave de Google AI Studio (la misma que guardaste en Supabase). En PowerShell:
 
 ```
 $env:GEMINI_API_KEY="tu-clave"; node pruebas/ia/evaluar.mjs
