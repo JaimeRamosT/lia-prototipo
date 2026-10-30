@@ -109,7 +109,6 @@ h2{font-size:17px;margin:0;font-weight:600}
 .warn b{color:var(--exam-ink)}
 .night{background:var(--night);color:var(--night-ink);border-radius:16px;padding:14px 16px;display:flex;gap:12px;align-items:center}
 .night .sub{opacity:.75;font-size:13px}
-.demo{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--surface);border:1px dashed var(--pri);border-radius:14px;padding:10px 12px;font-size:13px}
 /* buttons */
 .btn{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;min-height:52px;border-radius:14px;font-weight:600;font-size:16px;padding:0 18px;width:100%}
 .btn.pri{background:var(--pri-fill);color:var(--pri-ink)}
@@ -1115,34 +1114,23 @@ const catEvento=l=>{for(const w of norm(l||'').split(/[^a-z0-9]+/)){if(CAT_EVENT
 // ---------- Estado ----------
 const KEY='lia.app.v1';
 const DEFAULT_SETTINGS={wake:'07:00',sleep:'23:00',maxDay:180,block:60,minBlock:30,autonomy:'auto',name:''};
-function exampleState(now){const t=ymd(now),d=n=>ymd(addDays(now,n));
-  const wkd=(min,skip)=>{let k=min;while([0,6].includes(addDays(now,k).getDay())||(skip&&skip.includes(ymd(addDays(now,k)))))k++;return ymd(addDays(now,k));};
-  const dA=wkd(2),dB=wkd(dayDiff(ymd(now),dA)+1),dC=wkd(dayDiff(ymd(now),dB)+3);
-  return{v:1,mode:'example',onboarded:true,settings:{...DEFAULT_SETTINGS,name:'Andrea'},
-    commitments:[
-      {id:'c1',name:'Clases en la U',type:'clase',days:[1,2,3,4,5],start:'08:00',end:'13:00'},
-      {id:'c2',name:'Almuerzo y traslado',type:'traslado',days:[1,2,3,4,5],start:'13:00',end:'14:00'},
-      {id:'c3',name:'Trabajo',type:'trabajo',days:[1,2,3,4,5],start:'15:00',end:'19:00'},
-      {id:'c4',name:'Trabajo',type:'trabajo',days:[6],start:'09:00',end:'13:00'},
-      {id:'c5',name:'Traslado a casa',type:'traslado',days:[1,2,3,4,5],start:'19:00',end:'19:45'}],
-    evals:[
-      {id:'e1',type:'parcial',course:'Cálculo II',date:dA,time:'09:00',hours:5},
-      {id:'e2',type:'entrega',course:'Proyecto Integrador',date:dB,time:'23:59',hours:4},
-      {id:'e3',type:'practica',course:'Física II',date:dC,time:'14:00',hours:3}],
-    done:[{id:'h1',evalId:'e1',date:d(-1),start:'20:00',min:90},{id:'h2',evalId:'e1',date:d(-2),start:'20:00',min:60}],
-    exceptions:[],
-    chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana. También puedes decirme cosas como “hoy salgo del trabajo a las 9”.'}]};}
 // completar: muestra «Completa tu semana» en Hoy hasta que la persona tenga rutinas, horas de sueño revisadas y una evaluación.
 // suenoListo:false solo en quien empieza desde cero; en datos de versiones anteriores no existe y cuenta como revisado.
 function emptyState(){return{v:1,mode:'own',onboarded:false,completar:true,settings:{...DEFAULT_SETTINGS,suenoListo:false},commitments:[],evals:[],done:[],exceptions:[],
   chat:[{from:'lia',text:'¡Hola! Soy Lía, tu secretaria. Dime tus horarios o tus exámenes y yo armo tu semana.'}]};}
 let state;let fresh=false;
 try{const raw=localStorage.getItem(KEY);state=raw?JSON.parse(raw):null;}catch(e){state=null;}
-if(!state||state.v!==1){state=exampleState(new Date());fresh=true;}
+if(!state||state.v!==1){state=emptyState();fresh=true;}
+// Hasta la 0.6.3 se podían mirar datos de ejemplo, y los datos propios esperaban aparte (lia.app.v1.mios).
+// Quien los estaba mirando vuelve a sus datos o, si no tenía, empieza desde la bienvenida. Su plan y su cuenta se quedan.
+{const KEY_MIOS=KEY+'.mios';
+  if(state.mode==='example'){let mios=null;try{mios=JSON.parse(localStorage.getItem(KEY_MIOS));}catch(e){}
+    const {sub,cuenta}=state;
+    if(mios&&mios.v===1&&mios.mode!=='example')state=mios;else{state=emptyState();fresh=true;}
+    if(sub)state.sub=sub;if(cuenta)state.cuenta=cuenta;
+    try{if(fresh)localStorage.removeItem(KEY);else localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  try{localStorage.removeItem(KEY_MIOS);}catch(e){}}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}if(typeof revisarDeshacer==='function')revisarDeshacer();}
-// Mientras se miran los datos de ejemplo, los datos propios esperan aquí para poder volver a ellos.
-const KEY_MIOS=KEY+'.mios';
-function tieneMios(){try{return !!localStorage.getItem(KEY_MIOS);}catch(e){return false;}}
 // Deshacer vuelve al estado de antes de la última acción. Solo vale mientras nada más cambió: si después se armó la
 // semana, se marcó estudio o se cambió otra cosa sin Deshacer propio, ese Deshacer viejo borraría también lo nuevo,
 // así que se retira (el aviso se cierra y el botón del chat desaparece).
@@ -1287,8 +1275,6 @@ function agendaHTML(date,P0){const it=[...agendaFor(state,P0,date),...huecosDia(
   const sleep=`<div class="ag"><span class="t tnum">${state.settings.sleep}</span><span class="blk k-dormir"><b>A dormir</b><small>${state.evals.some(e=>e.date===ymd(addDays(fromYmd(date),1)))?'Mañana tienes evaluación: descansa':'Sin amanecidas'}</small></span></div>`;
   if(!it.length)return `<div class="agenda"><div class="card muted small">Día libre: no hay rutinas ni estudio programado.</div>${sleep}</div>`;
   return `${resumenDiaHTML(date,P0)}<div class="agenda">${it.map(x=>x.kind==='hueco'?huecoHTML(x,date):rowHTML(x,date)).join('')}${sleep}</div>`;}
-function demoBanner(){if(state.mode!=='example')return '';const mios=tieneMios();
-  return `<div class="demo"><span>Estás viendo <b>datos de ejemplo</b>.</span><button class="pill solid" data-a="${mios?'own-restore':'start-own'}">${mios?'Volver a mis datos':'Usar mis horarios'}</button></div>`;}
 // Evaluaciones que van seguidas o el mismo día, contando solo las que todavía se pueden estudiar.
 function conflicts(){const n=now(),t=ymd(n),nm=n.getHours()*60+n.getMinutes(),S=state.settings;
   const ev=state.evals.filter(e=>{const dl=evalDeadline(e,S);return dl.date>t||(dl.date===t&&dl.end>nm);}).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const out=[];
@@ -1303,8 +1289,7 @@ function vWelcome(){return `<section class="welcome">
    <div class="blk k-estudio"><b>Estudiar Cálculo II</b><small>20:00 – 21:00 · en tu hora libre</small></div></div>
   <h1>Estudia en las horas que de verdad tienes libres.</h1>
   <p style="margin:0;opacity:.85">Para universitarios que estudian y trabajan: cada semana Lía te arma un horario para estudiar en tus horas libres, para que no te amanezcas antes de cada examen.</p>
-  <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button>
-  <button class="btn ghostw" data-a="see-example">Ver con datos de ejemplo</button></div>
+  <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button></div>
   <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este teléfono.</p></section>`;}
 
 function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
@@ -1441,7 +1426,7 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),c
   const cf=conflicts()[0];let cfH='';
   if(cf){const mismo=cf[0].date===cf[1].date,cfPend=cf.some(e=>pend.some(x=>x.e.id===e.id));
     cfH=`<div class="${cfPend?'warn':'note'}"><span class="ico" style="color:var(${cfPend?'--exam-ink':'--pri'})">${cfPend?I.alert:I.cal}</span><div class="small"><b>${mismo?`Tienes dos evaluaciones el ${fechaCorta(cf[0].date)}`:`Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}`}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van ${mismo?'el mismo día':'seguidos'}. ${cfPend?'Aún les falta tiempo de estudio.':'Ya repartí sus horas de estudio en tu horario.'}</div></div>`;}
-  return `${demoBanner()}<div class="between" style="align-items:flex-end"><div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${botonAgregar()}</div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${sugerenciaHTML()}${freeBanner()}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
+  return `<div class="between" style="align-items:flex-end"><div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${botonAgregar()}</div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${sugerenciaHTML()}${freeBanner()}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
 function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
@@ -1457,7 +1442,7 @@ function sugerenciaHTML(){const x=sugerenciaTipo();if(!x)return '';
 function alDiaSiNoChoca(fresco){const f=state.frozen;if(fresco&&f&&!isPro()&&!bloquesQueChocan(state,f,now()).length){f.sig=planSig();save();}}
 function sinMoverHoras(fn){const f=state.frozen,fresco=!!f&&!planStale();fn();if(fresco)f.sig=planSig();save();}
 // En iPhone sin instalar, Safari puede borrar los datos de LIA tras 7 días sin abrirla: se avisa una vez, en Hoy.
-function avisoIOS(){if(state.mode==='example'||!isIOS()||isStandalone())return '';try{if(localStorage.getItem('lia.avisoIOS'))return '';}catch(e){return '';}
+function avisoIOS(){if(!isIOS()||isStandalone())return '';try{if(localStorage.getItem('lia.avisoIOS'))return '';}catch(e){return '';}
   return `<div class="note"><span class="ico" style="color:var(--pri)">${I.alert}</span><div class="grow small"><b>Instala LIA para no perder tus datos</b><br>En iPhone, si no la instalas, Safari puede borrar tus datos cuando pasas 7 días sin abrirla. Toca <strong>Compartir</strong> y luego <strong>Agregar a inicio</strong>.<div style="margin-top:8px"><button class="pill ghost" data-a="aviso-ios-ok">Entendido</button></div></div></div>`;}
 
 // «Agregar»: el mismo menú (rutina, algo de un solo día o evaluación) en Hoy y en el día elegido de Semana.
@@ -1471,7 +1456,7 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
   const selStudy=p.blocks.filter(b=>b.date===ui.sel).reduce((x,b)=>x+b.e-b.s,0);
   const d0=fromYmd(days[0]),d6=fromYmd(days[6]);  // «26 de octubre – 1 de noviembre» si la semana cruza de mes
   const range=d0.getMonth()===d6.getMonth()?`${d0.getDate()} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`:`${d0.getDate()} de ${MESES[d0.getMonth()]} – ${d6.getDate()} de ${MESES[d6.getMonth()]}`;
-  return `${demoBanner()}<div class="between"><div><div class="kicker">${range}</div><h1>Tu semana</h1></div><div class="row-h"><button class="pill ghost" data-a="wk" data-v="-1" aria-label="Semana anterior">${I.back.replace('<svg','<svg width="16" height="16"')}</button><button class="pill ghost" data-a="wk" data-v="1" aria-label="Semana siguiente">${I.next.replace('<svg','<svg width="16" height="16"')}</button></div></div>
+  return `<div class="between"><div><div class="kicker">${range}</div><h1>Tu semana</h1></div><div class="row-h"><button class="pill ghost" data-a="wk" data-v="-1" aria-label="Semana anterior">${I.back.replace('<svg','<svg width="16" height="16"')}</button><button class="pill ghost" data-a="wk" data-v="1" aria-label="Semana siguiente">${I.next.replace('<svg','<svg width="16" height="16"')}</button></div></div>
   ${freeWeekLine()}<div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
     const que=hasE&&hasS?', con evaluación y estudio':hasE?', con evaluación':hasS?', con estudio':'';
     return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}" aria-label="${cap(DIAS[dt.getDay()])} ${dt.getDate()}${d===t?', hoy':''}${que}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
@@ -1480,7 +1465,7 @@ function vSemana(){const n=now(),t=ymd(n),p=P();
   ${agendaHTML(ui.sel,p)}`;}
 
 function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const past=state.evals.filter(e=>e.date<t);
-  return `${demoBanner()}<div><div class="kicker">Exámenes y entregas</div><h1>Evaluaciones</h1></div>
+  return `<div><div class="kicker">Exámenes y entregas</div><h1>Evaluaciones</h1></div>
   ${dictar('eval','“entrego el informe el viernes”')}
   <div class="stack">${up.map(evalItem).join('')||'<div class="card muted small">No tienes evaluaciones próximas.</div>'}
   <button class="dashed" data-a="add-eval">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar evaluación</span></button></div>
@@ -1514,7 +1499,7 @@ function pendingHTML(){const pe=ui.pending;
 
 function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter(e=>e.date>=ymd(now())&&!p.unmet[e.id]&&!(p.unplanned&&p.unplanned[e.id])).length,up=state.evals.filter(e=>e.date>=ymd(now())).length;
   const studied=state.done.reduce((a,x)=>a+x.min,0);
-  return `${demoBanner()}<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · ${isPro()?'LIA Pro':'LIA Gratis'}</div></div></div>
+  return `<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · ${isPro()?'LIA Pro':'LIA Gratis'}</div></div></div>
   <div class="stats"><div class="card stat"><b class="tnum">${covered}/${up}</b><span>evaluaciones con tiempo de estudio completo</span></div><div class="card stat"><b class="tnum">${hrs(studied)}</b><span>estudiadas con LIA</span></div></div>
   ${planCard()}${cuentaCard()}${avisosCard()}${iaCard()}
   <div class="between"><h2 class="eyebrow" style="margin:0">Tus rutinas</h2><button class="pill" data-a="add-commit" aria-label="Agregar una rutina">${I.plus.replace('<svg','<svg width="14" height="14" aria-hidden="true"')} Agregar</button></div>
@@ -1531,7 +1516,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   </div>
   <span class="eyebrow">Tus datos</span>
   ${installCard()}
-  <div class="stack">${state.mode==='example'?(tieneMios()?'<button class="btn pri" data-a="own-restore">Volver a mis datos</button>':'<button class="btn pri" data-a="start-own">Usar mis horarios</button>'):'<button class="btn sec" data-a="see-example">Ver datos de ejemplo</button>'}<button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
+  <div class="stack"><button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
   <p class="small muted" style="margin:0;text-align:center">LIA ${APP_VERSION} · prototipo de prueba</p>`;}
 
 // ---------- Hojas (formularios) ----------
@@ -1653,7 +1638,6 @@ function sheetPerdidos(){const l=P().perdidos||[];
   <form data-form="perdidos" class="stack">${l.map(b=>{const e=evById(b.evalId);return `<label class="opt"><input type="checkbox" name="b" value="${esc(claveBloque(b))}"><span class="grow"><b>${esc(e?e.course:'')}</b><br><span class="small muted tnum">${cap(fechaCorta(b.date))} · ${fmt(b.s)} – ${fmt(b.e)}</span></span></label>`;}).join('')}
   <button class="btn pri" type="submit">Guardar</button></form><button class="btn sec" data-a="close">Ahora no</button>`;}
 function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus rutinas, evaluaciones y sesiones de este teléfono. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
-function sheetOwn(){return `<div class="grab"></div><h2>Empezar con tus horarios</h2><p class="muted" style="margin:0">Vamos a quitar los datos de ejemplo y registrar tu semana real. Toma 2 minutos.</p><button class="btn pri" data-a="own-go">Empezar</button><button class="btn sec" data-a="close">Seguir viendo el ejemplo</button>`;}
 
 // ---------- Planes y pago (modo demo) ----------
 const WHY={
@@ -1775,7 +1759,7 @@ async function desactivarAvisos(){const l=avisosLocal();guardarAvisosLocal(null)
   rerenderKeepScroll();toast('Listo: ya no recibirás avisos en este teléfono.');}
 // Programa los avisos de los próximos 8 días: los textos, en este teléfono; hora, tipo y referencia, en Supabase.
 // Solo se envía si algo cambió desde la última vez. Sin internet, queda para la próxima.
-async function programarAvisos(forzar){if(!avisosActivos()||state.mode==='example')return;
+async function programarAvisos(forzar){if(!avisosActivos())return;
   const lista=avisosDe(state,P(),now(),state.settings.avisos),firma=JSON.stringify(lista.map(a=>[a.cuando,a.tipo,a.ref,a.titulo,a.cuerpo]));
   let previa=null;try{previa=localStorage.getItem(KEY_AVISOS_FIRMA);}catch(e){}
   if(!forzar&&firma===previa)return;
@@ -1792,7 +1776,7 @@ async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
     toast(d&&d.ok?'Te envié un aviso de prueba: debería llegar en unos segundos.':d&&d.error==='sin_dispositivos'?'Este teléfono ya no está registrado. Desactiva y vuelve a activar los recordatorios.':d&&d.error==='solo_pro'?'Los recordatorios en el teléfono son parte de LIA Pro.':'No pude enviar el aviso de prueba. Inténtalo otra vez en un rato.');}
   catch(e){toast(mensajeError(e));}
   finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
-function avisosCard(){if(!cuentasActivas()||state.mode==='example')return '';const titulo='<span class="eyebrow">Recordatorios en tu teléfono</span>';
+function avisosCard(){if(!cuentasActivas())return '';const titulo='<span class="eyebrow">Recordatorios en tu teléfono</span>';
   if(!isPro())return `<div class="card stack"><div class="between">${titulo}<span class="pro" aria-hidden="true">PRO</span></div>
    <div class="small muted">Con LIA Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.</div>
    <button class="btn sec sm" data-a="paywall" data-why="avisos">Ver LIA Pro</button></div>`;
@@ -2068,16 +2052,7 @@ function aplicarCambio(exs,{quitar}={}){const p0=P(),fresco=!!state.frozen&&!pla
 
 const A={
  tab:d=>{ui.tab=d.t;ui.sheet=null;render();document.getElementById('view').scrollTop=0;},
- 'see-example':()=>{const propios=state.mode==='own'&&(state.commitments.length||state.evals.length||state.done.length);
-   if(propios){try{localStorage.setItem(KEY_MIOS,JSON.stringify(state));}catch(e){toast('No pude guardar tus datos aparte, así que no cambié nada.');return;}}
-   const sub=state.sub,cuenta=state.cuenta;state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;undoStack=null;ensureState();save();ui.welcome=false;ui.tab='hoy';ui.sheet=null;render();
-   if(propios)toast('Guardé tus datos. Para volver a ellos, toca «Volver a mis datos».');},
- 'own-restore':()=>{let mios=null;try{mios=JSON.parse(localStorage.getItem(KEY_MIOS));}catch(e){}
-   if(!mios||mios.v!==1){try{localStorage.removeItem(KEY_MIOS);}catch(e){}A['start-own']();return;}
-   const sub=state.sub,cuenta=state.cuenta;state=mios;state.sub=sub||freeSub();state.cuenta=cuenta||null;undoStack=null;ensureState();save();try{localStorage.removeItem(KEY_MIOS);}catch(e){}
-   ui.welcome=false;ui.ob=state.onboarded?0:1;ui.tab='hoy';ui.sheet=null;render();toast('Volviste a tus datos.');},
- 'start-own':()=>{if(state.mode==='example'&&!ui.welcome){ui.sheet=sheetOwn();render();return;}A['own-go']();},
- 'own-go':()=>{const sub=state.sub,cuenta=state.cuenta;state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
+ 'start-own':()=>{const sub=state.sub,cuenta=state.cuenta;state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
  'ob-back':()=>{if(ui.ob<=1){ui.welcome=true;}else ui.ob--;render();},
  // Quien pasa el paso 1 con sus rutinas ya vio sus horas de sueño; quien lo salta las revisa después en «Completa tu semana».
  // Al pasar de paso en el registro, el Deshacer del paso anterior ya no aplica a la pantalla nueva.
@@ -2183,7 +2158,7 @@ const A={
  close:()=>{ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();},  // al cerrar no se guarda la contraseña escrita
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
- reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(KEY_MIOS);}catch(e){}state=exampleState(now());state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
+ reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
  'aviso-ios-ok':()=>{try{localStorage.setItem('lia.avisoIOS','1');}catch(e){}rerenderKeepScroll();},
  'listen-stop':()=>{stopMic(true);},
