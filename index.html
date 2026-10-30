@@ -622,6 +622,18 @@ function parseDate(ns,now){
   m=ns.match(/\bel (\d{1,2})\b(?!\s*(?::|am|pm|h\b|horas))/);
   if(m)return diaDelMes(+m[1],now);
   return null;}
+// La fecha de algo de un solo día: hoy, mañana, pasado mañana, una fecha con número («el 5 de noviembre», «el lunes 9»,
+// «el 12»), o null si la frase habla de días de la semana («los lunes», «de lunes a viernes») o no dice el día.
+function unSoloDia(ns,now){const ns2=ns.replace(/\b(?:en|por|de|a) (?:la|las) mananas?\b/g,' ');
+  if(/\b(los|todos|cada|diario|semana)\b/.test(ns2))return null;
+  if(/\b(entro|salgo|llego|recien|empiezo|termino|cambiaron)\b/.test(ns2))return null;  // cambia el horario de siempre: no es algo nuevo
+  const rel=/\b(hoy|manana|pasado manana)\b/.test(ns2),num=/\b\d{1,2} de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\b\d{1,2}\s*\/\s*\d{1,2}\b|\bel \d{1,2}\b(?!\s*(?::|am|pm|h\b|horas))/.test(ns2);
+  const wdNum=/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}\b(?!\s*(?::|am\b|pm\b|h\b|hrs?\b|horas?\b|de la\b|del\b|-|a\s+\d|hasta\b))/.test(ns2);
+  if(!rel&&!num&&!wdNum)return null;if(!rel&&!wdNum&&parseDays(ns2).length)return null;
+  return parseDate(ns,now);}
+// El fin de algo que empieza a cierta hora: «hasta las 6», «a las 6» o «6 pm», siempre después del inicio (12 h como máximo).
+function finDespues(inicio,tm){const s0=toMin(inicio);const cands=tm.crudo?horasPosibles(...tm.crudo):tm.until!=null?[tm.until]:tm.at!=null?[tm.at]:[];
+  const ok=cands.flatMap(v=>[v,v+1440]).filter(v=>v>s0&&v-s0<=720).sort((a,b)=>a-b);return ok.length?fmt(ok[0]):null;}
 // «El 9»: el día 9 de este mes o, si ya pasó, del siguiente.
 function diaDelMes(d,now){let dt=new Date(now.getFullYear(),now.getMonth(),d);if(dt<addDays(now,-1))dt=new Date(now.getFullYear(),now.getMonth()+1,d);return ymd(dt);}
 // «El lunes 9»: el próximo día 9 que cae lunes (de hoy en adelante, hasta 3 meses). Si ninguno cae lunes,
@@ -808,7 +820,7 @@ const minus=s=>s.charAt(0).toLowerCase()+s.slice(1);
 // «tu examen de Inglés», «tu informe de Química» (una entrega con nombre propio ya lo dice).
 function nombreEval(it){const t=EVAL_TYPES[it.type]||EVAL_TYPES.parcial,propio=it.type==='entrega'&&/^(tareas?|proyecto|monografia|informe|ensayo|trabajo)\b/.test(norm(it.course||''));
   return `tu ${propio?minus(it.course):t.label.toLowerCase()+(it.course?' de '+it.course:'')}`;}
-const conArticulo=s=>`${/^(cita|reunion|fiesta|boda|consulta|entrevista)\b/.test(norm(s))?'la':'el'} ${minus(s)}`;
+const conArticulo=s=>`${/^(cita|reunion|fiesta|boda|consulta|entrevista|clase|practica|chamba)\b/.test(norm(s))?'la':'el'} ${minus(s)}`;
 // «de hoy», «de mañana», «del sábado» (esta semana) o «del jue 5 nov».
 function delDia(f,now){const k=dayDiff(ymd(now),f);return k===0?'de hoy':k===1?'de mañana':k>1&&k<7?`del ${DIAS[fromYmd(f).getDay()]}`:`del ${fechaCorta(f)}`;}
 const otra=(t,ph)=>({t,otra:true,ph});
@@ -831,6 +843,8 @@ function preguntaPara(it,falta,state,now){
     return{texto:`¿De qué hora a qué hora tienes ${n}?`,opciones:[...franja(FRANJA_RUTINA,[['manana','Mañana'],['tarde','Tarde'],['noche','Noche']]),otra('Otra hora','Escribe el horario, por ejemplo: de 4 a 8 de la noche')]};}
   if(it.kind==='evento'){const n=conArticulo(it.label||'Evento');
     if(falta==='fecha')return{texto:`¿Qué día es ${n}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha, por ejemplo: el sábado')]};
+    if(it.start&&!it.end){const s0=toMin(it.start);
+      return{texto:`Anoto ${n} ${delDia(it.date,now)} a las ${it.start}. ¿Hasta qué hora es?`,opciones:[60,120,180].map(m=>({t:`Hasta las ${fmt(s0+m)}`,set:{end:fmt(s0+m)}})).concat(otra('Otra hora','Escribe la hora, por ejemplo: hasta las 8 de la noche'))};}
     return{texto:`Anoto ${n} ${delDia(it.date,now)}. ¿De qué hora a qué hora es?`,opciones:[...franja(FRANJA_EVENTO,[['tarde','Tarde'],['noche','Noche']]),otra('Otra hora','Escribe el horario, por ejemplo: de 4 a 8 de la noche')]};}
   if(falta==='evaluacion'){const t=ymd(now),pr=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,3);
     return{texto:'¿Para qué evaluación estudiaste?',opciones:pr.map(e=>({t:`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label} de ${e.course}`,set:{evalId:e.id,course:e.course}}))};}
@@ -857,6 +871,7 @@ function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falt
     const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=c;}
   else if(falta==='fecha'){if(d)p.date=d;else if(p.kind==='cambio'&&hora!=null)p.time=fmt(hora);else return null;}  // a una evaluación que cambió le basta la hora
   else if(falta==='hora'){const h=hora!=null?hora:p.type==='entrega'&&/\bmedianoche\b/.test(ns)?1439:null;if(h==null)return null;p.time=fmt(h);}
+  else if(falta==='horario'&&p.kind==='evento'&&p.start&&!tm.range){const fin=finDespues(p.start,tm);if(fin==null)return null;p.end=fin;}
   else if(falta==='horario'){if(!rango)return null;p.start=fmt(rango[0]);p.end=fmt(rango[1]);}
   else if(falta==='dias'){const ds=parseDays(ns);if(!ds.length)return null;p.days=ds;}
   else if(falta==='evaluacion'&&p.kind==='cambio'){const e=cualDeEstas(p.cands,toks,ns,d,state);if(!e)return null;Object.assign(p,{evalId:e.id,type:e.type,course:e.course});}
@@ -933,6 +948,17 @@ function interpret(text,state,now){
     if(ev)return continuarBorrador({intent:'except',items:[{kind:'evento',date,start:s!=null&&e>s?fmt(s):'',end:s!=null&&e>s?fmt(e):'',label,cat:CAT_EVENTO[ev[1]]||'otro'}]},state,now);
     if(!(e>s))return{intent:'help'};
     const ex={date,start:fmt(s),end:fmt(e),label};return{intent:'except',exs:[ex],ex};}  // si e pasa de 1440, termina al día siguiente
+  // «Mañana tengo clase a las 4», «el 5 de noviembre tengo taller de 3 a 5»: una rutina con un día concreto (y sin
+  // días de la semana como «los lunes») es algo de un solo día, no una rutina semanal.
+  const unDia=!hasEval&&iC>=0&&unSoloDia(ns,now);
+  if(unDia){const tipo=COMMIT_KW[toks[iC].n],tm=parseTimes(ns),wd=fromYmd(unDia).getDay();
+    const label=tipo==='clase'?'Clase':tipo==='trabajo'?'Trabajo':nombreRutina(toks,iC,tipo);
+    let s0=tm.range?tm.range[0]:tm.at!=null?tm.at:null,e0=tm.range?tm.range[1]:null;
+    if(s0==null&&tm.part)[s0,e0]=FRANJA_EVENTO[tm.part];
+    // Si ya está en su horario de ese día (la clase de siempre), no hay nada que anotar.
+    const ya=s0!=null&&state.commitments.find(c=>c.type===tipo&&c.days.includes(wd)&&(r=>s0>=r.s&&s0<r.e)(intervalo(c.start,c.end)));
+    if(ya)return{intent:'aviso',texto:`${cap(fechaLarga(unDia))} ya tienes ${ya.name} de ${ya.start} a ${ya.end} en tu horario.`};
+    return continuarBorrador({intent:'except',items:[{kind:'evento',date:unDia,start:s0!=null?fmt(s0):'',end:e0!=null?fmt(e0):'',label,cat:tipoRutina(tipo)}]},state,now);}
   const clauses=splitClauses(toks);let prev=null;const items=[];
   for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
   // Varias evaluaciones en una frase comparten la fecha si solo una la dice; los horarios de una misma rutina, sus días
