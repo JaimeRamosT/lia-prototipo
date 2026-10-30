@@ -61,6 +61,9 @@
     { "id": "agenda-02", "frase": "¿qué me toca mañana?", "espera": { "intent": "agenda", "date": "2026-10-27" } },
     { "id": "agenda-03", "frase": "¿cómo está mi día hoy?", "espera": { "intent": "agenda", "date": "2026-10-26" } },
     { "id": "agenda-04", "frase": "¿estoy libre el domingo?", "espera": { "intent": "agenda", "date": "2026-11-01" } },
+    { "id": "agenda-05", "frase": "recuérdame si tengo algo mañana", "espera": { "intent": "agenda", "date": "2026-10-27" } },
+    { "id": "agenda-06", "frase": "y para el domingo tengo algo", "espera": { "intent": "agenda", "date": "2026-11-01" } },
+    { "id": "fecha-rel-01", "frase": "el lunes dentro de 3 semanas tengo parcial de física a las 10", "espera": { "intent": "add", "items": [{ "kind": "eval", "type": "parcial", "course": "Física", "date": "2026-11-16", "time": "10:00" }] } },
 
     { "id": "avance-01", "frase": "¿cuánto me falta para el parcial de cálculo?", "espera": { "intent": "progress" } },
     { "id": "avance-02", "frase": "¿cómo voy con mis estudios?", "espera": { "intent": "progress" } },
