@@ -920,6 +920,18 @@ function cualDeEstas(ids,toks,ns,d,state){const es=(ids||[]).map(id=>state.evals
   for(const f of [e=>d&&e.date===d,e=>tipos.has(e.type),nombra]){const c=es.filter(f);if(c.length===1)return c[0];}
   return null;}
 // Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'pregunta',texto,opciones,borrador}, {intent:'help'}…
+// «Recuérdame si tengo algo mañana», «y para el domingo tengo algo», «¿estoy ocupado el sábado?»: pregunta por la agenda.
+// Sin signo de pregunta y con hora («mañana tengo algo de 3 a 5») cuenta algo, no pregunta; «estoy ocupado el sábado»
+// sin signo de pregunta marca el día como ocupado. «Algo pendiente esta semana» no es un día: lo ve la IA.
+function preguntaAgenda(text,ns){const preg=/[¿?]/.test(text);
+  const algo=/\b(tengo|hay|habra|tendre|tenemos)\s+algo\b|\balgo\s+(que hacer|pendiente)\b|\brecuerdame\s+(si|que|lo que)\b|\bque hay\s+(para|el|este|esta|hoy|manana|pasado)\b/.test(ns);
+  // Con signo de pregunta: «¿estoy ocupado el sábado?», «¿tengo clase mañana?», «¿y para el domingo?».
+  const ocupado=preg&&(/\b(estoy|estare|ando)\s+(ocupad[oa]|libre)\b/.test(ns)||/^(y\s+)?(tengo|hay|habra|tendre|me toca)\b/.test(ns)
+    ||/^y\s+(para\s+)?(el\s+)?(hoy|manana|pasado manana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s*$/.test(ns.trim()));
+  if(!algo&&!ocupado)return false;
+  if(/\bsemana\b/.test(ns)&&!/\b(dentro de|en|faltan?)\s+\S+\s+semanas?\b/.test(ns)&&!Object.keys(DAYW).some(w=>new RegExp(`\\b${w}\\b`).test(ns)))return false;
+  if(!preg){const tm=parseTimes(ns);if(tm.range||tm.at!=null)return false;}
+  return true;}
 // Lee una frase. Si dice «la próxima semana» sin el día, la pregunta por la fecha ofrece los días de esa semana.
 function interpret(text,state,now){const r=interpretFrase(text,state,now);
   const n=r.intent==='pregunta'&&r.borrador&&semanaSinDia(tokenize(text).map(t=>t.n).join(' '));
@@ -929,7 +941,9 @@ function interpret(text,state,now){const r=interpretFrase(text,state,now);
 function interpretFrase(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
-  if(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
+  // «Recuérdame que tengo examen de cálculo el viernes» cuenta algo nuevo: no es una pregunta por la agenda.
+  const cuenta=!/[¿?]/.test(text)&&toks.some(t=>EVAL_KW[t.n]||COMMIT_KW[t.n]||ENTREGA_N.has(t.n))&&!/\b(mi agenda|como esta mi|estoy libre|tengo libre)\b/.test(ns);
+  if(!cuenta&&(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)||preguntaAgenda(text,ns))){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
   // Una evaluación que ya está y cambió o se canceló («me cambiaron el examen de cálculo al viernes»).
@@ -2420,7 +2434,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.2';
+const APP_VERSION='0.6.3';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
