@@ -1030,13 +1030,21 @@ function emptyState(){return{v:1,mode:'own',onboarded:false,completar:true,setti
 let state;let fresh=false;
 try{const raw=localStorage.getItem(KEY);state=raw?JSON.parse(raw):null;}catch(e){state=null;}
 if(!state||state.v!==1){state=exampleState(new Date());fresh=true;}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}if(typeof revisarDeshacer==='function')revisarDeshacer();}
 // Mientras se miran los datos de ejemplo, los datos propios esperan aquí para poder volver a ellos.
 const KEY_MIOS=KEY+'.mios';
 function tieneMios(){try{return !!localStorage.getItem(KEY_MIOS);}catch(e){return false;}}
-let undoStack=null;
-function snapshot(){undoStack=JSON.stringify(state);}
-function undo(){if(!undoStack)return;const sub=state.sub,cuenta=state.cuenta;state=JSON.parse(undoStack);if(sub)state.sub=sub;state.cuenta=cuenta||null;undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
+// Deshacer vuelve al estado de antes de la última acción. Solo vale mientras nada más cambió: si después se armó la
+// semana, se marcó estudio o se cambió otra cosa sin Deshacer propio, ese Deshacer viejo borraría también lo nuevo,
+// así que se retira (el aviso se cierra y el botón del chat desaparece).
+let undoStack=null,undoTras=null;
+const claveDeshacer=()=>JSON.stringify([state.evals,state.commitments,state.exceptions,state.done,state.frozen,state.settings]);
+function snapshot(){undoStack=JSON.stringify(state);undoTras=null;quitarAvisoDeshacer();}
+// El estado justo después de la acción que se puede deshacer (lo anotan los avisos y mensajes con Deshacer).
+function marcarDeshacer(){if(undoStack)undoTras=claveDeshacer();}
+function revisarDeshacer(){if(undoStack&&undoTras&&claveDeshacer()!==undoTras){undoStack=null;undoTras=null;quitarAvisoDeshacer();}}
+function quitarAvisoDeshacer(){const b=document.getElementById('toastbox');if(b&&b.querySelector('[data-a="undo"]')){clearTimeout(toastT);b.innerHTML='';}}
+function undo(){if(!undoStack)return;undoTras=null;const sub=state.sub,cuenta=state.cuenta;state=JSON.parse(undoStack);if(sub)state.sub=sub;state.cuenta=cuenta||null;undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
 
 const ui={tab:'hoy',welcome:fresh,ob:0,weekOffset:0,sel:null,sheet:null,session:null,listen:null,pending:null,pay:null,blockedItems:null,pensando:false,iaPendiente:null,iaRestantes:null};
 
@@ -1715,7 +1723,7 @@ let toastT;
 // duran según lo que dicen y no se cierran mientras tienen el foco (para alcanzar «Deshacer» con el teclado).
 // Si el aviso ya estaba abajo y se abre una hoja, sube con ella (dibujar() lo reubica).
 function avisoArriba(){return!!(ui.sheet||ui.welcome||!state.onboarded||ui.session||ui.listen);}
-function toast(msg,withUndo){const b=document.getElementById('toastbox');
+function toast(msg,withUndo){const b=document.getElementById('toastbox');if(withUndo)marcarDeshacer();
   b.innerHTML=`<div class="toast${avisoArriba()?' arriba':''}"><span style="flex:1">${esc(msg)}</span>${withUndo?'<button data-a="undo">Deshacer</button>':''}</div>`;
   const ms=Math.min(10000,Math.max(withUndo?7000:4000,String(msg).length*65));clearTimeout(toastT);
   const cerrar=()=>{if(b.contains(document.activeElement)){toastT=setTimeout(cerrar,1500);return;}b.innerHTML='';};toastT=setTimeout(cerrar,ms);}
@@ -1749,7 +1757,7 @@ function agendadoPara(ids){const p=P(),min=p.blocks.filter(b=>ids.includes(b.eva
 // Lo que dice Lía después de agregar evaluaciones: lo que agendó y lo que no encontró.
 function textoAgendado(ids){if(!ids.length)return '';const{min,falta}=agendadoPara(ids);if(!min&&!falta)return '';
   return min&&falta?` Agendé ${hrs(min)} de estudio; ${faltaTxt(falta)} sin hueco libre.`:min?` Agendé ${hrs(min)} de estudio en tus horas libres.`:` Todavía no encontré horas libres para estudiar: ${faltaTxt(falta)}.`;}
-function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});save();anunciar(`Lía: ${text}`);}
+function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});if(opts.undo)marcarDeshacer();save();anunciar(`Lía: ${text}`);}
 // Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
 function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
 function handleText(q,from){q=q.trim();if(!q)return;
@@ -1767,6 +1775,11 @@ function handleText(q,from){q=q.trim();if(!q)return;
 // Responde una intención (de las reglas o de la IA). Con eco:false, el mensaje de la persona ya está en el chat.
 function responder(q,from,r,n,{eco=true}={}){
   if(from==='chat'&&eco)state.chat.push({from:'me',text:q});
+  // En Gratis, sin cupo para otra evaluación, avisa del límite antes de preguntar lo que falta (no tiene sentido
+  // pedir la hora de algo que no se va a poder guardar). Una evaluación sin fecha todavía cuenta como próxima.
+  if(r.intent==='pregunta'&&r.borrador&&r.borrador.intent==='add'){const t=ymd(n),nuevas=r.borrador.items.filter(i=>i.kind==='eval'&&(!i.date||i.date>=t)).length;
+    if(nuevas&&nuevas>evalRoom()){state.borrador=null;ui.pending=null;ui.blockedItems=null;
+      if(from==='chat'){liaSay(limitMsg(),{cta:'evals'});render();}else{save();openPaywall('evals');}return;}}
   // Falta un dato: Lía lo pregunta y guarda lo entendido. En el chat, con respuestas rápidas.
   if(r.intent==='pregunta'){state.borrador={intent:r.borrador.intent,items:r.borrador.items,i:r.borrador.i,at:n.getTime()};ui.pending=null;  // la pregunta reemplaza una propuesta sin confirmar
     if(from==='chat'){liaSay(r.texto,{opciones:r.opciones||[]});render();}else{save();toast(r.texto);}return;}
@@ -1885,7 +1898,8 @@ const A={
  'own-go':()=>{const sub=state.sub,cuenta=state.cuenta;state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;state.frozen=null;save();ui.welcome=false;ui.ob=1;ui.sheet=null;render();},
  'ob-back':()=>{if(ui.ob<=1){ui.welcome=true;}else ui.ob--;render();},
  // Quien pasa el paso 1 con sus rutinas ya vio sus horas de sueño; quien lo salta las revisa después en «Completa tu semana».
- 'ob-next':d=>{if(ui.ob===1&&d.v!=='saltar'&&state.settings.suenoListo===false){state.settings.suenoListo=true;save();}ui.ob++;render();document.getElementById('view').scrollTop=0;},
+ // Al pasar de paso en el registro, el Deshacer del paso anterior ya no aplica a la pantalla nueva.
+ 'ob-next':d=>{undoStack=null;undoTras=null;quitarAvisoDeshacer();if(ui.ob===1&&d.v!=='saltar'&&state.settings.suenoListo===false){state.settings.suenoListo=true;save();}ui.ob++;render();document.getElementById('view').scrollTop=0;},
  'ob-finish':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='semana';ui.sel=null;render();},
  // Registro sin evaluaciones: se termina en Hoy, donde «Completa tu semana» muestra lo que falta.
  'ob-saltar':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
@@ -2234,7 +2248,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.5.3';
+const APP_VERSION='0.5.4';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
