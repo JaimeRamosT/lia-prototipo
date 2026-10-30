@@ -3,7 +3,7 @@
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
 // El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.5.5';
+const VERSION = '0.6.0';
 const CACHE = `lia-${VERSION}`;
 // La app se guarda y se pide por la raíz del sitio ('./'), no por './index.html': en Cloudflare, /index.html
 // redirige a la raíz, y una copia que viene de una redirección no sirve para abrir la página sin internet.
@@ -85,3 +85,49 @@ function withTimeout(promise, ms) {
     );
   });
 }
+
+// ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
+// El servidor solo manda {tipo, ref, cuando}: el texto con el nombre del curso lo guardó la app en este teléfono
+// (caché «datos-avisos»; no empieza con «lia-», así que no se borra al cambiar de versión). Si no está, va un texto
+// genérico. En iPhone cada aviso tiene que mostrarse siempre: nunca se descarta en silencio.
+const CACHE_AVISOS = 'datos-avisos';
+const GENERICOS = {
+  examen_manana: { titulo: 'Mañana tienes una evaluación', cuerpo: 'Abre LIA para ver a qué hora.' },
+  examen_pronto: { titulo: 'Tu evaluación es en 2 horas', cuerpo: '¡Éxitos!' },
+  sesion: { titulo: 'En 15 minutos te toca estudiar', cuerpo: 'Abre LIA para ver tu bloque de estudio.' },
+  resumen: { titulo: 'Tu día con LIA', cuerpo: 'Abre LIA para ver qué estudias hoy.' },
+  sin_marcar: { titulo: '¿Estudiaste hoy?', cuerpo: 'Si estudiaste, márcalo en LIA para que Lía cuente tu avance.' },
+  prueba: { titulo: 'Recordatorios activos', cuerpo: 'Así te avisará Lía en este teléfono, aunque la app esté cerrada.' },
+};
+
+async function textoDeAviso(aviso) {
+  try {
+    const res = await (await caches.open(CACHE_AVISOS)).match('./avisos.json');
+    const textos = res ? await res.json() : {};
+    const t = textos[`${aviso.tipo}|${aviso.ref}`];
+    if (t && t.titulo) return t;
+  } catch (e) { /* va el genérico */ }
+  return GENERICOS[aviso.tipo] || { titulo: 'LIA', cuerpo: 'Tienes un aviso de Lía.' };
+}
+
+self.addEventListener('push', (event) => {
+  let aviso = {};
+  try { aviso = event.data ? event.data.json() : {}; } catch (e) { aviso = {}; }
+  event.waitUntil(textoDeAviso(aviso).then((t) => self.registration.showNotification(t.titulo, {
+    body: t.cuerpo,
+    icon: new URL('./icons/icon-192.png', self.location).href,
+    tag: `${aviso.tipo || 'lia'}|${aviso.ref || ''}`,
+    lang: 'es',
+    data: { url: APP },
+  })));
+});
+
+// Al tocar el aviso, abre LIA (o la trae al frente si ya estaba abierta).
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((lista) => {
+    const abierta = lista.find((c) => c.url.startsWith(APP));
+    if (abierta) return abierta.focus();
+    return self.clients.openWindow(APP);
+  }));
+});
