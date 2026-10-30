@@ -62,8 +62,9 @@ Hoy Lía entiende frases con reglas (`interpret()`). Funciona sin internet y es 
    - [ ] La app solo puede leer su propia fila; nadie escribe en la tabla salvo `usar_ia()` (misma regla que `suscripciones` y `pagos`).
 3. **Respuesta con esquema fijo.** Gemini responde con un JSON Schema que replica las intenciones de `interpret()`: `add` (evaluaciones y compromisos), `except` (un día ocupado o libre), `log` (lo que ya estudió), `agenda`, `progress`, `next`, `replan`, `aviso`, más `pregunta` (falta un dato) y `help`.
 4. **Validación en la app.** Una función nueva en el bloque LOGIC (`validarIA()`) revisa cada campo antes de usarlo: tipos de evaluación y de compromiso conocidos, fechas y horas válidas y en un rango razonable, horas de estudio entre 0.5 y 40, días de la semana entre 0 y 6, identificadores que existan y textos de largo limitado. Si algo no cuadra, se descarta y se usan las reglas.
-5. **Flujo en el chat.** Con Pro e internet, el mensaje va a la IA: "Lía está pensando…", luego la propuesta con las mismas confirmaciones de hoy (agregar pide confirmar; los cambios de un día respetan la opción de autonomía; "Deshacer" sigue igual). Sin internet, con error o sin cupo, se usan las reglas y Lía lo dice en una línea.
-   - **Excepción: cambiar o quitar una evaluación que ya está** («me cambiaron el examen de cálculo al viernes», «ya no tengo el parcial de física»). Esas frases no van a la IA: las resuelve `cambioDeEval()` en el teléfono, antes de pedir nada, y no gastan cupo. El esquema todavía no tiene una intención para editar ni quitar, así que Gemini las leía como `add` y la evaluación quedaba duplicada. Si algún día se agrega esa intención al esquema, la excepción puede quitarse (y hay que sumar frases de cambio a `pruebas/ia/frases.json`).
+5. **Flujo en el chat.** Primero las reglas, en el teléfono (`interpret()`); la IA solo cuando las reglas no entienden (`pideIA()`, desde la versión 0.5.5). Si las reglas entienden, Lía responde al instante y sin gastar cupo; si no, con Pro e internet, el mensaje va a la IA: "Lía está pensando…", luego la propuesta con las mismas confirmaciones de hoy (agregar pide confirmar; los cambios de un día respetan la opción de autonomía; "Deshacer" sigue igual). Sin internet, con error o sin cupo, Lía responde con las reglas y lo dice en una línea.
+   - **Por qué las reglas van primero.** En la evaluación del 29 de octubre de 2026, la IA consultada primero acertó 72 de 97 frases (74 %), menos que las reglas solas (85, 88 %): empeoró 20 frases que las reglas ya leían bien. Con las reglas primero, la IA solo suma lo que las reglas no entienden, el chat responde al instante la mayoría de las veces y el cupo dura más. Las reglas también se ampliaron con las frases que antes solo cubría la IA y aciertan 93 de 97 (96 %).
+   - **Cambiar o quitar una evaluación que ya está** («me cambiaron el examen de cálculo al viernes») lo resuelven siempre las reglas (`cambioDeEval()`): el esquema todavía no tiene una intención para editar ni quitar, y Gemini lo leía como `add`, con lo que la evaluación quedaba duplicada.
 6. **Privacidad.** Antes del primer uso, un aviso: Lía envía el mensaje y un resumen del horario a Gemini, de Google, en Estados Unidos. Como usamos el nivel gratuito, el aviso dice que Google puede usar esos mensajes para mejorar sus productos y pide no escribir datos personales. La persona elige «Usar Lía con IA» o «Ahora no», y puede cambiarlo en Perfil. Se envía lo mínimo: fecha y hora actuales, cursos, evaluaciones y horario fijo. Nunca el correo ni el nombre.
 7. **Bandera.** Todo entró a `main` apagado detrás de `?ia=1` (solo el equipo) mientras se evaluaba. Se quitó en la versión 0.5.1 (29 de octubre de 2026): la bandera se guardaba en cada navegador, así que no llegaba a la app instalada (en iPhone, esa app tiene su propio almacenamiento), y tampoco protegía nada, porque cualquiera podía escribir `?ia=1`. Lo que limita el uso es el cupo de `usar_ia()`.
 8. **Sin gasto.** En el nivel gratuito Google no cobra. Si se llega a sus límites, Gemini responde 429 y la app sigue con las reglas.
@@ -85,9 +86,9 @@ Hoy Lía entiende frases con reglas (`interpret()`). Funciona sin internet y es 
 
 ```
 Teléfono (PWA en Cloudflare)
-  chat ── sin Pro o sin internet ──► interpret() (reglas, en el teléfono)
+  chat ──► interpret() (reglas, en el teléfono) ── entiende ──► responde al instante
     │
-    └─ Pro + internet ── POST /functions/v1/lia-ia (JWT de la sesión) ──┐
+    └─ no entiende (pideIA) + Pro + internet ── POST /functions/v1/lia-ia (JWT de la sesión) ──┐
                                                                           ▼
 Supabase · Edge Function lia-ia (Deno)
   1. verify_jwt: solo cuentas con sesión

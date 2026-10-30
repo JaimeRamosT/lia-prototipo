@@ -96,7 +96,8 @@ const f01 = frases.find(f => f.id === 'eval-01');
 test('evaluarFrase(): envía a Gemini lo mismo que la función, sin el nombre, y revisa la respuesta como la app', async () => {
   const g = simulado({ intent: 'add', texto: 'Anoto tu parcial.', evaluaciones: [{ tipo: 'parcial', curso: 'Estadística', fecha: '2026-10-30', hora: '10:00' }] });
   const r = await evaluarFrase(f01, { fetch: g.fetch, clave: 'clave-de-prueba', modelo: 'modelo-x' });
-  assert.equal(r.soloIA, true); assert.equal(r.conRespaldo, true); assert.equal(r.origen, 'ia'); assert.equal(r.reglas, true);
+  // Las reglas entienden la frase, así que la persona ve las reglas; Gemini se consulta igual para «Solo la IA».
+  assert.equal(r.soloIA, true); assert.equal(r.conRespaldo, true); assert.equal(r.origen, 'reglas'); assert.equal(r.reglas, true); assert.equal(r.vaIA, false);
   const p = g.pedidos[0], texto = p.cuerpo.contents[0].parts[0].text;
   assert.match(p.url, /models\/modelo-x:generateContent$/);
   assert.equal(p.op.headers['x-goog-api-key'], 'clave-de-prueba');
@@ -108,6 +109,15 @@ test('evaluarFrase(): si Gemini falla o no sirve, cuenta lo que haría la app co
   assert.equal(limite.error, 'limite'); assert.equal(limite.soloIA, false); assert.equal(limite.conRespaldo, limite.reglas);
   const ayuda = await evaluarFrase(f01, { fetch: simulado({ intent: 'help', texto: '?' }).fetch, clave: 'k' });
   assert.equal(ayuda.origen, 'reglas'); assert.equal(ayuda.soloIA, false); assert.equal(ayuda.conRespaldo, true);
+  // Si las reglas entienden, una respuesta equivocada de la IA ya no llega a la persona (antes empeoraba 20 frases).
   const malo = await evaluarFrase(f01, { fetch: simulado({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'parcial', curso: 'Estadística', fecha: '2026-10-31', hora: '10:00' }] }).fetch, clave: 'k' });
-  assert.equal(malo.origen, 'ia'); assert.equal(malo.conRespaldo, false);
+  assert.equal(malo.soloIA, false); assert.equal(malo.origen, 'reglas'); assert.equal(malo.conRespaldo, true);
+});
+
+test('evaluarFrase(): si las reglas no entienden, la persona ve la IA', async () => {
+  const fuera = { id: 'x-fuera', frase: '¿quién ganó el partido de ayer?', espera: { intent: 'fuera' } };
+  const bien = await evaluarFrase(fuera, { fetch: simulado({ intent: 'fuera', texto: 'Eso no lo sé, pero puedo anotar tus exámenes.' }).fetch, clave: 'k' });
+  assert.equal(bien.vaIA, true); assert.equal(bien.origen, 'ia'); assert.equal(bien.conRespaldo, true);
+  const mal = await evaluarFrase(fuera, { fetch: simulado({ intent: 'add', texto: 'ok', evaluaciones: [{ tipo: 'parcial', curso: 'Fútbol', fecha: '2026-10-31', hora: '10:00' }] }).fetch, clave: 'k' });
+  assert.equal(mal.origen, 'ia'); assert.equal(mal.conRespaldo, false);
 });
