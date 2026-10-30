@@ -604,9 +604,29 @@ function parseTimes(ns){const part=partOf(ns);
   if(m)return{at:adj(m[1],0,m[2],part),part,crudo:[m[1],null,m[2],null]};
   return{part};}
 function nextWeekday(now,wd,allowToday){let d=(wd-now.getDay()+7)%7;if(d===0&&!allowToday)d=7;return ymd(addDays(now,d));}
+// «En 2 semanas», «dentro de 10 días», «en un mes», «el lunes dentro de 3 semanas», «el martes de la próxima semana».
+// Con un día de la semana, es ese día en la semana que cae dentro de N semanas (de lunes a domingo). Sin número de
+// días ni día de la semana («la próxima semana») no hay fecha exacta: null.
+const NUM_REL='(\\d{1,2}|un par de|un|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince)';
+const RE_REL=new RegExp(`\\b(cada\\s+)?(?:dentro de|en|de aqui a|de aca a|faltan?)\\s+(?:unas?\\s+|como\\s+)?${NUM_REL}\\s+(semanas?|dias?|mes(?:es)?)\\b`);
+// «La próxima semana» (1), «la subsiguiente semana» (2) o 0.
+function semanaSinDia(ns){const w=ns.match(/\b(?:(proxima|siguiente|otra|subsiguiente)\s+semana|semana\s+que\s+viene)\b/);return w?(w[1]==='subsiguiente'?2:1):0;}
+// Un día de la semana dentro de N semanas (de lunes a domingo).
+function diaEnSemanas(wd,n,now){const base=addDays(now,7*n);return ymd(addDays(base,(wd+6)%7-(base.getDay()+6)%7));}
+function fechaRelativa(ns,now){const m=ns.match(RE_REL);let n=null,u=null,exacta=true;
+  if(m){if(m[1])return null;n=m[2]==='un par de'?2:m[2]==='quince'?15:m[2]==='un'?1:NUMW[m[2]]||+m[2];u=m[3][0];}
+  else{n=semanaSinDia(ns)||null;u='s';exacta=false;}
+  if(!n||n>(u==='d'?90:u==='s'?12:3))return null;
+  if(u==='d')return ymd(addDays(now,n));
+  let base=addDays(now,7*n);
+  if(u==='m'){base=new Date(now.getFullYear(),now.getMonth()+n,now.getDate());if(base.getDate()!==now.getDate())base=new Date(now.getFullYear(),now.getMonth()+n+1,0);}
+  const dia=Object.entries(DAYW).find(([w])=>new RegExp(`\\b${w}\\b`).test(ns));
+  if(dia)return u==='s'?diaEnSemanas(dia[1],n,now):ymd(addDays(base,(dia[1]+6)%7-(base.getDay()+6)%7));
+  return exacta?ymd(base):null;}
 function parseDate(ns,now){
-  if(/\bpasado manana\b/.test(ns))return ymd(addDays(now,2));
   const ns2=ns.replace(/\b(?:en|por|de|a) (?:la|las) mananas?\b/g,' ');
+  const enN=fechaRelativa(ns2,now);if(enN)return enN;
+  if(/\bpasado manana\b/.test(ns))return ymd(addDays(now,2));
   if(/\bhoy\b/.test(ns2))return ymd(now);
   if(/\bmanana\b/.test(ns2))return ymd(addDays(now,1));
   let m=ns.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
@@ -625,8 +645,10 @@ function parseDate(ns,now){
 // La fecha de algo de un solo día: hoy, mañana, pasado mañana, una fecha con número («el 5 de noviembre», «el lunes 9»,
 // «el 12»), o null si la frase habla de días de la semana («los lunes», «de lunes a viernes») o no dice el día.
 function unSoloDia(ns,now){const ns2=ns.replace(/\b(?:en|por|de|a) (?:la|las) mananas?\b/g,' ');
-  if(/\b(los|todos|cada|diario|semana)\b/.test(ns2))return null;
+  if(/\b(los|todos|cada|diario)\b/.test(ns2))return null;
   if(/\b(entro|salgo|llego|recien|empiezo|termino|cambiaron)\b/.test(ns2))return null;  // cambia el horario de siempre: no es algo nuevo
+  const enN=fechaRelativa(ns2,now);if(enN)return enN;
+  if(/\bsemana\b/.test(ns2))return null;
   const rel=/\b(hoy|manana|pasado manana)\b/.test(ns2),num=/\b\d{1,2} de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\b\d{1,2}\s*\/\s*\d{1,2}\b|\bel \d{1,2}\b(?!\s*(?::|am|pm|h\b|horas))/.test(ns2);
   const wdNum=/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}\b(?!\s*(?::|am\b|pm\b|h\b|hrs?\b|horas?\b|de la\b|del\b|-|a\s+\d|hasta\b))/.test(ns2);
   if(!rel&&!num&&!wdNum)return null;if(!rel&&!wdNum&&parseDays(ns2).length)return null;
@@ -650,7 +672,7 @@ function parseDays(ns){
   if(m){const a=DAYW[m[1]],b=DAYW[m[2]];const out=[];let d=a;for(let k=0;k<7;k++){out.push(d);if(d===b)break;d=(d+1)%7;}return out;}
   const out=[];for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns)&&!out.includes(wd))out.push(wd);
   return out.sort((a,b)=>((a+6)%7)-((b+6)%7));}
-const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera']);
+const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera','dentro','faltan','falta']);
 // «Práctica calificada de química»: «calificada» es parte del tipo, no del curso.
 const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:','calificada','calificado','calificadas','calificados']);
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
@@ -853,11 +875,17 @@ function preguntaPara(it,falta,state,now){
 function borradorVigente(b,now){return!!b&&typeof b==='object'&&Array.isArray(b.items)&&!!b.items[b.i]&&Number.isFinite(b.at)&&now.getTime()-b.at<=BORRADOR_MS&&now.getTime()>=b.at-60000;}
 // Sigue con un borrador: pregunta lo primero que falte o, si ya está todo, devuelve la intención de siempre.
 function continuarBorrador(b,state,now){const i=b.items.findIndex(x=>faltaDe(x));
-  if(i>=0){const it=b.items[i],q=preguntaPara(it,faltaDe(it),state,now);return{intent:'pregunta',texto:q.texto,opciones:q.opciones,borrador:{intent:b.intent,items:b.items,i}};}
+  if(i>=0){const it=b.items[i],f=faltaDe(it);let q=preguntaPara(it,f,state,now);if(f==='fecha'&&it.semana)q=preguntaSemana(q,it.semana,now);
+    return{intent:'pregunta',texto:q.texto,opciones:q.opciones,borrador:{intent:b.intent,items:b.items,i}};}
+  b={...b,items:b.items.map(({semana,...x})=>x)};
   if(b.intent==='except'){const exs=b.items.map(x=>({date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{})}));return{intent:'except',exs,ex:exs[0]};}
   if(b.intent==='log'){const x=b.items[0];return{intent:'log',evalId:x.evalId,course:x.course,date:x.date,min:x.min};}
   if(b.intent==='cambio'){const x=b.items[0];return x.accion==='quitar'?{intent:'quitaEval',evalId:x.evalId}:{intent:'cambiaEval',evalId:x.evalId,date:x.date||'',time:x.time||''};}
   return{intent:'add',items:b.items};}
+// «La próxima semana tengo examen»: Lía pregunta qué día de esa semana, con los días de lunes a sábado.
+function preguntaSemana(q,n,now){const cual=n===1?'la próxima semana':'la subsiguiente semana';
+  const ops=[1,2,3,4,5,6].map(wd=>{const f=diaEnSemanas(wd,n,now),d=fromYmd(f);return{t:`${cap(DIAS[wd].slice(0,3))} ${d.getDate()}`,set:{date:f}};});
+  return{texto:q.texto.replace(/qu[eé] d[ií]a /i,m=>`${m}de ${cual} `),opciones:ops.concat(q.opciones.filter(o=>o.otra))};}
 // La respuesta a lo que Lía preguntó: completa el borrador con lo que se entiende, o null si no responde.
 // Si el mensaje nombra otra actividad, es otra cosa y el borrador queda de lado.
 function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falta=faltaDe(it);if(!falta)return null;
@@ -869,7 +897,8 @@ function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falt
   const rango=tm.range||(tm.at!=null&&p.kind==='evento'?[tm.at,tm.at+60]:null)||(tm.part?(p.kind==='commit'?FRANJA_RUTINA:FRANJA_EVENTO)[tm.part]:null);
   if(falta==='curso'){let j=0;while(j<toks.length&&(SKIPW.has(toks[j].n)||STOPW.has(toks[j].n)))j++;  // «es de estadística»
     const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=c;}
-  else if(falta==='fecha'){if(d)p.date=d;else if(p.kind==='cambio'&&hora!=null)p.time=fmt(hora);else return null;}  // a una evaluación que cambió le basta la hora
+  else if(falta==='fecha'){const wd=p.semana&&!/\d/.test(ns)&&!fechaRelativa(ns,now)&&Object.entries(DAYW).find(([w])=>new RegExp(`\\b${w}\\b`).test(ns));
+    if(wd)p.date=diaEnSemanas(wd[1],p.semana,now);else if(d)p.date=d;else if(p.kind==='cambio'&&hora!=null)p.time=fmt(hora);else return null;}  // a una evaluación que cambió le basta la hora
   else if(falta==='hora'){const h=hora!=null?hora:p.type==='entrega'&&/\bmedianoche\b/.test(ns)?1439:null;if(h==null)return null;p.time=fmt(h);}
   else if(falta==='horario'&&p.kind==='evento'&&p.start&&!tm.range){const fin=finDespues(p.start,tm);if(fin==null)return null;p.end=fin;}
   else if(falta==='horario'){if(!rango)return null;p.start=fmt(rango[0]);p.end=fmt(rango[1]);}
@@ -891,7 +920,13 @@ function cualDeEstas(ids,toks,ns,d,state){const es=(ids||[]).map(id=>state.evals
   for(const f of [e=>d&&e.date===d,e=>tipos.has(e.type),nombra]){const c=es.filter(f);if(c.length===1)return c[0];}
   return null;}
 // Devuelve una intención: {intent:'add',items}, {intent:'except',exs}, {intent:'log',...}, {intent:'aviso',texto}, {intent:'pregunta',texto,opciones,borrador}, {intent:'help'}…
-function interpret(text,state,now){
+// Lee una frase. Si dice «la próxima semana» sin el día, la pregunta por la fecha ofrece los días de esa semana.
+function interpret(text,state,now){const r=interpretFrase(text,state,now);
+  const n=r.intent==='pregunta'&&r.borrador&&semanaSinDia(tokenize(text).map(t=>t.n).join(' '));
+  if(!n)return r;
+  const items=r.borrador.items.map(x=>'date' in x&&!x.date&&x.kind!=='rutina'?{...x,semana:n}:x);
+  return continuarBorrador({...r.borrador,items},state,now);}
+function interpretFrase(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
   if(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
@@ -2385,7 +2420,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.1';
+const APP_VERSION='0.6.2';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
