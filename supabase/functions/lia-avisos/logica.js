@@ -1,6 +1,6 @@
 // LIA · lógica de la Edge Function lia-avisos: envía los recordatorios al teléfono (ver docs/notificaciones.md).
 // Sin dependencias de Deno: index.ts le pasa el entorno, fetch y el registro; las pruebas
-// (pruebas/avisos-funcion.test.mjs) le pasan versiones simuladas.
+// (pruebas/avisos-envio.test.mjs) le pasan versiones simuladas.
 //
 // Dos formas de llamarla (verify_jwt está apagado: la función revisa cada una):
 //   - pg_cron, cada minuto, con la cabecera x-lia-cron: envía los avisos que ya tocan.
