@@ -44,6 +44,13 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - El `name` de `wrangler.jsonc` debe seguir siendo `lia-prototipo`, igual que el Worker en Cloudflare.
 - El plan gratuito de Cloudflare no permite recibir datos de tarjeta en la página: el cobro real usa la página de pago de Culqi.
 
+## Fábrica de software (desde el 2 de noviembre de 2026)
+
+- Cada pedido sigue la línea de `docs/fabrica.md`: especificación → pruebas primero → código → CI → evaluación de la IA → revisión → experiencia → publicación → registro en Notion.
+- Los agentes están en `.claude/agents/` (`producto`, `pruebas`, `desarrollo`, `revisor`, `ux`, `evaluador-ia`, `publicador`). Quien programa no revisa su propio trabajo.
+- Cada PR usa la plantilla de `.github/pull_request_template.md`.
+- Al terminar una tarea, registra en Notion qué cambió y qué quedó pendiente (página de LIA en Memories).
+
 ## Flujo de trabajo: trunk-based development (desde el 25 de octubre de 2026)
 
 - `main` es el tronco y siempre debe poder publicarse, porque Cloudflare despliega todo lo que llega a `main`.
