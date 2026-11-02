@@ -931,6 +931,22 @@ function preguntaAgenda(text,ns){const preg=/[¿?]/.test(text);
   if(/\bsemana\b/.test(ns)&&!/\b(dentro de|en|faltan?)\s+\S+\s+semanas?\b/.test(ns)&&!Object.keys(DAYW).some(w=>new RegExp(`\\b${w}\\b`).test(ns)))return false;
   if(!preg){const tm=parseTimes(ns);if(tm.range||tm.at!=null)return false;}
   return true;}
+// Mensajes sociales («hola», «gracias», «ok», «chau», «¿quién eres?», «estoy cansado»): Lía responde corto y sin la IA.
+// Solo cuando el mensaje no trae nada más: «hola, tengo examen el viernes a las 9» se lee como siempre.
+// El orden decide el tipo cuando hay varios («hola, ¿qué puedes hacer?» es ayuda).
+const CHARLA=[
+  ['ayuda',/\b(que (puedes|sabes) hacer|que haces|que mas haces|como (funcionas|te uso|se usa|funciona esto|te hablo)|ayuda|ayudame|que te puedo (decir|pedir))\b/g],
+  ['quien',/\b(quien eres|que eres|como te llamas|eres (un |una )?(bot|robot|ia|humana?|persona|real))\b/g],
+  ['animo',/\b(estoy|ando|me siento|toy) (muy |re |bien |demasiado )?(cansad[oa]|estresad[oa]|agotad[oa]|abrumad[oa]|desmotivad[oa]|sin ganas|con sueno|aburrid[oa])\b|\b(no tengo ganas( de (nada|estudiar))?|que flojera|tengo (mucho )?sueno|que sueno)\b/g],
+  ['gracias',/\b((muchas|mil|muchisimas) )?(gracias|grax|thanks|thank you)\b/g],
+  ['despedida',/\b(chau+|chao|adios|bye|nos vemos|hasta (luego|manana|pronto|la proxima))\b/g],
+  ['saludo',/\b(hola+|holi|holis|buen[oa]s( (dias|tardes|noches))?|hey|alo|que tal|como estas|como vas|como andas)\b/g],
+  ['ok',/\b(ok|okey|okay|oki|listo|perfecto|genial|chevere|bacan|ya|dale|entendido|de acuerdo|vale|bien|super|excelente|claro|si|esta bien|ya veo)\b/g]];
+const RELLENO=/\b(lia|oye|pues|nomas|no mas|ja(ja)+|je(je)+|xd+|muy|bueno|ah+|eh+|y|tu|a ti|igual(mente)?|tambien|mucho|todo|por todo|nada|que)\b/g;
+function charla(ns){let resto=ns,tipo=null;
+  for(const [t,re] of CHARLA){const r2=resto.replace(re,' ');if(r2!==resto){tipo=tipo||t;resto=r2;}}
+  if(!tipo)return null;
+  return resto.replace(RELLENO,' ').replace(/[^a-z0-9]+/g,'').length?null:tipo;}
 // Lee una frase. Si dice «la próxima semana» sin el día, la pregunta por la fecha ofrece los días de esa semana.
 function interpret(text,state,now){const r=interpretFrase(text,state,now);
   const n=r.intent==='pregunta'&&r.borrador&&semanaSinDia(tokenize(text).map(t=>t.n).join(' '));
@@ -940,6 +956,7 @@ function interpret(text,state,now){const r=interpretFrase(text,state,now);
 function interpretFrase(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
+  const social=charla(ns);if(social)return{intent:'charla',tipo:social};
   // «Recuérdame que tengo examen de cálculo el viernes» cuenta algo nuevo: no es una pregunta por la agenda.
   const cuenta=!/[¿?]/.test(text)&&toks.some(t=>EVAL_KW[t.n]||COMMIT_KW[t.n]||ENTREGA_N.has(t.n))&&!/\b(mi agenda|como esta mi|estoy libre|tengo libre)\b/.test(ns);
   if(!cuenta&&(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)||preguntaAgenda(text,ns))){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
@@ -1922,6 +1939,20 @@ function agendadoPara(ids){const p=P(),min=p.blocks.filter(b=>ids.includes(b.eva
 // Lo que dice Lía después de agregar evaluaciones: lo que agendó y lo que no encontró.
 function textoAgendado(ids){if(!ids.length)return '';const{min,falta}=agendadoPara(ids);if(!min&&!falta)return '';
   return min&&falta?` Agendé ${hrs(min)} de estudio; ${faltaTxt(falta)} sin hueco libre.`:min?` Agendé ${hrs(min)} de estudio en tus horas libres.`:` Todavía no encontré horas libres para estudiar: ${faltaTxt(falta)}.`;}
+const AYUDA_CHAT='Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Pasaron mi parcial de Cálculo al viernes”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.';
+// Lo que responde Lía a un mensaje social. Al saludar, recuerda lo próximo: el estudio de hoy o la siguiente evaluación.
+function textoCharla(tipo,n){const nombre=state.settings.name?`, ${state.settings.name}`:'';
+  if(tipo==='ayuda')return AYUDA_CHAT;
+  if(tipo==='quien')return 'Soy Lía, tu secretaria de estudio. Anoto tus horarios y tus evaluaciones, y te armo un horario para estudiar en tus horas libres.';
+  if(tipo==='animo')return 'Descansar también cuenta. Si hoy no te da, dime por ejemplo “hoy no puedo estudiar en la noche” y lo tomo en cuenta.';
+  if(tipo==='gracias')return `¡De nada${nombre}! Aquí estoy para lo que necesites.`;
+  if(tipo==='ok')return 'Listo.';
+  const t=ymd(n),ahora=n.getHours()*60+n.getMinutes();
+  const blq=state.onboarded?P().blocks.filter(x=>x.date===t&&x.e>ahora).sort((a,b)=>a.s-b.s)[0]:null,eb=blq&&evById(blq.evalId);
+  const prox=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+  const luego=eb?`Hoy te toca estudiar ${eb.course} a las ${fmt(Math.max(blq.s,ahora))}.`:prox?`Tu próxima evaluación es ${nombreEval(prox).replace(/^tu /,'')}, ${prox.date===t?'hoy':'el '+fechaLarga(prox.date)} a las ${prox.time}.`:'';
+  if(tipo==='despedida')return `¡Nos vemos${nombre}!${luego?' '+luego:''}`;
+  return `¡Hola${nombre}! ${luego||'Cuéntame tus horarios o tu próxima evaluación y armo tu semana.'}`;}
 function liaSay(text,opts={}){state.chat.push({from:'lia',text,...opts});if(opts.undo)marcarDeshacer();save();anunciar(`Lía: ${text}`);}
 // Lo que dice Lía se lee en voz alta (lector de pantalla) sin volver a leer toda la pantalla.
 function anunciar(t){const a=document.getElementById('anuncio');if(!a)return;a.textContent='';setTimeout(()=>{a.textContent=t;},60);}
@@ -1951,6 +1982,10 @@ function responder(q,from,r,n,{eco=true}={}){
     if(from==='chat'){liaSay(r.texto,{opciones:r.opciones||[]});render();}else{save();toast(r.texto);}return;}
   // Si no entendió la respuesta a su pregunta, la repite (el borrador sigue).
   const b=borradorVigente(state.borrador,n)?state.borrador:null;
+  // Un «hola», «gracias» u «ok»: Lía responde y, si estaba preguntando algo, lo vuelve a preguntar.
+  if(r.intent==='charla'){const t=textoCharla(r.tipo,n),p=b?preguntaPara(b.items[b.i],faltaDe(b.items[b.i]),state,n):null;
+    if(from!=='chat'){toast(r.tipo==='ayuda'?'Escríbele a Lía en el chat: ahí te dice qué puede hacer.':t);return;}
+    liaSay(p?`${t} ${p.texto}`:t,p?{opciones:p.opciones}:{});render();return;}
   if(r.intent==='help'&&b){const it=b.items[b.i],p=preguntaPara(it,faltaDe(it),state,n);
     if(from==='chat'){liaSay(`No te entendí. ${p.texto}`,{opciones:p.opciones});render();}else toast(`No te entendí. ${p.texto}`);return;}
   state.borrador=null;
@@ -1990,7 +2025,7 @@ function responder(q,from,r,n,{eco=true}={}){
     else liaSay(`Ya armaste tu semana. En Gratis puedes volver a armarla desde el ${fechaLarga(nextArmDate())}. Con LIA Pro la reorganizo cuando quieras.`,{cta:'rearm'});
     render();return;}
   if(r.intent==='replan'){liaSay(`Listo, reorganicé todo: tienes ${hrs(P().blocks.reduce((a,b)=>a+b.e-b.s,0))} de estudio agendadas.`);render();return;}
-  liaSay('Todavía entiendo frases simples. Prueba con:\n• “Parcial de Cálculo el jueves a las 9”\n• “Pasaron mi parcial de Cálculo al viernes”\n• “Trabajo de lunes a viernes de 3 a 7”\n• “Hoy salgo del trabajo a las 9”\n• “Mañana no tengo clases”\n• “Ayer estudié 2 horas de Cálculo”\n• “¿Qué tengo mañana?”\nPara mover un bloque, tócalo en Hoy o en Semana.');render();}
+  liaSay(AYUDA_CHAT);render();}
 // ---------- Lía con IA: envío a la función lia-ia ----------
 const IA_TIEMPO=15000;  // ms; la función corta a los 12 s, esto cubre la red del teléfono
 const IA_NIVEL_GRATUITO=true;  // nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
@@ -2409,7 +2444,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.4';
+const APP_VERSION='0.6.5';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
