@@ -13,10 +13,16 @@
 //   --detalle                        muestra la respuesta de Gemini en las frases que fallan
 //   --salida=resultado.json          guarda todos los resultados en ese archivo
 //   --solo-reglas                    sin Gemini: cuánto entienden las reglas y qué frases irían a la IA (no necesita clave)
+//   --proveedor=groq                 otro proveedor: groq, cerebras u openrouter (por defecto, gemini). Usa su clave:
+//                                    GROQ_API_KEY, CEREBRAS_API_KEY u OPENROUTER_API_KEY. Ejemplo (PowerShell):
+//                                    $env:GROQ_API_KEY="tu-clave"; node pruebas/ia/evaluar.mjs --proveedor=groq
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { L, estado } from '../logica.mjs';
-import { MODELO, TIEMPO_GEMINI, leerPedido, pedirGemini } from '../../supabase/functions/lia-ia/logica.js';
+import { MODELO, TIEMPO_GEMINI, PROVEEDORES, leerPedido, pedirGemini, proveedorDe } from '../../supabase/functions/lia-ia/logica.js';
+// Pausa entre pedidos por proveedor, para no pasar el límite gratuito con ~2 700 tokens por pedido
+// (Groq: 8 000 tokens por minuto; Cerebras: 5 pedidos por minuto).
+const PAUSA = { gemini: 4500, groq: 21000, cerebras: 13000, openrouter: 3500 };
 
 // ---------- El contexto fijo de las frases ----------
 export const AHORA = '2026-10-26T10:00:00-05:00';                // lunes, como lo envía la app desde Lima
@@ -113,7 +119,7 @@ export function reglasConCharla(f, s, n) {
 }
 
 // ---------- Una frase ----------
-export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo = MODELO, tiempo = TIEMPO_GEMINI, soloReglas = false } = {}) {
+export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo = MODELO, tiempo = TIEMPO_GEMINI, soloReglas = false, pedir = null } = {}) {
   const s = estadoEval(), n = ahoraLocal();
   const reglas = reglasConCharla(f, s, n);
   const base = { id: f.id, frase: f.frase, reglas: revisar(f.espera, { r: reglas, origen: 'reglas', ia: null }), resumenReglas: resumir(reglas), vaIA: L.pideIA(reglas) };
@@ -121,7 +127,7 @@ export async function evaluarFrase(f, { fetch = globalThis.fetch, clave, modelo 
   const pedido = leerPedido(JSON.stringify({ mensaje: f.frase, historial: f.historial || [], contexto: contextoEval(s) }));
   if (pedido.error) throw new Error(`La frase ${f.id} no pasa leerPedido()`);
   const t0 = Date.now();
-  const g = await pedirGemini({ fetch }, modelo, clave, pedido, { tiempo });
+  const g = pedir ? await pedir({ fetch }, pedido, { tiempo }) : await pedirGemini({ fetch }, modelo, clave, pedido, { tiempo });
   const ms = Date.now() - t0;
   if (g.error) return { ...base, ms, error: g.error, httpStatus: g.httpStatus || null, soloIA: false, conRespaldo: base.reglas, origen: 'reglas', resumenIA: `(error: ${g.error})` };
   const v = L.validarIA(g.respuesta, s, n), ia = g.respuesta.intent, faltaIA = g.respuesta.falta || null;
@@ -157,7 +163,7 @@ export function informe(res, { modelo, meta, soloReglas }) {
   lineas.push(`Van a la IA (las reglas no entienden): ${vanIA.length} · la IA acierta en ${vanIA.filter(r => r.conRespaldo).length}`);
   lineas.push(`Peor que las reglas: ${empeora.length}${empeora.length ? ' (' + empeora.map(r => r.id).join(', ') + ')' : ''}`);
   lineas.push(`Respuestas que no siguen el esquema: ${esquema.length} · Otros errores de Gemini: ${errores.length - esquema.length}${errores.length ? ' (' + errores.map(r => `${r.id}: ${r.error}`).join(', ') + ')' : ''}`);
-  lineas.push(`Tiempo de Gemini: mediana ${percentil(ms, 50)} ms · 95 % ≤ ${percentil(ms, 95)} ms (meta: 2000 y 5000 ms)`);
+  lineas.push(`Tiempo del modelo: mediana ${percentil(ms, 50)} ms · 95 % ≤ ${percentil(ms, 95)} ms (meta: 2000 y 5000 ms)`);
   lineas.push(`Tokens por frase (promedio): entrada ${tok('promptTokenCount')} · salida ${tok('candidatesTokenCount')} · razonamiento ${tok('thoughtsTokenCount')}`);
   return { lineas, aprueba };
 }
@@ -166,28 +172,32 @@ export function informe(res, { modelo, meta, soloReglas }) {
 async function main() {
   const op = Object.fromEntries(process.argv.slice(2).map(a => { const [k, ...v] = a.replace(/^--/, '').split('='); return [k, v.length ? v.join('=') : true]; }));
   const soloReglas = !!op['solo-reglas'];
-  const clave = process.env.GEMINI_API_KEY;
+  const nombre = String(op.proveedor || 'gemini').toLowerCase();
+  if (!PROVEEDORES[nombre]) { console.error(`No conozco el proveedor «${nombre}». Usa: ${Object.keys(PROVEEDORES).join(', ')}.`); process.exit(2); }
+  const P = PROVEEDORES[nombre];
+  const env = k => (k === 'IA_PROVEEDOR' ? nombre : k === P.modelo && op.modelo ? String(op.modelo) : process.env[k]);
+  const prov = proveedorDe(env), clave = prov.clave;
   if (!soloReglas && !clave) {
-    console.error('Falta la clave. Ejecútalo así (PowerShell): $env:GEMINI_API_KEY="tu-clave"; node pruebas/ia/evaluar.mjs\nO sin Gemini, solo con las reglas: node pruebas/ia/evaluar.mjs --solo-reglas');
+    console.error(`Falta la clave. Ejecútalo así (PowerShell): $env:${P.clave}="tu-clave"; node pruebas/ia/evaluar.mjs${nombre === 'gemini' ? '' : ' --proveedor=' + nombre}\nO sin modelo, solo con las reglas: node pruebas/ia/evaluar.mjs --solo-reglas`);
     process.exit(2);
   }
-  const modelo = op.modelo || process.env.GEMINI_MODELO || MODELO, pausa = Number(op.pausa || 4500), meta = Number(op.meta || 0.9);
+  const modelo = prov.modelo, pausa = Number(op.pausa || PAUSA[nombre]), meta = Number(op.meta || 0.9);
   let frases = cargarFrases();
   if (op.solo) { const ids = String(op.solo).split(','); frases = frases.filter(f => ids.includes(f.id)); }
-  console.log(soloReglas ? `Reglas · ${frases.length} frases\n` : `Gemini ${modelo} · ${frases.length} frases · una cada ${pausa / 1000} s (unos ${Math.ceil((frases.length * (pausa + 1000)) / 60000)} min)\n`);
+  console.log(soloReglas ? `Reglas · ${frases.length} frases\n` : `${nombre === 'gemini' ? 'Gemini' : nombre} ${modelo} · ${frases.length} frases · una cada ${pausa / 1000} s (unos ${Math.ceil((frases.length * (pausa + 1000)) / 60000)} min)\n`);
   const res = [];
   let seguidos400 = 0;
   for (const [i, f] of frases.entries()) {
     let r;
     for (let intento = 0; ; intento++) {
-      r = await evaluarFrase(f, { clave, modelo, soloReglas });
+      r = await evaluarFrase(f, { clave, modelo, soloReglas, pedir: prov.pedir });
       if (r.error !== 'limite' || intento === 3) break;
-      console.log('  Google pide esperar (límite por minuto del nivel gratuito): sigo en 60 s…');
+      console.log('  El proveedor pide esperar (límite por minuto del nivel gratuito): sigo en 60 s…');
       await new Promise(ok => setTimeout(ok, 60000));
     }
-    if (r.error === 'clave') { console.error('Google rechazó la clave (401 o 403). Revisa GEMINI_API_KEY y que la clave tenga acceso a la API de Gemini.'); process.exit(2); }
-    seguidos400 = r.error === 'gemini_400' ? seguidos400 + 1 : 0;
-    if (seguidos400 === 3) { console.error(`Gemini rechaza los pedidos (400). ¿Existe el modelo «${modelo}»?`); process.exit(2); }
+    if (r.error === 'clave') { console.error(`El proveedor rechazó la clave (401 o 403). Revisa ${P.clave}.`); process.exit(2); }
+    seguidos400 = ['gemini_400', 'proveedor_400'].includes(r.error) ? seguidos400 + 1 : 0;
+    if (seguidos400 === 3) { console.error(`El proveedor rechaza los pedidos (400). ¿Existe el modelo «${modelo}» y admite salida JSON estricta?`); process.exit(2); }
     res.push(r);
     const marca = soloReglas ? (r.reglas ? '✓' : '✗') : (r.conRespaldo ? '✓' : '✗');
     console.log(`${marca} ${r.id.padEnd(12)} ${soloReglas ? '' : `reglas ${r.reglas ? '✓' : '✗'}  ${String(r.ms).padStart(5)} ms  `}${r.frase}`);
@@ -195,13 +205,13 @@ async function main() {
       console.log(`    espera: ${JSON.stringify(f.espera)}`);
       if (!soloReglas) console.log(`    IA: ${r.resumenIA}${r.origen === 'reglas' ? ' → la app usó las reglas' : ''}`);
       console.log(`    reglas: ${r.resumenReglas}`);
-      if (op.detalle && r.respuesta) console.log(`    Gemini: ${JSON.stringify(r.respuesta)}`);
+      if (op.detalle && r.respuesta) console.log(`    Modelo: ${JSON.stringify(r.respuesta)}`);
     }
     if (!soloReglas && i < frases.length - 1) await new Promise(ok => setTimeout(ok, pausa));
   }
   const { lineas, aprueba } = informe(res, { modelo, meta, soloReglas });
   console.log('\n' + lineas.join('\n'));
-  if (op.salida) { writeFileSync(String(op.salida), JSON.stringify({ modelo, fecha: new Date().toISOString(), resultados: res }, null, 2)); console.log(`\nGuardé el detalle en ${op.salida}.`); }
+  if (op.salida) { writeFileSync(String(op.salida), JSON.stringify({ proveedor: nombre, modelo, fecha: new Date().toISOString(), resultados: res }, null, 2)); console.log(`\nGuardé el detalle en ${op.salida}.`); }
   process.exit(aprueba ? 0 : 1);
 }
 

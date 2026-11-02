@@ -290,6 +290,101 @@ export async function pedirGemini(deps, modelo, clave, pedido, { tiempo = TIEMPO
   return { error: 'gemini_400', httpStatus: 400 };
 }
 
+// ---- Otros proveedores (API compatible con OpenAI: Groq, Cerebras, OpenRouter) ----
+// Se elige con el secreto IA_PROVEEDOR; sin él, Gemini como siempre. Cada uno usa su propia clave, guardada solo
+// como secreto de las Edge Functions (nunca en el repositorio ni en el chat).
+export const PROVEEDORES = {
+  gemini: { clave: 'GEMINI_API_KEY', modelo: 'GEMINI_MODELO', defecto: MODELO },
+  groq: { clave: 'GROQ_API_KEY', modelo: 'GROQ_MODELO', defecto: 'openai/gpt-oss-120b', url: 'https://api.groq.com/openai/v1/chat/completions' },
+  cerebras: { clave: 'CEREBRAS_API_KEY', modelo: 'CEREBRAS_MODELO', defecto: 'gpt-oss-120b', url: 'https://api.cerebras.ai/v1/chat/completions' },
+  openrouter: { clave: 'OPENROUTER_API_KEY', modelo: 'OPENROUTER_MODELO', defecto: 'openai/gpt-oss-120b', url: 'https://openrouter.ai/api/v1/chat/completions' },
+};
+
+// El proveedor configurado: nombre, modelo, clave y la función que pide. null si IA_PROVEEDOR no es uno conocido.
+export function proveedorDe(env) {
+  const nombre = String(env('IA_PROVEEDOR') || 'gemini').trim().toLowerCase();
+  const p = PROVEEDORES[nombre];
+  if (!p) return null;
+  const modelo = env(p.modelo) || p.defecto, clave = env(p.clave) || '';
+  const pedir = nombre === 'gemini'
+    ? (deps, pedido, op) => pedirGemini(deps, modelo, clave, pedido, op)
+    : (deps, pedido, op) => pedirCompatible(deps, { url: p.url, modelo, clave }, pedido, op);
+  return { nombre, modelo, clave, pedir };
+}
+
+// Esquema estricto (OpenAI y Groq): todos los campos obligatorios, sin campos extra, y los opcionales aceptan null.
+// Se quitan las palabras que el modo estricto no admite en todos los proveedores (format, mínimos y máximos):
+// la app vuelve a revisar todo con validarIA().
+export function esquemaEstricto(e = esquema()) {
+  const QUITAR = ['format', 'minimum', 'maximum', 'minItems', 'maxItems'];
+  const conNull = t => (Array.isArray(t) ? (t.includes('null') ? t : [...t, 'null']) : [t, 'null']);
+  const pasar = (n, opcional) => {
+    const out = {};
+    for (const [k, v] of Object.entries(n)) if (!QUITAR.includes(k)) out[k] = v;
+    if (out.type === 'object' && out.properties) {
+      const req = new Set(n.required || []);
+      out.properties = Object.fromEntries(Object.entries(n.properties).map(([k, v]) => [k, pasar(v, !req.has(k))]));
+      out.required = Object.keys(out.properties);
+      out.additionalProperties = false;
+    }
+    if (out.type === 'array' && out.items) out.items = pasar(out.items, false);
+    if (opcional) { out.type = conNull(out.type); if (out.enum) out.enum = [...out.enum, null]; }
+    return out;
+  };
+  return pasar(e, false);
+}
+
+export function cuerpoCompatible(pedido, modelo) {
+  const cuerpo = {
+    model: modelo,
+    messages: [{ role: 'system', content: INSTRUCCIONES }, { role: 'user', content: mensajeParaGemini(pedido) }],
+    response_format: { type: 'json_schema', json_schema: { name: 'respuesta_lia', strict: true, schema: esquemaEstricto() } },
+    max_completion_tokens: 1024,
+  };
+  if (/gpt-oss/.test(modelo)) cuerpo.reasoning_effort = 'low';  // razonamiento corto: respuesta rápida
+  return cuerpo;
+}
+
+// Quita los null que exige el esquema estricto, para que la respuesta quede igual que la de Gemini.
+const sinNulos = v => (Array.isArray(v) ? v.filter(x => x !== null).map(sinNulos)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null).map(([k, x]) => [k, sinNulos(x)])) : v);
+
+// Lee la respuesta de chat/completions con el mismo resultado que leerGemini (y el uso con los mismos nombres).
+export function leerCompatible(json) {
+  const c = json && Array.isArray(json.choices) ? json.choices[0] : null;
+  if (!c || !c.message) return { error: 'vacia' };
+  if (c.finish_reason === 'length') return { error: 'larga' };
+  if (c.finish_reason === 'content_filter' || c.message.refusal) return { error: 'bloqueado' };
+  let r;
+  try { r = sinNulos(JSON.parse(String(c.message.content || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))); } catch { return { error: 'esquema' }; }
+  if (!r || typeof r !== 'object' || !INTENCIONES.includes(r.intent)) return { error: 'esquema' };
+  const u = json.usage || {};
+  return { respuesta: limpiarRespuesta(r), uso: { promptTokenCount: u.prompt_tokens ?? null, candidatesTokenCount: u.completion_tokens ?? null, thoughtsTokenCount: u.completion_tokens_details?.reasoning_tokens ?? null } };
+}
+
+export async function pedirCompatible(deps, { url, modelo, clave }, pedido, { tiempo = TIEMPO_GEMINI } = {}) {
+  const control = new AbortController();
+  const reloj = setTimeout(() => control.abort(), tiempo);
+  let res, cuerpo;
+  try {
+    res = await deps.fetch(url, {
+      method: 'POST', signal: control.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clave}` },
+      body: JSON.stringify(cuerpoCompatible(pedido, modelo)),
+    });
+    cuerpo = await res.text();
+  } catch {
+    return { error: control.signal.aborted ? 'tiempo' : 'red' };
+  } finally {
+    clearTimeout(reloj);
+  }
+  if (!res.ok) return { error: res.status === 429 ? 'limite' : res.status === 401 || res.status === 403 ? 'clave' : res.status >= 500 ? 'caido' : 'proveedor_400', httpStatus: res.status };
+  let json;
+  try { json = JSON.parse(cuerpo); } catch { return { error: 'esquema' }; }
+  const r = leerCompatible(json);
+  return r.error ? { error: r.error } : { ...r, formato: 'estricto' };
+}
+
 // Llama a usar_ia() con la sesión de la persona (así auth.uid() es ella).
 export async function usarIA(deps, supabaseUrl, apikey, autorizacion, sumar) {
   let res, datos;
@@ -325,8 +420,8 @@ export async function manejar(req, deps) {
   const pedido = leerPedido(await req.text().catch(() => ''));
   if (pedido.error) return responder(400, { ok: false, error: 'pedido' });
 
-  const clave = deps.env('GEMINI_API_KEY');
-  if (!clave) return responder(503, { ok: false, error: 'sin_clave' });
+  const prov = proveedorDe(deps.env);
+  if (!prov || !prov.clave) return responder(503, { ok: false, error: 'sin_clave' }, { proveedor: prov ? prov.nombre : 'desconocido' });
   const supabaseUrl = deps.env('SUPABASE_URL');
   const apikey = req.headers.get('apikey') || deps.env('SUPABASE_ANON_KEY') || '';
 
@@ -337,12 +432,12 @@ export async function manejar(req, deps) {
       { ok: false, error: cupo.motivo, restantes_dia: cupo.restantes_dia, restantes_mes: cupo.restantes_mes });
   }
 
-  const modelo = deps.env('GEMINI_MODELO') || MODELO;
-  const g = await pedirGemini(deps, modelo, clave, pedido, { tiempo: deps.tiempo || TIEMPO_GEMINI });
+  const modelo = prov.modelo;
+  const g = await prov.pedir(deps, pedido, { tiempo: deps.tiempo || TIEMPO_GEMINI });
   if (g.error) {
     const esquemaMalo = ['esquema', 'vacia', 'larga', 'bloqueado'].includes(g.error);
     return responder(esquemaMalo ? 502 : 503, { ok: false, error: esquemaMalo ? 'respuesta' : 'ocupado' },
-      { modelo, detalle: g.error, gemini: g.httpStatus || null });
+      { proveedor: prov.nombre, modelo, detalle: g.error, http: g.httpStatus || null });
   }
 
   const suma = await usarIA(deps, supabaseUrl, apikey, autorizacion, true);
@@ -350,6 +445,6 @@ export async function manejar(req, deps) {
   const u = g.uso || {};
   return responder(200,
     { ok: true, respuesta: g.respuesta, restantes_dia: quedan('restantes_dia', 1), restantes_mes: quedan('restantes_mes', 1), modelo },
-    { modelo, formato: g.formato, intent: g.respuesta.intent, falta: g.respuesta.falta || null,
+    { proveedor: prov.nombre, modelo, formato: g.formato, intent: g.respuesta.intent, falta: g.respuesta.falta || null,
       tokens: { entrada: u.promptTokenCount ?? null, salida: u.candidatesTokenCount ?? null, razonamiento: u.thoughtsTokenCount ?? null } });
 }
