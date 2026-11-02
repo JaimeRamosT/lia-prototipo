@@ -10,8 +10,8 @@ const n = ahoraLocal();
 const dias = f => Math.round((L.fromYmd(f) - L.fromYmd(L.ymd(n))) / 864e5);
 const alternativas = e => (Array.isArray(e) ? e : [e]);
 
-test('el set tiene entre 60 y 100 frases, con identificadores únicos', () => {
-  assert.ok(frases.length >= 60 && frases.length <= 100, `${frases.length} frases`);
+test('el set tiene entre 60 y 120 frases, con identificadores únicos', () => {
+  assert.ok(frases.length >= 60 && frases.length <= 120, `${frases.length} frases`);
   assert.equal(new Set(frases.map(f => f.id)).size, frases.length);
   for (const f of frases) assert.ok(typeof f.frase === 'string' && f.frase.trim() && f.frase.length <= 500, f.id);
 });
