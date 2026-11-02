@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="es-PE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LIA · Estudia en tus horas libres</title>
+<meta name="description" content="LIA arma tu horario de estudio en las horas que de verdad tienes libres. Para universitarios que estudian y trabajan.">
+<meta name="theme-color" content="#3D3BF3">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+@font-face{font-family:'Inter';font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2')}
+:root{
+  --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C1B29; --mute:#5E5D6E; --line:#E6E2D9;
+  --pri:#3D3BF3; --pri-fill:#3D3BF3; --pri-ink:#FFFFFF; --pri-soft:#ECEBFF;
+  --exam:#C8352A; --ok:#1B7F4B; --trabajo:#FFE6B8; --trabajo-ink:#5C3B00; --clase:#E7E9F0;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121220; --surface:#1C1B2E; --ink:#EEEDF7; --mute:#A9A8BE; --line:#2D2C44;
+  --pri:#A3A1FF; --pri-fill:#4B49F5; --pri-soft:#26254A; --exam:#FF8A80; --ok:#6FD39C; --trabajo:#4A3A1A; --trabajo-ink:#FFE2A8; --clase:#2A2A40;
+  color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+a{color:var(--pri)}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+.skip{position:absolute;left:-999px}.skip:focus{left:16px;top:16px;background:var(--surface);padding:8px 12px;border-radius:8px;z-index:9}
+:focus-visible{outline:3px solid var(--pri);outline-offset:3px}
+/* Encabezado */
+.hero{background:#3D3BF3;color:#fff;padding:calc(20px + env(safe-area-inset-top,0px)) 0 56px}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:40px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:22px;letter-spacing:.02em;color:#fff;text-decoration:none}
+.nav a.ir{color:#fff;font-weight:600;font-size:15px;text-decoration:none;padding:10px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.45)}
+.hero-grid{display:grid;gap:32px;align-items:center}
+@media (min-width:860px){.hero-grid{grid-template-columns:1.1fr .9fr}}
+h1{font-size:clamp(34px,7vw,56px);line-height:1.05;letter-spacing:-.02em;margin:0 0 16px;font-weight:800}
+.hero p.sub{font-size:18px;opacity:.92;margin:0 0 24px;max-width:34em}
+.ctas{display:flex;flex-wrap:wrap;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:12px 20px;border-radius:14px;font:inherit;font-weight:700;text-decoration:none;border:0;cursor:pointer}
+.btn.light{background:#fff;color:#2B29C9}
+.btn.ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.6)}
+.btn.pri{background:var(--pri-fill);color:var(--pri-ink);width:100%}
+.btn[disabled]{opacity:.6;cursor:wait}
+.nota{font-size:14px;opacity:.9;margin:14px 0 0}
+/* Ilustración: un día con LIA */
+.dia{background:#fff;color:#1C1B29;border-radius:24px;padding:18px;box-shadow:0 20px 50px rgba(10,8,90,.35)}
+.dia .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#5E5D6E;font-weight:700;margin:0 0 12px}
+.blk{border-radius:14px;padding:12px 14px;margin-top:8px}
+.blk b{display:block;font-size:16px}.blk small{font-size:14px;opacity:.85}
+.k-clase{background:#E7E9F0}.k-trabajo{background:#FFE6B8;color:#5C3B00}.k-estudio{background:#3D3BF3;color:#fff}.k-examen{background:#FFEFEC;color:#9E2318}
+/* Secciones */
+section{padding:56px 0}
+h2{font-size:clamp(26px,4.5vw,36px);line-height:1.15;letter-spacing:-.01em;margin:0 0 12px}
+.lead{color:var(--mute);font-size:17px;margin:0 0 28px;max-width:40em}
+.grid3{display:grid;gap:16px}
+@media (min-width:760px){.grid3{grid-template-columns:repeat(3,1fr)}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
+.card h3{margin:0 0 8px;font-size:19px}
+.card p{margin:0;color:var(--mute)}
+.ico{width:44px;height:44px;border-radius:12px;background:var(--pri-soft);color:var(--pri);display:grid;place-items:center;margin-bottom:14px}
+.frases{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.frases span{background:var(--pri-soft);color:var(--pri);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:600}
+ol.pasos{list-style:none;padding:0;margin:0;display:grid;gap:16px;counter-reset:p}
+@media (min-width:760px){ol.pasos{grid-template-columns:repeat(3,1fr)}}
+ol.pasos li{counter-increment:p;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
+ol.pasos li::before{content:counter(p);display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--pri-fill);color:var(--pri-ink);font-weight:800;margin-bottom:12px}
+ol.pasos b{display:block;font-size:18px;margin-bottom:4px}
+ol.pasos span{color:var(--mute)}
+/* Planes */
+.planes{display:grid;gap:16px}
+@media (min-width:760px){.planes{grid-template-columns:1fr 1fr}}
+.plan h3{font-size:22px;margin:0 0 4px}
+.precio{font-size:30px;font-weight:800;margin:6px 0 2px}
+.precio small{font-size:15px;font-weight:600;color:var(--mute)}
+.plan ul{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:10px}
+.plan li{display:flex;gap:10px;align-items:flex-start}
+.plan li::before{content:'';flex:none;width:20px;height:20px;margin-top:2px;border-radius:50%;background:var(--pri-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233D3BF3' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5L19 7'/%3E%3C/svg%3E") center/14px no-repeat}
+.plan.pro{border:2px solid var(--pri)}
+.tag{display:inline-block;background:var(--pri-fill);color:var(--pri-ink);font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px;letter-spacing:.04em}
+.aviso-precio{font-size:14px;color:var(--mute);margin:14px 0 0}
+/* Lista de espera */
+.espera{background:var(--surface);border:1px solid var(--line);border-radius:24px;padding:26px;max-width:560px}
+label{display:block;font-weight:600;margin:16px 0 6px}
+label .opc{font-weight:400;color:var(--mute)}
+input[type=email],input[type=text]{width:100%;min-height:48px;padding:12px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus{border-color:var(--pri)}
+.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;font-size:15px;color:var(--mute);margin:18px 0}
+.check input{width:22px;height:22px;flex:none;margin:1px 0 0;accent-color:var(--pri-fill)}
+.estado{min-height:24px;margin:14px 0 0;font-weight:600}
+.estado.ok{color:var(--ok)}.estado.mal{color:var(--exam)}
+footer{padding:32px 0 calc(32px + env(safe-area-inset-bottom,0px));color:var(--mute);font-size:14px;border-top:1px solid var(--line)}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+</head>
+<body>
+<a class="skip" href="#principal">Ir al contenido</a>
+<header class="hero">
+  <div class="wrap">
+    <nav class="nav" aria-label="Principal">
+      <a class="logo" href="#" aria-label="LIA, inicio de la página"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 5.6L19.5 9l-5.7 1.6L12 16l-1.8-5.4L4.5 9l5.7-1.4L12 2zm7 12l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9L19 14z"/></svg>LIA</a>
+      <a class="ir" href="./">Abrir la app</a>
+    </nav>
+    <div class="hero-grid">
+      <div>
+        <h1>Estudia en las horas que de verdad tienes libres.</h1>
+        <p class="sub">Para universitarios que estudian y trabajan. Le dices a Lía tus horarios y tus exámenes, y te arma la semana para que no te amanezcas antes de cada examen.</p>
+        <div class="ctas">
+          <a class="btn light" href="./">Probar gratis</a>
+          <a class="btn ghost" href="#espera">Avísenme de LIA Pro</a>
+        </div>
+        <p class="nota">Gratis y sin cuenta. Tus datos se guardan en tu teléfono.</p>
+      </div>
+      <div class="dia" role="img" aria-label="Ejemplo de un día con LIA: clases de 8 a 13, trabajo de 15 a 19 y estudio de Cálculo de 20 a 21, en la hora libre.">
+        <p class="eyebrow">Un día con LIA</p>
+        <div class="blk k-clase"><b>Clases en la U</b><small>08:00 – 13:00</small></div>
+        <div class="blk k-trabajo"><b>Trabajo</b><small>15:00 – 19:00</small></div>
+        <div class="blk k-estudio"><b>Estudiar Cálculo II</b><small>20:00 – 21:00 · en tu hora libre</small></div>
+        <div class="blk k-examen"><b>Parcial de Cálculo II</b><small>Viernes · 09:00 · ya llevas 4 de 5 h</small></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="principal">
+  <section aria-labelledby="t-que">
+    <div class="wrap">
+      <h2 id="t-que">Tu semana, armada en dos minutos</h2>
+      <p class="lead">LIA mira tus clases, tu trabajo y tus traslados, y reparte las horas de estudio antes de cada evaluación. Si algo cambia, se lo dices a Lía.</p>
+      <div class="grid3">
+        <div class="card">
+          <div class="ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></div>
+          <h3>Estudio en tus huecos reales</h3>
+          <p>No te pone a estudiar a la hora del trabajo ni del bus. Solo cuando de verdad estás libre, y antes de dormir.</p>
+        </div>
+        <div class="card">
+          <div class="ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.7 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></div>
+          <h3>Lía entiende como hablas</h3>
+          <p>Escríbele como a una amiga y ella lo anota.</p>
+          <div class="frases"><span>“parcial de cálculo el viernes a las 9”</span><span>“hoy salgo de la chamba a las 9”</span><span>“¿qué tengo mañana?”</span></div>
+        </div>
+        <div class="card">
+          <div class="ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+          <h3>Te avisa en el teléfono</h3>
+          <p>Con LIA Pro, un aviso la noche antes del examen, dos horas antes y antes de cada sesión de estudio.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-como" style="padding-top:0">
+    <div class="wrap">
+      <h2 id="t-como">Cómo funciona</h2>
+      <ol class="pasos">
+        <li><b>Cuéntale tu semana</b><span>Tus clases, tu trabajo y tus traslados.</span></li>
+        <li><b>Agrega tus evaluaciones</b><span>Parciales, prácticas, entregas y exposiciones.</span></li>
+        <li><b>Estudia con tu horario</b><span>Marca lo que estudiaste y Lía ajusta lo que falta.</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="t-planes" style="padding-top:0">
+    <div class="wrap">
+      <h2 id="t-planes">Planes</h2>
+      <div class="planes">
+        <div class="card plan">
+          <h3>LIA Gratis</h3>
+          <p class="precio">S/ 0</p>
+          <ul>
+            <li>Hasta 3 evaluaciones próximas</li>
+            <li>Tu horario de estudio, armado una vez por semana</li>
+            <li>Lía en el chat para anotar y preguntar</li>
+            <li>Sin cuenta: todo queda en tu teléfono</li>
+          </ul>
+        </div>
+        <div class="card plan pro">
+          <span class="tag">LIA Pro</span>
+          <p class="precio">S/ 9.90 <small>al mes</small></p>
+          <p style="margin:0;color:var(--mute)">o S/ 34.90 por ciclo de 4 meses</p>
+          <ul>
+            <li>Evaluaciones sin límite</li>
+            <li>Lía reorganiza tu semana sola cuando algo cambia</li>
+            <li>Lía con IA para entender lo que escribas</li>
+            <li>Recordatorios en tu teléfono</li>
+            <li>Dictado por voz y modo sesión</li>
+          </ul>
+        </div>
+      </div>
+      <p class="aviso-precio">LIA es un prototipo de estudiantes. Por ahora, el pago de LIA Pro en la app es de prueba y no cobra.</p>
+    </div>
+  </section>
+
+  <section id="espera" aria-labelledby="t-espera" style="padding-top:0">
+    <div class="wrap">
+      <h2 id="t-espera">Avísenme de LIA Pro</h2>
+      <p class="lead">Déjanos tu correo y te escribimos primero cuando LIA Pro abra de verdad. Solo para eso: nada de publicidad.</p>
+      <form class="espera" id="form-espera" novalidate>
+        <label for="correo">Tu correo</label>
+        <input id="correo" name="correo" type="email" autocomplete="email" inputmode="email" required maxlength="254" placeholder="nombre@correo.com" aria-describedby="estado">
+        <label for="universidad">Tu universidad o instituto <span class="opc">(opcional)</span></label>
+        <input id="universidad" name="universidad" type="text" autocomplete="organization" maxlength="80" placeholder="Por ejemplo: UTEC">
+        <label class="check"><input id="acepto" name="acepto" type="checkbox" required><span>Acepto que LIA guarde mi correo para avisarme de LIA Pro. Puedo pedir que lo borren cuando quiera.</span></label>
+        <button class="btn pri" type="submit" id="enviar">Anotarme</button>
+        <p class="estado" id="estado" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">LIA · Grupo 8 · Prototipo hecho en Perú. <a href="./">Abrir la app</a></div>
+</footer>
+
+<script src="config.js"></script>
+<script>
+// Lista de espera: guarda el correo con la función unirse_lista_espera de Supabase (solo puede agregar; nadie puede leer la lista desde aquí).
+(function(){
+  var form=document.getElementById('form-espera'),estado=document.getElementById('estado'),boton=document.getElementById('enviar');
+  var cfg=window.LIA_SUPABASE||{};
+  var origen=(new URLSearchParams(location.search).get('utm_source')||new URLSearchParams(location.search).get('de')||'').slice(0,40);
+  function decir(t,ok){estado.textContent=t;estado.className='estado '+(ok?'ok':'mal');}
+  form.addEventListener('submit',function(ev){
+    ev.preventDefault();
+    var correo=form.correo.value.trim(),uni=form.universidad.value.trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){decir('Escribe un correo válido, por ejemplo nombre@correo.com.',false);form.correo.focus();return;}
+    if(!form.acepto.checked){decir('Marca la casilla para que podamos guardar tu correo.',false);form.acepto.focus();return;}
+    if(!cfg.url||!cfg.key){decir('La lista de espera no está disponible ahora. Prueba más tarde.',false);return;}
+    boton.disabled=true;boton.textContent='Anotando…';decir('',true);
+    fetch(cfg.url+'/rest/v1/rpc/unirse_lista_espera',{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.key,Authorization:'Bearer '+cfg.key},body:JSON.stringify({p_correo:correo,p_universidad:uni||null,p_origen:origen||null})})
+      .then(function(r){if(!r.ok)throw new Error(String(r.status));
+        form.reset();decir('¡Listo! Te escribiremos a ese correo cuando LIA Pro abra.',true);})
+      .catch(function(){decir('No pude anotarte. Revisa tu conexión y vuelve a intentarlo.',false);})
+      .then(function(){boton.disabled=false;boton.textContent='Anotarme';});
+  });
+})();
+</script>
+</body>
+</html>

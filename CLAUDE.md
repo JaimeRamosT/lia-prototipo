@@ -63,6 +63,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - Después de cada migración, corre los asesores de seguridad y de rendimiento. Los avisos 0029 de las funciones que llaman las cuentas son esperados: no les quites el permiso. Son `mi_suscripcion`, `simular_pago`, `cambiar_renovacion`, `simular_fin_periodo` y `usar_ia` (ver `docs/cuentas-y-planes.md`), y `clave_publica_avisos`, `guardar_dispositivo`, `quitar_dispositivo` y `programar_avisos` (ver `docs/notificaciones.md`).
 - El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
+- Lista de espera (`landing.html`): la página solo agrega correos con `unirse_lista_espera()`, que llama `anon` a propósito (su aviso del asesor es esperado). Nadie lee `lista_espera` desde la página ni la app.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
 - La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat. Lo mismo con las de otros proveedores (`GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); el proveedor se elige con el secreto `IA_PROVEEDOR` (ver `docs/ia-con-gemini.md`).
 - El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
