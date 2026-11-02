@@ -233,6 +233,7 @@ label.f input,label.f select,.clave input{border:1px solid var(--line);backgroun
 .dpick input{position:absolute;opacity:0;pointer-events:none}
 .dpick input:checked+span{color:var(--pri-ink)}
 .dpick label:has(input:focus-visible){outline:2px solid var(--pri);outline-offset:2px}
+label.btn:has(input:focus-visible){outline:2px solid var(--pri);outline-offset:2px}
 .dpick label:has(input:checked){background:var(--pri-fill);border-color:var(--pri-fill);color:var(--pri-ink)}
 .opt{display:flex;gap:12px;align-items:center;border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:12px 14px}
 /* Categoría: opciones de radio con ícono y nombre, de 44 px de alto. La elegida lleva borde de su color de texto. */
@@ -1193,6 +1194,46 @@ function avisosDe(state,p,now,tipos){const T={...AVISOS_DEF,...(tipos||{})},S=st
   return out.sort((a,b)=>a.cuando.localeCompare(b.cuando)).slice(0,150);}
 // Categoría de algo de un solo día por su nombre («Cumpleaños de Ana» → ocio).
 const catEvento=l=>{for(const w of norm(l||'').split(/[^a-z0-9]+/)){if(CAT_EVENTO[w])return CAT_EVENTO[w];if(COMMIT_KW[w])return tipoRutina(COMMIT_KW[w]);}return'otro';};
+// ---------- Consolidado de matrícula (PDF) ----------
+// Lee los horarios de un consolidado a partir de los trozos de texto del PDF con su posición ({s,x,y}; y crece hacia
+// abajo y las páginas van una tras otra). No guarda ni lee el nombre ni el código del alumno: solo cursos y horarios.
+// 1) La columna de horarios empieza en el trozo más a la izquierda que trae un día de la semana o una hora.
+// 2) Esa columna, leída en orden, da «día … HH:MM-HH:MM aula» (aunque un horario se parta en dos líneas o páginas).
+// 3) Cada horario va al curso cuya fila está más cerca; un nombre en dos líneas se junta.
+const DIA_CONS={lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,domingo:0};
+function leerConsolidado(items){
+  const its=(items||[]).filter(t=>t&&typeof t.s==='string'&&t.s.trim()&&Number.isFinite(t.x)&&Number.isFinite(t.y)).map(t=>({s:t.s.replace(/\s+/g,' ').trim(),x:t.x,y:t.y,n:norm(t.s)}));
+  const esDia=t=>/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(t.n),esHora=t=>/\b\d{1,2}:\d{2}\b/.test(t.n);
+  const cab=its.find(t=>/^horarios?$/.test(t.n)),y0=cab?cab.y-12:-Infinity;
+  const conHorario=its.filter(t=>t.y>y0&&(esDia(t)||esHora(t)));if(!conHorario.length)return{cursos:[]};
+  const x0=Math.min(...conHorario.map(t=>t.x))-4;
+  const col=its.filter(t=>t.x>=x0&&t.y>y0).sort((a,b)=>a.y-b.y||a.x-b.x),izq=its.filter(t=>t.x<x0&&t.y>y0);
+  // La columna como un solo texto, recordando la altura de cada trozo.
+  let txt='';const pos=[];for(const t of col){const i=txt.length;txt+=(txt?' ':'')+t.n;pos.push([i,t.y]);}
+  const yEn=i=>{let y=pos[0][1];for(const[p,v]of pos){if(p>i)break;y=v;}return y;};
+  const re=/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b(.*?)(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/g,hs=[];let m;
+  while((m=re.exec(txt))){const ini=+m[3]*60+ +m[4],fin=+m[5]*60+ +m[6];if(ini>=1440||fin>1440||fin===ini)continue;
+    const medio=m[2],tipo=/laborator/.test(medio)?'Laboratorio':/practic/.test(medio)?'Práctica':/teori/.test(medio)?'Teoría':'';
+    hs.push({dia:DIA_CONS[m[1]],inicio:fmt(ini),fin:fmt(fin),tipo,virtual:/virtual/.test(medio),y:yEn(m.index+1)});}
+  if(!hs.length)return{cursos:[]};
+  // Los nombres de curso: texto con letras a la izquierda de los horarios (sin códigos, números, secciones ni encabezados).
+  const cabNom=its.find(t=>/^(curso|cursos|asignatura|asignaturas|nombre del curso|materia|experiencia curricular)$/.test(t.n));
+  const noNombre=t=>!/[a-z]{3}/.test(t.n)||/^[a-z]{1,5}\s?\d{1,5}[a-z]?$/.test(t.n)||/^(lab|teo|sec|grupo|aula)\b/.test(t.n)||/^(curso|cursos|asignaturas?|codigo|creditos|seccion|grupos?|nivel|vez|nro|horario|academic|presenci|virtuales|ales|os|tipo|docente|ciclo)\b/.test(t.n);
+  const cand=izq.filter(t=>!noNombre(t)&&(!cabNom||(t.x>=cabNom.x-80&&t.x<=cabNom.x+120))).sort((a,b)=>a.y-b.y||a.x-b.x);
+  const nombres=[];for(const t of cand){const u=nombres[nombres.length-1];
+    if(u&&Math.abs(t.x-u.x)<=10&&t.y-u.yf<=14){u.s+=' '+t.s;u.yf=t.y;}else nombres.push({s:t.s,x:t.x,y:t.y,yf:t.y});}
+  if(!nombres.length)return{cursos:[]};
+  const cursos=nombres.map(n=>({nombre:n.s.replace(/\s*[-–]\s*$/,'').slice(0,40),c:(n.y+n.yf)/2,horarios:[]}));
+  for(const h of hs){const c=cursos.reduce((a,b)=>Math.abs(b.c-h.y)<Math.abs(a.c-h.y)?b:a);
+    if(!c.horarios.some(x=>x.dia===h.dia&&x.inicio===h.inicio&&x.fin===h.fin)){const{y,...sinY}=h;c.horarios.push(sinY);}}
+  // El mismo curso en varias filas (una por horario) queda como uno solo.
+  const unidos=[];for(const c of cursos.filter(c=>c.horarios.length)){const u=unidos.find(x=>norm(x.nombre)===norm(c.nombre));
+    if(!u){unidos.push({nombre:c.nombre,horarios:[...c.horarios]});continue;}
+    for(const h of c.horarios)if(!u.horarios.some(x=>x.dia===h.dia&&x.inicio===h.inicio&&x.fin===h.fin))u.horarios.push(h);}
+  return{cursos:unidos};}
+// Un curso como rutina de clases: un horario por cada par de horas, con todos sus días.
+function rutinaDeCurso(c){const t={};for(const h of c.horarios){const k=h.inicio+'-'+h.fin;(t[k]=t[k]||{days:[],start:h.inicio,end:h.fin}).days.push(h.dia);}
+  return{name:c.nombre,type:'clase',tramos:Object.values(t).map(x=>({...x,days:[...new Set(x.days)].sort((a,b)=>a-b)}))};}
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -1381,6 +1422,7 @@ function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map
    <div class="stack"><h1>Tus rutinas</h1><p class="muted" style="margin:0">¿Cuándo <b>no</b> puedes estudiar? Clases, trabajo, traslados, comidas: lo registras una vez y se repite cada semana.</p></div>
    ${dictar('commit','“trabajo de lunes a viernes de 3 a 7”')}
    <div class="stack">${listaRutinas()||'<p class="muted small" style="margin:0">Aún no tienes rutinas.</p>'}
+   <button class="btn sec" data-a="consolidado">${I.list.replace('<svg','<svg class="ico" aria-hidden="true"')}<span>Importar mi consolidado de matrícula</span></button>
    <button class="dashed" data-a="add-commit">${I.plus.replace('<svg','<svg class="ico"')}<span class="grow">Agregar a mano</span></button>
    ${state.commitments.length&&!state.commitments.some(c=>c.type==='traslado'||c.type==='comida')?'<p class="tip"><b>¿Te demoras en llegar a la U o al trabajo?</b> Agrega también tus traslados y tu almuerzo, para que Lía no te ponga a estudiar en esas horas.</p>':''}</div>
    <div class="card stack"><span class="eyebrow">Tu sueño</span><div class="two"><label class="f">Me despierto<input type="time" id="ob-wake" data-set="wake" value="${state.settings.wake}"></label><label class="f">Me duermo<input type="time" id="ob-sleep" data-set="sleep" value="${state.settings.sleep}"></label></div></div>
@@ -1715,8 +1757,50 @@ function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaCorta
   return `<div class="grab"></div><h2>¿Qué quieres agregar${esc(cuando)}?</h2><div class="stack">
    ${op('add-commit',I.repeat,'Rutina semanal','Clases, trabajo, gimnasio: lo que se repite cada semana.')}
    ${op('add-evento',I.cal,'Algo de un solo día','Un cumpleaños, una cita, un turno extra.')}
-   ${op('add-eval',I.list,'Evaluación','Un examen, una práctica o una entrega.')}</div>
+   ${op('add-eval',I.list,'Evaluación','Un examen, una práctica o una entrega.')}
+   ${op('consolidado',I.cal,'Consolidado de matrícula','Sube el PDF de tu matrícula y agrego tus clases.')}</div>
    <button class="btn sec" data-a="close">Cancelar</button>`;}
+// ---------- Consolidado de matrícula (PDF) ----------
+// El PDF se lee en el teléfono con pdf.js (vendor/pdfjs, se carga solo al usarlo) y no se envía a ningún lado.
+// leerConsolidado() (en la lógica) saca cursos y horarios; la persona elige cuáles agregar como rutinas de clases.
+let pdfjsCarga=null;
+function cargarPdfjs(){if(!pdfjsCarga)pdfjsCarga=import('./vendor/pdfjs/pdf.min.mjs').then(m=>{m.GlobalWorkerOptions.workerSrc='./vendor/pdfjs/pdf.worker.min.mjs';return m;}).catch(e=>{pdfjsCarga=null;throw e;});return pdfjsCarga;}
+async function trozosDelPDF(archivo){const pdfjs=await cargarPdfjs();
+  const doc=await pdfjs.getDocument({data:new Uint8Array(await archivo.arrayBuffer()),isEvalSupported:false,disableFontFace:true,useSystemFonts:false,verbosity:0}).promise;
+  const out=[];let off=0;
+  try{for(let p=1;p<=Math.min(doc.numPages,10);p++){const pg=await doc.getPage(p),vp=pg.getViewport({scale:1}),tc=await pg.getTextContent();
+    for(const it of tc.items){if(!it.str||!it.str.trim())continue;const t=pdfjs.Util.transform(vp.transform,it.transform);out.push({s:it.str,x:t[4],y:t[5]+off});}off+=vp.height;}}
+  finally{doc.destroy();}
+  return out;}
+const yaEsta=(nombre,t)=>state.commitments.some(c=>norm(c.name)===norm(nombre)&&c.start===t.start&&c.end===t.end&&t.days.every(d=>c.days.includes(d)));
+function abrirConsolidado(){ui.cons={estado:'elegir'};ui.sheet=sheetConsolidado();render();}
+function sheetConsolidado(){const c=ui.cons||{estado:'elegir'};
+  const elegir=(t,cls)=>`<label class="btn ${cls}" style="cursor:pointer">${t}<input type="file" id="cons-file" accept="application/pdf,.pdf" class="sr-only"></label>`;
+  const cab=`<div class="grab"></div><h2>Tu consolidado de matrícula</h2>`;
+  if(c.estado==='leyendo')return `${cab}<p class="muted" role="status" aria-live="polite">Leyendo tu consolidado…</p>`;
+  if(c.estado==='listo'){const rs=c.cursos.map(rutinaDeCurso);
+    return `<form class="stack" data-form="consolidado" style="gap:12px">${cab}
+     <p class="muted small" style="margin:0" role="status">Encontré ${rs.length} ${rs.length===1?'curso':'cursos'}. Desmarca lo que no quieras agregar.</p>
+     ${rs.map((r,i)=>{const dup=r.tramos.every(t=>yaEsta(r.name,t));
+       return `<label class="item" style="align-items:flex-start;text-align:left"><input type="checkbox" name="cur" value="${i}" ${dup?'':'checked'} style="margin-top:4px;width:20px;height:20px;accent-color:var(--pri)"><span class="grow"><b>${esc(r.name)}</b><br><span class="small muted">${r.tramos.map(t=>`${diasTxt(t.days)} ${t.start}–${t.end}`).join(' · ')}${dup?' · ya está en tus rutinas':''}</span></span></label>`;}).join('')}
+     <p class="small muted" style="margin:0">Se guardan como rutinas de clases. Revisa que los horarios sean los de tu consolidado.</p>
+     <button class="btn pri" type="submit">Agregar cursos</button>${elegir('Elegir otro PDF','sec')}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+  const err=c.estado==='error'?`<p class="ferr" role="alert">${esc(c.err)}</p>`:'';
+  return `${cab}<p class="muted" style="margin:0">Sube el PDF de tu consolidado de matrícula, el que descargas de la intranet de tu universidad. Lo leo aquí mismo: no se envía a ningún lado.</p>
+   ${err}${elegir('Elegir el PDF','pri')}<button class="btn sec" data-a="close">Cancelar</button>`;}
+async function leerArchivoConsolidado(archivo){if(!archivo)return;
+  if(archivo.size>15*1024*1024){ui.cons={estado:'error',err:'Ese archivo pesa más de 15 MB. Sube el PDF del consolidado, que suele pesar menos de 1 MB.'};ui.sheet=sheetConsolidado();render();return;}
+  ui.cons={estado:'leyendo'};ui.sheet=sheetConsolidado();render();anunciar('Leyendo tu consolidado…');
+  try{const r=leerConsolidado(await trozosDelPDF(archivo));
+    ui.cons=r.cursos.length?{estado:'listo',cursos:r.cursos}:{estado:'error',err:'No encontré horarios en ese PDF. Revisa que sea tu consolidado de matrícula, o agrega tus clases a mano.'};}
+  catch(e){ui.cons={estado:'error',err:navigator.onLine===false&&!pdfjsCarga?'Para leer el PDF la primera vez necesito internet. Conéctate y vuelve a intentarlo.':'No pude leer ese archivo. Prueba con el PDF que descargas de tu intranet, o agrega tus clases a mano.'};}
+  ui.sheet=sheetConsolidado();render();if(ui.cons.estado==='listo')anunciar(`Encontré ${ui.cons.cursos.length} cursos.`);}
+// Guarda los cursos elegidos como rutinas de clases (una por curso; varios horarios quedan en un mismo grupo).
+// Lo que ya estaba igual no se duplica. Todo junto se deshace con un solo Deshacer.
+function guardarConsolidado(idx){const rs=(ui.cons&&ui.cons.cursos||[]).map(rutinaDeCurso).filter((r,i)=>idx.includes(i));let n=0;
+  snapshot();for(const r of rs){const tr=r.tramos.filter(t=>!yaEsta(r.name,t));if(!tr.length)continue;n++;const grupo=tr.length>1?uid():null;
+    for(const t of tr)state.commitments.push({id:uid(),name:r.name,type:'clase',days:t.days,start:t.start,end:t.end,...(grupo?{grupo}:{})});}
+  save();return n;}
 // Las horas de estudio son opcionales: si quedan vacías, Lía usa lo usual para ese tipo de evaluación.
 // Nada se guarda sin fecha ni hora (decisión del 28-oct): en una evaluación nueva vienen vacías, salvo que se sepan.
 // Con pre, el formulario se abre con esos datos encima: los de una evaluación nueva o los que cambian en una que ya está.
@@ -2185,6 +2269,7 @@ const A={
  // Registro sin evaluaciones: se termina en Hoy, donde «Completa tu semana» muestra lo que falta.
  'ob-saltar':()=>{state.onboarded=true;evento('registro');if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
  'add-commit':()=>abrirRutina(null,ui.agregarPre),
+ 'consolidado':()=>abrirConsolidado(),
  agregar:d=>{ui.agregarPre=d.d?{date:d.d,start:d.s?fmt(+d.s):'',end:d.e?fmt(+d.e):''}:null;ui.sheet=sheetAgregar();render();},
  'add-evento':()=>{ui.evento=eventoDesde(null,ui.agregarPre);ui.agregarPre=null;ui.sheet=sheetEvento();render();},
  'edit-ex':d=>{const v=eventoDesde(d.id);if(!v.id)return;ui.evento=v;ui.sheet=sheetEvento();render();},
@@ -2321,6 +2406,7 @@ Object.assign(A,{
 });
 document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;const f=A[el.dataset.a];if(!f)return;
   if(el.dataset.a==='scrim'){f(el.dataset,el,ev);return;}ev.preventDefault();f(el.dataset,el,ev);});
+document.addEventListener('change',ev=>{const t=ev.target;if(t&&t.id==='cons-file'&&t.files&&t.files[0])leerArchivoConsolidado(t.files[0]);});
 document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();const fd=new FormData(f);
   if(f.dataset.form==='cuenta'){enviarCuenta(String(fd.get('email')||'').trim(),String(fd.get('password')||''));return;}
   if(f.dataset.form==='chat'||f.dataset.form==='dictar'){const q=fd.get('q')||'';handleText(String(q),f.dataset.form==='chat'?'chat':f.dataset.kind);return;}
@@ -2331,6 +2417,9 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     snapshot();fz.vistos=Array.isArray(fz.vistos)?fz.vistos:[];let min=0;
     for(const b of l){const k=claveBloque(b);if(sel.has(k)){state.done.push(hechoDeBloque(b.evalId,b.date,b.s,b.e));min+=b.e-b.s;}else fz.vistos.push(k);}
     save();rerenderKeepScroll();toast(min?`Sumé ${hrs(min)} a tu avance.${sel.size<l.length?' Lo demás queda pendiente.':''}`:'Listo. Ese tiempo queda pendiente en tus evaluaciones.',true);return;}
+  if(f.dataset.form==='consolidado'){const idx=fd.getAll('cur').map(Number);if(!idx.length){toast('Marca al menos un curso.');return;}
+    const enRegistro=!state.onboarded,fresco=!!state.frozen&&!planStale(),n=guardarConsolidado(idx);const ocio=enRegistro||!n?'':reubicarOcio();if(n)alDiaSiNoChoca(fresco);ui.sheet=null;ui.cons=null;rerenderKeepScroll();
+    toast(!n?'Esos cursos ya estaban en tus rutinas.':`Agregué ${n} ${n===1?'curso':'cursos'} a tus rutinas.${enRegistro?'':isPro()?' Lía reorganizó tu semana.':!state.frozen?'':ocio?` ${ocio}`:' '+textoRutinaGratis().replace(/^Guardado\. /,'')}`,!!n);return;}
   if(f.dataset.form==='rutina'){const r=leerRutina();if(!r)return;r.err=null;
     // Sin categoría el navegador ya detiene el envío (required); esto cubre a los que no validan formularios.
     if(!COMMIT_TYPES[r.type]){const x=document.querySelector('.sheet input[name="ru-tipo"]');if(x){x.focus();if(x.reportValidity)x.reportValidity();}return;}
@@ -2537,7 +2626,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.9';
+const APP_VERSION='0.7.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);

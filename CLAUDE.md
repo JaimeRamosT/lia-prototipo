@@ -43,6 +43,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - La política de contenido (CSP) está en `_headers`. Si la app usa un servicio nuevo (por ejemplo, Culqi), agrégalo ahí y pruébalo con `npx wrangler dev`, mirando la consola del navegador.
 - El `name` de `wrangler.jsonc` debe seguir siendo `lia-prototipo`, igual que el Worker en Cloudflare.
 - El plan gratuito de Cloudflare no permite recibir datos de tarjeta en la página: el cobro real usa la página de pago de Culqi.
+- El consolidado de matrícula se lee en el teléfono con pdf.js (`vendor/pdfjs`, ver `docs/consolidado.md`). Nunca subas un consolidado real al repositorio: trae nombre y código del alumno.
 
 ## Fábrica de software (desde el 2 de noviembre de 2026)
 
