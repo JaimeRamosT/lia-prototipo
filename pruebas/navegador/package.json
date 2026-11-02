@@ -1,0 +1,12 @@
+{
+  "name": "lia-pruebas-navegador",
+  "private": true,
+  "description": "Pruebas de LIA en el navegador (Playwright), simulando un iPhone y un Android. Ver pruebas/navegador/README.md.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./*.nav.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

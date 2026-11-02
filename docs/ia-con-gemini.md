@@ -171,6 +171,23 @@ El asesor de seguridad marcará `usar_ia()` con el aviso 0029, igual que las cua
 - **En la app:** `validarIA()` guarda lo entendido como borrador (`state.borrador`, 10 minutos) y muestra la pregunta con respuestas rápidas que arma la app según el dato que falta (por ejemplo, «23:59 · Otra hora» para una entrega). Un toque completa el borrador sin otro mensaje con IA; una respuesta escrita se intenta leer primero con las reglas y, si no se entiende, va a la IA con la conversación reciente. Sin IA, las reglas (`interpret()`) usan la misma tabla.
 - **Endpoint:** `POST /v1beta/models/{modelo}:generateContent` con `fetch`, sin SDK, y la clave en la cabecera `x-goog-api-key`. La salida va con `generationConfig.responseFormat.text` (`mimeType: APPLICATION_JSON` y `schema`); si la API no reconoce ese campo, la función reintenta una vez con los nombres anteriores (`responseMimeType` y `responseJsonSchema`).
 
+### Otro proveedor: Groq, Cerebras u OpenRouter (1-nov-2026)
+
+La función puede pedirle a un proveedor con API compatible con OpenAI en lugar de Gemini. Se elige con secretos de las Edge Functions, sin cambiar la app ni volver a desplegar:
+
+| Secreto | Valor | Para qué |
+| --- | --- | --- |
+| `IA_PROVEEDOR` | `groq`, `cerebras` u `openrouter` (sin él: `gemini`) | Qué proveedor usa la función |
+| `GROQ_API_KEY`, `CEREBRAS_API_KEY` u `OPENROUTER_API_KEY` | La clave del proveedor | Solo como secreto, igual que `GEMINI_API_KEY` |
+| `GROQ_MODELO` (o `CEREBRAS_MODELO`, `OPENROUTER_MODELO`) | Opcional; por defecto `openai/gpt-oss-120b` (en Cerebras, `gpt-oss-120b`) | Probar otro modelo del mismo proveedor |
+
+- Pide con `response_format` de tipo `json_schema` y `strict: true`. El esquema estricto (`esquemaEstricto()`) vuelve obligatorios todos los campos, prohíbe campos extra y deja que los opcionales sean `null`. La función quita esos `null`, así que la app recibe lo mismo que con Gemini y lo revisa igual con `validarIA()`.
+- Con los modelos gpt-oss pide `reasoning_effort: low`, para responder rápido.
+- Los registros suman `proveedor` al modelo y los tokens. Siguen sin el texto de los mensajes.
+- Para volver a Gemini basta con borrar `IA_PROVEEDOR`.
+- Antes de cambiar en producción, corre la evaluación con ese proveedor en tu computadora: `$env:GROQ_API_KEY="tu-clave"; node pruebas/ia/evaluar.mjs --proveedor=groq`. Con el plan gratuito de Groq va una frase cada 21 s (unos 40 minutos), por el límite de tokens por minuto.
+- Por confirmar en la consola de cada proveedor: el nombre exacto del modelo, que admita JSON estricto y sus condiciones de uso de datos.
+
 ### Seguridad
 
 - La clave solo existe como secreto en Supabase (`GEMINI_API_KEY`), restringida a la API de Gemini en AI Studio. Nunca va en `config.js`, en el repositorio ni en el chat.

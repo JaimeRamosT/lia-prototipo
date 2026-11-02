@@ -1,0 +1,50 @@
+# Pruebas de LIA en cada pull request y en cada cambio de main.
+# - logica: node --test (motor de horarios, lectura de frases, avisos, IA con respuestas simuladas,
+#   que no haya claves en el repositorio y que la app abra sin internet).
+# - navegador: Playwright simulando un iPhone y un Android (pruebas/navegador).
+# No usa secretos. La evaluación con el modelo real está en eval-ia.yml.
+name: Pruebas
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  logica:
+    name: Lógica (node --test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test
+      - name: Evaluación de las frases, solo reglas (sin modelo)
+        run: node pruebas/ia/evaluar.mjs --solo-reglas
+
+  navegador:
+    name: Navegador (iPhone y Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: pruebas/navegador
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pruebas/navegador/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
