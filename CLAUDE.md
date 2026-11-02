@@ -67,5 +67,6 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat.
 - El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
 - La función `lia-ia` nunca escribe en sus registros el texto de los mensajes.
+- Métricas (`docs/metricas.md`): la app solo agrega eventos anónimos con `registrar_evento()`, que llama `anon` a propósito (su aviso del asesor es esperado). Nunca guardan horarios, cursos, mensajes, nombre ni correo.
 - Recordatorios (`docs/notificaciones.md`): el servidor solo guarda hora, tipo y una referencia de cada aviso, nunca nombres de cursos. La Edge Function `lia-avisos` tiene `verify_jwt` apagado porque la llaman `pg_cron` (con el secreto `lia_avisos_secreto` de Vault) y la app (revisa la sesión). Las claves VAPID las crea la función y viven en Vault: no las copies ni las reemplaces, o todos los teléfonos tendrán que volver a activar los avisos.
 - Especificación y diseño: `docs/cuentas-y-planes.md` (cuentas y planes), `docs/ia-con-gemini.md` (IA) y `docs/notificaciones.md` (recordatorios).

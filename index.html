@@ -1570,6 +1570,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   </div>
   <span class="eyebrow">Tus datos</span>
   ${installCard()}
+  ${metricasCard()}
   <div class="stack"><button class="btn danger" data-a="ask-reset">Borrar todo</button></div>
   <p class="small muted" style="margin:0;text-align:center">LIA ${APP_VERSION} · prototipo de prueba</p>`;}
 
@@ -2129,9 +2130,9 @@ const A={
  // Quien pasa el paso 1 con sus rutinas ya vio sus horas de sueño; quien lo salta las revisa después en «Completa tu semana».
  // Al pasar de paso en el registro, el Deshacer del paso anterior ya no aplica a la pantalla nueva.
  'ob-next':d=>{undoStack=null;undoTras=null;quitarAvisoDeshacer();if(ui.ob===1&&d.v!=='saltar'&&state.settings.suenoListo===false){state.settings.suenoListo=true;save();}ui.ob++;render();document.getElementById('view').scrollTop=0;},
- 'ob-finish':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='semana';ui.sel=null;render();},
+ 'ob-finish':()=>{state.onboarded=true;evento('registro');if(!isPro())armWeek(true);save();ui.tab='semana';ui.sel=null;render();},
  // Registro sin evaluaciones: se termina en Hoy, donde «Completa tu semana» muestra lo que falta.
- 'ob-saltar':()=>{state.onboarded=true;if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
+ 'ob-saltar':()=>{state.onboarded=true;evento('registro');if(!isPro())armWeek(true);save();ui.tab='hoy';ui.sel=null;render();document.getElementById('view').scrollTop=0;},
  'add-commit':()=>abrirRutina(null,ui.agregarPre),
  agregar:d=>{ui.agregarPre=d.d?{date:d.d,start:d.s?fmt(+d.s):'',end:d.e?fmt(+d.e):''}:null;ui.sheet=sheetAgregar();render();},
  'add-evento':()=>{ui.evento=eventoDesde(null,ui.agregarPre);ui.agregarPre=null;ui.sheet=sheetEvento();render();},
@@ -2233,7 +2234,7 @@ const A={
  close:()=>{ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();},  // al cerrar no se guarda la contraseña escrita
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
- reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
+ reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(INSTALACION_KEY);localStorage.removeItem(METRICAS_ENV);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
  'aviso-ios-ok':()=>{try{localStorage.setItem('lia.avisoIOS','1');}catch(e){}rerenderKeepScroll();},
  'listen-stop':()=>{stopMic(true);},
@@ -2307,6 +2308,7 @@ document.addEventListener('change',ev=>{const el=ev.target;
   if(el.closest&&el.closest('form[data-form="rutina"]')){if(el.name==='ru-tipo'){const n=document.getElementById('c-name');if(n)n.placeholder=COMMIT_TYPES[el.value]||'';}refrescarTramos();return;}
   if(el.id==='ev-start'||el.id==='ev-end'){const a=document.getElementById('ev-start').value,b=document.getElementById('ev-end').value,n=document.getElementById('ev-noche');
     if(n)n.hidden=!(a&&b&&toMin(b)<toMin(a));return;}
+  if(el.dataset&&'metricas' in el.dataset){try{if(el.checked)localStorage.removeItem(METRICAS_KEY);else localStorage.setItem(METRICAS_KEY,'no');}catch(e){}toast(el.checked?'Gracias: nos ayudas a mejorar LIA.':'Listo: ya no contamos nada desde este teléfono.');return;}
   if(el.dataset&&el.dataset.aviso){state.settings.avisos={...AVISOS_DEF,...(state.settings.avisos||{}),[el.dataset.aviso]:el.checked};save();programarAvisos(true);toast(el.checked?'Listo: te avisaré.':'Listo: ya no te aviso eso.');return;}
   const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
   if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;if(k==='wake'||k==='sleep')state.settings.suenoListo=true;save();
@@ -2484,11 +2486,34 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.6';
+const APP_VERSION='0.6.7';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 function calm(){const a=document.activeElement;return !ui.sheet&&!ui.session&&!ui.listen&&!(a&&a.matches('input,select'));}
+// ---------- Métricas de uso (anónimas) ----------
+// Para saber si LIA sirve: cuántas instalaciones terminan el registro y cuántas vuelven al día 1 y al día 3.
+// Solo se envía un identificador al azar de esta instalación, el evento, el día, el tipo de teléfono, si la app está
+// instalada y si es Pro. Nunca horarios, cursos, mensajes, nombre ni correo. Se puede apagar en Perfil.
+// En localhost no se envía nada (salvo con lia.metricas = 'forzar', para probar).
+const METRICAS_KEY='lia.metricas',METRICAS_ENV='lia.metricas.enviado',INSTALACION_KEY='lia.instalacion';
+function metricasActivas(){try{const v=localStorage.getItem(METRICAS_KEY);if(v==='no')return false;if(v==='forzar')return true;}catch(e){return false;}
+  return !!(SB_CFG.url&&SB_CFG.key)&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);}
+function idInstalacion(){try{let id=localStorage.getItem(INSTALACION_KEY);
+  if(!id){const b=crypto.getRandomValues(new Uint8Array(16));b[6]=b[6]&15|64;b[8]=b[8]&63|128;const h=[...b].map(x=>x.toString(16).padStart(2,'0')).join('');
+    id=`${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;localStorage.setItem(INSTALACION_KEY,id);}
+  return id;}catch(e){return null;}}
+// Cada evento sale una vez (instalacion, registro) o una vez por día (abre).
+function evento(nombre){if(!metricasActivas())return;const id=idInstalacion();if(!id)return;
+  const dia=ymd(now());let env={};try{env=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};}catch(e){}
+  const clave=nombre==='abre'?'abre:'+dia:nombre;if(env[clave])return;
+  const plataforma=isIOS()?'ios':/android/i.test(navigator.userAgent)?'android':'otro';
+  fetch(SB_CFG.url+'/rest/v1/rpc/registrar_evento',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:'Bearer '+SB_CFG.key},
+    body:JSON.stringify({p_instalacion:id,p_evento:nombre,p_dia:dia,p_plataforma:plataforma,p_instalada:isStandalone(),p_pro:isPro()})})
+    .then(r=>{if(!r.ok)return;try{const e2=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};for(const k of Object.keys(e2))if(k.startsWith('abre:')&&k!=='abre:'+dia)delete e2[k];e2[clave]=1;localStorage.setItem(METRICAS_ENV,JSON.stringify(e2));}catch(e){}})
+    .catch(()=>{});}
+function metricasCard(){if(!SB_CFG.url)return '';let on=true;try{on=localStorage.getItem(METRICAS_KEY)!=='no';}catch(e){}
+  return `<label class="opt"><input type="checkbox" data-metricas ${on?'checked':''}><span><b>Ayudar a mejorar LIA</b><br><span class="small muted">Contamos de forma anónima cuántas personas abren la app y terminan el registro. No enviamos tus horarios, cursos, mensajes ni tu nombre.</span></span></label>`;}
 function installCard(){const base='Todo se guarda solo en este teléfono, en este navegador.';
   if(isStandalone())return `<div class="card small muted">Todo se guarda solo en este teléfono, dentro de la app. Si la desinstalas o borras los datos del navegador, se pierde.</div>`;
   if(installEvt)return `<div class="card stack"><span class="small muted">${base} Instálala para abrirla como app, incluso sin internet.</span><button class="btn pri" data-a="install">Instalar LIA</button></div>`;
@@ -2504,6 +2529,8 @@ window.addEventListener('storage',e=>{if(e.key!==KEY||!e.newValue)return;let nue
   if(!nuevo||nuevo.v!==1)return;state=nuevo;undoStack=null;ensureState();if(calm())rerenderKeepScroll();});
 
 render();
+evento('instalacion');evento('abre');
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')evento('abre');});
 // Retoma una sesión de estudio que seguía abierta; si el tiempo se acabó con la app cerrada, la registra.
 (function(){let g=null;try{g=JSON.parse(localStorage.getItem(KEY_SES));}catch(e){}if(!g)return;
   if(!evById(g.ev)||![g.total,g.acc,g.since].every(Number.isFinite)||!(g.total>0)){ui.session=null;guardarSesion();return;}
