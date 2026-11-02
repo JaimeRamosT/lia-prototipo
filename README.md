@@ -55,6 +55,10 @@ node --test
 
 Prueban el motor de horarios, el plan semanal de Gratis, la lectura de frases y Lía con IA (la función `lia-ia` y la revisión de sus respuestas, con Gemini simulado) sin abrir el navegador. Córrelas antes de integrar un cambio a `main`.
 
+También revisan que no haya claves secretas en el repositorio (`pruebas/sin-claves.test.mjs`) y que la app instalada pueda abrir sin internet (`pruebas/sw-shell.test.mjs`).
+
+Las pruebas en el navegador, simulando un iPhone y un Android, están en `pruebas/navegador/` (ver su README). En GitHub, todas corren solas en cada pull request (`.github/workflows/pruebas.yml`).
+
 ## Cuentas con Supabase
 
 Las cuentas y el plan de cada una viven en Supabase. `config.js` ya apunta al proyecto del equipo. Para crear una cuenta Pro de prueba o conectar otro proyecto, sigue la [puesta en marcha](docs/cuentas-y-planes.md#puesta-en-marcha). Si `config.js` se deja vacío, la app funciona solo en Gratis. Antes de invitar estudiantes, sigue la [guía del piloto](docs/cuentas-y-planes.md#piloto-con-estudiantes).
