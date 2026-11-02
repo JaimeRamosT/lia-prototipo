@@ -64,7 +64,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - El plan solo cambia mediante funciones SQL; la app solo lee. Nunca des permisos de escritura sobre `suscripciones` o `pagos` a `anon` ni a `authenticated`.
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
-- La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat.
+- La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat. Lo mismo con las de otros proveedores (`GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); el proveedor se elige con el secreto `IA_PROVEEDOR` (ver `docs/ia-con-gemini.md`).
 - El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
 - La función `lia-ia` nunca escribe en sus registros el texto de los mensajes.
 - Métricas (`docs/metricas.md`): la app solo agrega eventos anónimos con `registrar_evento()`, que llama `anon` a propósito (su aviso del asesor es esperado). Nunca guardan horarios, cursos, mensajes, nombre ni correo.
