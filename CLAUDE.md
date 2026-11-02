@@ -1,6 +1,6 @@
 # LIA · instrucciones para Claude
 
-LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Con Pro, Lía entiende los mensajes con Gemini a través de la Edge Function `lia-ia` (ver `docs/ia-con-gemini.md`). Responde y escribe en español.
+LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Con Pro, Lía entiende primero con reglas y, si no entienden, con un modelo de IA a través de la Edge Function `lia-ia`: desde el 2-nov-2026, `openai/gpt-oss-120b` en Groq, con Gemini de respaldo (ver `docs/ia-con-gemini.md`). Responde y escribe en español.
 
 ## Skills: llámalos, no los omitas
 
@@ -65,7 +65,7 @@ Los skills de artefactos, finanzas, datos, marketing, documentos y plugins queda
 - En `config.js` van solo la URL y la clave publicable. Nunca la clave secreta ni la `service_role`.
 - Lista de espera: desde el 2-nov-2026 no hay landing (`landing.html` se quitó: el sitio abre directo en la app). La tabla `lista_espera` y `unirse_lista_espera()` quedan en la base sin uso; su aviso del asesor (anon) es esperado. Nadie lee `lista_espera` desde la app.
 - Los precios están en dos lugares: `precio()` en la migración y `PRICES` en `index.html`.
-- La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat. Lo mismo con las de otros proveedores (`GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); el proveedor se elige con el secreto `IA_PROVEEDOR` (ver `docs/ia-con-gemini.md`).
+- La clave de Gemini vive solo como secreto de las Edge Functions (`GEMINI_API_KEY`). Nunca va en `config.js`, en el repositorio ni en el chat. Lo mismo con las de otros proveedores (`GROQ_API_KEY`, `CEREBRAS_API_KEY`, `OPENROUTER_API_KEY`); el proveedor se elige con el secreto `IA_PROVEEDOR` y el respaldo con `IA_RESPALDO` (ver `docs/ia-con-gemini.md`). Si cambia el proveedor, cambia también el aviso de privacidad de la IA en `index.html`.
 - El cupo de la IA (25 mensajes por día y 300 por mes, solo Pro) solo cambia mediante `usar_ia()`; nadie escribe en `uso_ia` desde la app.
 - La función `lia-ia` nunca escribe en sus registros el texto de los mensajes.
 - Métricas (`docs/metricas.md`): la app solo agrega eventos anónimos con `registrar_evento()`, que llama `anon` a propósito (su aviso del asesor es esperado). Nunca guardan horarios, cursos, mensajes, nombre ni correo.
