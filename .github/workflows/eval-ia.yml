@@ -1,0 +1,41 @@
+# Evaluación de la IA con el modelo real (pruebas/ia/evaluar.mjs). Se corre a mano desde la pestaña Actions,
+# o en un PR con la etiqueta «ia». Usa la clave guardada como secreto de GitHub (GEMINI_API_KEY): nunca va en el repositorio.
+# Falla si «lo que ve la persona» baja de la meta (90 %).
+name: Evaluación de la IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      modelo:
+        description: Modelo (vacío = el de la función)
+        required: false
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  evaluar:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ia')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Evaluar con el modelo real
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODELO: ${{ github.event.inputs.modelo }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then echo "Falta el secreto GEMINI_API_KEY en Settings > Secrets and variables > Actions."; exit 1; fi
+          node pruebas/ia/evaluar.mjs ${MODELO:+--modelo=$MODELO} --salida=resultado-ia.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resultado-ia
+          path: resultado-ia.json
+          if-no-files-found: ignore
+          retention-days: 14
