@@ -2066,7 +2066,8 @@ function responder(q,from,r,n,{eco=true}={}){
   liaSay(AYUDA_CHAT);render();}
 // ---------- Lía con IA: envío a la función lia-ia ----------
 const IA_TIEMPO=15000;  // ms; la función corta a los 12 s, esto cubre la red del teléfono
-const IA_NIVEL_GRATUITO=true;  // nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
+const IA_NIVEL_GRATUITO=true;  // el respaldo es el nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
+// Desde el 2-nov-2026 la función pide primero a Groq (IA_PROVEEDOR) y, si no responde, a Gemini (IA_RESPALDO). Si cambia, cambia este aviso.
 // Los topes (25 al día y 300 al mes) los pone usar_ia() en Supabase (migración cupo_ia); si cambian, cambia también estos textos y el aviso.
 const IA_AVISOS={
   cupo_dia:'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te respondo con lo básico.',
@@ -2097,8 +2098,8 @@ async function conIA(q){const n=now(),cuerpo={mensaje:q,historial:historialIA(st
 // Si la persona empezó a escribir mientras Lía pensaba, lo que escribió sigue en la caja cuando llega la respuesta.
 function conservarBorrador(fn){const i=document.getElementById('chat-in'),v=i?i.value:'';fn();const j=document.getElementById('chat-in');if(j&&v&&!j.value)j.value=v;}
 function sheetIA(){return `<div class="grab"></div><h2>Lía con IA</h2>
-  <p class="muted" style="margin:0">Para entender lo que escribes, Lía envía tu mensaje y un resumen de tu horario (cursos, evaluaciones y rutinas) a Gemini, la IA de Google, en Estados Unidos. No envía tu nombre ni tu correo.</p>
-  <p class="muted" style="margin:0">${IA_NIVEL_GRATUITO?'Por ahora usamos la versión gratuita de Gemini, así que Google puede usar esos mensajes para mejorar sus productos. No escribas datos personales que no quieras compartir.':'Google no usa esos mensajes para mejorar sus productos.'}</p>
+  <p class="muted" style="margin:0">Para entender lo que escribes, Lía envía tu mensaje y un resumen de tu horario (cursos, evaluaciones y rutinas) a servicios de IA de empresas de Estados Unidos: Groq y, si no responde, Gemini de Google. No envía tu nombre ni tu correo.</p>
+  <p class="muted" style="margin:0">${IA_NIVEL_GRATUITO?'Groq no guarda tus mensajes, salvo registros temporales para revisar fallas o abusos. Gemini, en su versión gratuita, sí puede usarlos para mejorar los productos de Google. No escribas datos personales que no quieras compartir.':'Ni Groq ni Google usan esos mensajes para mejorar sus productos.'}</p>
   <p class="small muted" style="margin:0">Tienes 25 mensajes con IA al día. Sin internet o si la IA falla, Lía sigue entendiendo frases simples. Puedes apagarla cuando quieras en Perfil.</p>
   <button class="btn pri" data-a="ia-si">Usar Lía con IA</button><button class="btn sec" data-a="ia-no">Ahora no</button>`;}
 // Si la persona cierra el aviso sin elegir, su mensaje se responde con las reglas y la próxima vez se le vuelve a preguntar.
@@ -2486,7 +2487,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.6.7';
+const APP_VERSION='0.6.8';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);

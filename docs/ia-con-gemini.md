@@ -277,3 +277,31 @@ La evaluación con el modelo real se corre cada vez que cambian las instruccione
 - [Límites de las Edge Functions de Supabase](https://supabase.com/docs/guides/functions/limits)
 - [Autorización en las Edge Functions](https://supabase.com/docs/guides/functions/auth-headers)
 - [Integración de GitHub de Supabase](https://supabase.com/docs/guides/deployment/branching/github-integration)
+
+### En producción: Groq con Gemini de respaldo (2-nov-2026)
+
+Evaluación de Coconut con `--proveedor=groq` (100 frases, contexto del lunes 26-oct-2026):
+
+| Medida | openai/gpt-oss-120b (Groq) | gemini-3.5-flash-lite (29-oct, 97 frases) |
+| --- | --- | --- |
+| Lo que ve la persona (reglas primero; la IA si no entienden) | 96/100 (96 %): cumple la meta de 90 % | 72/97 (74 %, con la IA primero) |
+| Solo la IA | 89/100 (89 %) | 71/97 (73 %) |
+| Frases que van a la IA / la IA acierta | 5 / 5 | — |
+| Peor que las reglas | 0 | 20 |
+| Fuera del esquema | 0 | 0 |
+| Tiempo del modelo | mediana 1 073 ms; 95 % ≤ 2 494 ms | mediana 2 410 ms; 95 % ≤ 3 343 ms |
+| Tokens por frase | entrada 3 161, salida 244, razonamiento 114 | entrada 2 665, salida 79 |
+
+Configuración en Supabase → Edge Functions → Secrets:
+
+| Secreto | Valor |
+| --- | --- |
+| `GROQ_API_KEY` | La clave de Groq (solo aquí y en los secretos de GitHub para `eval-ia.yml`) |
+| `IA_PROVEEDOR` | `groq` |
+| `IA_RESPALDO` | Opcional. Por defecto `gemini`; `ninguno` lo apaga |
+
+- **Respaldo:** si Groq no tiene clave o falla (límite del plan gratuito, caída, tiempo o respuesta fuera del esquema), la función pide a Gemini. Con los dos, Groq tiene 6 s y Gemini 7 s, para caber en los 15 s que espera la app. El registro marca `respaldo: true` y por qué falló Groq.
+- **Límite del plan gratuito de Groq:** 8 000 tokens por minuto y 200 000 por día para gpt-oss-120b. Con unos 3 400 tokens por consulta, son unas 2 consultas por minuto y unas 58 por día para toda la app. Como las reglas van primero, solo llegan a la IA las frases que las reglas no entienden; lo que pase el límite lo responde Gemini. Si el uso crece, el plan Developer de Groq cobra US$ 0.15 por millón de tokens de entrada y US$ 0.60 de salida.
+- **Privacidad:** Groq no guarda las consultas por defecto (registros temporales de hasta 30 días para fallas o abuso). El nivel gratuito de Gemini sí puede usarlas: por eso el aviso de la app nombra a los dos.
+- **Para volver a Gemini solo:** borra `IA_PROVEEDOR`.
+

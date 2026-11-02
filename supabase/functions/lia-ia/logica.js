@@ -312,6 +312,22 @@ export function proveedorDe(env) {
   return { nombre, modelo, clave, pedir };
 }
 
+// Principal y respaldo (2-nov-2026). El principal es IA_PROVEEDOR; el respaldo, IA_RESPALDO (por defecto, gemini;
+// «ninguno» lo apaga). Si el principal no tiene clave o falla (límite del plan gratuito, caída, tiempo, respuesta
+// fuera del esquema), se pide al respaldo. Así un límite de Groq no deja a la persona sin IA. Solo entran los que
+// tienen clave; con respaldo, cada intento tiene menos tiempo para que los dos quepan en los 15 s de la app.
+export const TIEMPO_PRINCIPAL = 6000, TIEMPO_RESPALDO = 7000;
+export function proveedoresDe(env) {
+  const principal = proveedorDe(env), lista = [];
+  if (principal && principal.clave) lista.push(principal);
+  const nombre = String(env('IA_RESPALDO') || 'gemini').trim().toLowerCase();
+  if (nombre !== 'ninguno' && !(principal && principal.nombre === nombre)) {
+    const r = proveedorDe(k => (k === 'IA_PROVEEDOR' ? nombre : env(k)));
+    if (r && r.clave) lista.push({ ...r, respaldo: true });
+  }
+  return lista;
+}
+
 // Esquema estricto (OpenAI y Groq): todos los campos obligatorios, sin campos extra, y los opcionales aceptan null.
 // Se quitan las palabras que el modo estricto no admite en todos los proveedores (format, mínimos y máximos):
 // la app vuelve a revisar todo con validarIA().
@@ -420,8 +436,11 @@ export async function manejar(req, deps) {
   const pedido = leerPedido(await req.text().catch(() => ''));
   if (pedido.error) return responder(400, { ok: false, error: 'pedido' });
 
-  const prov = proveedorDe(deps.env);
-  if (!prov || !prov.clave) return responder(503, { ok: false, error: 'sin_clave' }, { proveedor: prov ? prov.nombre : 'desconocido' });
+  const provs = proveedoresDe(deps.env);
+  if (!provs.length) {
+    const p = proveedorDe(deps.env);
+    return responder(503, { ok: false, error: 'sin_clave' }, { proveedor: p ? p.nombre : 'desconocido' });
+  }
   const supabaseUrl = deps.env('SUPABASE_URL');
   const apikey = req.headers.get('apikey') || deps.env('SUPABASE_ANON_KEY') || '';
 
@@ -432,12 +451,21 @@ export async function manejar(req, deps) {
       { ok: false, error: cupo.motivo, restantes_dia: cupo.restantes_dia, restantes_mes: cupo.restantes_mes });
   }
 
+  let prov = provs[0], g = null;
+  const fallos = [];
+  for (const p of provs) {
+    const tiempo = deps.tiempo || (provs.length > 1 ? (p.respaldo ? TIEMPO_RESPALDO : TIEMPO_PRINCIPAL) : TIEMPO_GEMINI);
+    prov = p;
+    g = await p.pedir(deps, pedido, { tiempo });
+    if (!g.error) break;
+    fallos.push({ proveedor: p.nombre, detalle: g.error, http: g.httpStatus || null });
+  }
   const modelo = prov.modelo;
-  const g = await prov.pedir(deps, pedido, { tiempo: deps.tiempo || TIEMPO_GEMINI });
+  const conRespaldo = fallos.length && !g.error ? { respaldo: true, fallo_principal: fallos[0] } : {};
   if (g.error) {
     const esquemaMalo = ['esquema', 'vacia', 'larga', 'bloqueado'].includes(g.error);
     return responder(esquemaMalo ? 502 : 503, { ok: false, error: esquemaMalo ? 'respuesta' : 'ocupado' },
-      { proveedor: prov.nombre, modelo, detalle: g.error, http: g.httpStatus || null });
+      { proveedor: prov.nombre, modelo, detalle: g.error, http: g.httpStatus || null, ...(fallos.length > 1 ? { fallos } : {}) });
   }
 
   const suma = await usarIA(deps, supabaseUrl, apikey, autorizacion, true);
@@ -445,6 +473,6 @@ export async function manejar(req, deps) {
   const u = g.uso || {};
   return responder(200,
     { ok: true, respuesta: g.respuesta, restantes_dia: quedan('restantes_dia', 1), restantes_mes: quedan('restantes_mes', 1), modelo },
-    { proveedor: prov.nombre, modelo, formato: g.formato, intent: g.respuesta.intent, falta: g.respuesta.falta || null,
+    { proveedor: prov.nombre, modelo, ...conRespaldo, formato: g.formato, intent: g.respuesta.intent, falta: g.respuesta.falta || null,
       tokens: { entrada: u.promptTokenCount ?? null, salida: u.candidatesTokenCount ?? null, razonamiento: u.thoughtsTokenCount ?? null } });
 }

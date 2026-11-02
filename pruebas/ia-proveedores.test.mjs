@@ -105,14 +105,65 @@ test('con Groq: errores del proveedor', async () => {
   }
 });
 
-test('sin la clave del proveedor elegido, no llama a nadie', async () => {
-  for (const env of [{ IA_PROVEEDOR: 'groq', GEMINI_API_KEY: 'g' }, { IA_PROVEEDOR: 'no-existe', GEMINI_API_KEY: 'g' }]) {
+test('sin ninguna clave útil, no llama a nadie', async () => {
+  for (const env of [{ IA_PROVEEDOR: 'groq' }, { IA_PROVEEDOR: 'no-existe' }, { IA_PROVEEDOR: 'groq', GEMINI_API_KEY: 'g', IA_RESPALDO: 'ninguno' }]) {
     const { deps, llamadas } = entorno({ env, resp: () => { throw new Error('no debía llamar'); } });
     const res = await pedir(deps);
     assert.equal(res.status, 503);
     assert.equal((await res.json()).error, 'sin_clave');
     assert.equal(llamadas.length, 0);
   }
+});
+
+// Respaldo (2-nov-2026): si Groq no tiene clave o falla, se pide a Gemini; si Groq responde, Gemini no se toca.
+const gemini = obj => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(obj) }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 2500, candidatesTokenCount: 80 } });
+const enrutar = (groq, gem) => op => (op.headers.Authorization ? groq(op) : gem(op));
+
+test('respaldo: Groq sin clave → responde Gemini', async () => {
+  const { deps, llamadas } = entorno({ env: { IA_PROVEEDOR: 'groq', GEMINI_API_KEY: 'g' }, resp: () => new Response(JSON.stringify(gemini({ intent: 'fuera', texto: 'Hola.' }))) });
+  const res = await pedir(deps);
+  assert.equal(res.status, 200);
+  assert.equal(llamadas.length, 1);
+  assert.match(llamadas[0].url, /generativelanguage/);
+});
+
+test('respaldo: Groq llega a su límite o se cae → responde Gemini y queda registrado', async () => {
+  for (const status of [429, 500, 401]) {
+    const { deps, llamadas, logs } = entorno({ env: { IA_PROVEEDOR: 'groq', GROQ_API_KEY: 'k', GEMINI_API_KEY: 'g' },
+      resp: enrutar(() => new Response('{}', { status }), () => new Response(JSON.stringify(gemini({ intent: 'fuera', texto: 'Hola.' })))) });
+    const res = await pedir(deps), cuerpo = await res.json();
+    assert.equal(res.status, 200, String(status));
+    assert.equal(llamadas.length, 2);
+    assert.match(llamadas[0].url, /groq/);
+    assert.match(llamadas[1].url, /generativelanguage/);
+    assert.equal(cuerpo.modelo, F.MODELO);
+    const log = logs.at(-1);
+    assert.equal(log.proveedor, 'gemini');
+    assert.equal(log.respaldo, true);
+    assert.equal(log.fallo_principal.proveedor, 'groq');
+  }
+});
+
+test('respaldo: si Groq responde, Gemini no se toca; si los dos fallan, ocupado', async () => {
+  let r = entorno({ env: { IA_PROVEEDOR: 'groq', GROQ_API_KEY: 'k', GEMINI_API_KEY: 'g' },
+    resp: enrutar(() => new Response(JSON.stringify(completions(estricta))), () => { throw new Error('no debía llamar a Gemini'); }) });
+  let res = await pedir(r.deps);
+  assert.equal(res.status, 200);
+  assert.equal(r.llamadas.length, 1);
+  assert.equal(r.logs.at(-1).respaldo, undefined);
+  r = entorno({ env: { IA_PROVEEDOR: 'groq', GROQ_API_KEY: 'k', GEMINI_API_KEY: 'g' }, resp: () => new Response('{}', { status: 503 }) });
+  res = await pedir(r.deps);
+  assert.equal(res.status, 503);
+  assert.equal((await res.json()).error, 'ocupado');
+  assert.equal(r.llamadas.length, 2);
+  assert.equal(r.logs.at(-1).fallos.length, 2);
+});
+
+test('respaldo: con dos proveedores, cada intento tiene menos tiempo para caber en los 15 s de la app', () => {
+  assert.ok(F.TIEMPO_PRINCIPAL + F.TIEMPO_RESPALDO <= 13000);
+  const l = F.proveedoresDe(k => ({ IA_PROVEEDOR: 'groq', GROQ_API_KEY: 'k', GEMINI_API_KEY: 'g' })[k]);
+  assert.deepEqual(l.map(p => [p.nombre, !!p.respaldo]), [['groq', false], ['gemini', true]]);
+  assert.deepEqual(F.proveedoresDe(k => ({ GEMINI_API_KEY: 'g' })[k]).map(p => p.nombre), ['gemini'], 'Gemini solo, sin duplicarse');
 });
 
 test('Cerebras y OpenRouter usan su dirección y su modelo', () => {
