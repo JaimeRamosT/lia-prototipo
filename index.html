@@ -1234,6 +1234,14 @@ function leerConsolidado(items){
 // Un curso como rutina de clases: un horario por cada par de horas, con todos sus días.
 function rutinaDeCurso(c){const t={};for(const h of c.horarios){const k=h.inicio+'-'+h.fin;(t[k]=t[k]||{days:[],start:h.inicio,end:h.fin}).days.push(h.dia);}
   return{name:c.nombre,type:'clase',tramos:Object.values(t).map(x=>({...x,days:[...new Set(x.days)].sort((a,b)=>a-b)}))};}
+// Canales (docs/canales.md): Las sesiones de estudio y evaluaciones de los próximos 14 días, con hora de Lima.
+function iso(f,min){const d=min>=1440?ymd(addDays(fromYmd(f),1)):f;return `${d}T${fmt(min%1440)}:00-05:00`;}
+function eventosCanales(st,p,n){const hoy=ymd(n),hasta=ymd(addDays(n,14)),out=[];
+  for(const b of p.blocks){if(b.date<hoy||b.date>hasta)continue;const e=st.evals.find(x=>x.id===b.evalId);
+    out.push({inicio:iso(b.date,b.s),fin:iso(b.date,b.e),titulo:`Estudiar ${e?e.course:'para tu evaluación'}`.slice(0,80),tipo:'estudio'});}
+  for(const e of st.evals){if(e.date<hoy||e.date>hasta||!e.time)continue;const t=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,s=toMin(e.time);
+    out.push({inicio:iso(e.date,s),fin:iso(e.date,s+(e.type==='entrega'?15:60)),titulo:`${t.label} de ${e.course}`.slice(0,80),tipo:'evaluacion'});}
+  return out.sort((a,b)=>a.inicio.localeCompare(b.inicio)).slice(0,300);}
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -1647,7 +1655,7 @@ function vPerfil(){const S=state.settings,p=P();const covered=state.evals.filter
   const studied=state.done.reduce((a,x)=>a+x.min,0);
   return `<div class="row-h"><span class="sw k-trabajo" style="width:52px;height:52px;border-radius:50%;font-size:18px">${esc((S.name||'Tú').slice(0,2).toUpperCase())}</span><div class="grow"><h1 style="font-size:22px">${esc(S.name||'Tu perfil')}</h1><div class="small muted">Estudias y trabajas · ${isPro()?'LIA Pro':'LIA Gratis'}</div></div></div>
   <div class="stats"><div class="card stat"><b class="tnum">${covered}/${up}</b><span>evaluaciones con tiempo de estudio completo</span></div><div class="card stat"><b class="tnum">${hrs(studied)}</b><span>estudiadas con LIA</span></div></div>
-  ${planCard()}${cuentaCard()}${avisosCard()}${iaCard()}
+  ${planCard()}${cuentaCard()}${canalesCard()}${avisosCard()}${iaCard()}
   <div class="between"><h2 class="eyebrow" style="margin:0">Tus rutinas</h2><button class="pill" data-a="add-commit" aria-label="Agregar una rutina">${I.plus.replace('<svg','<svg width="14" height="14" aria-hidden="true"')} Agregar</button></div>
   <div class="stack">${listaRutinas()||'<div class="card small muted">Sin rutinas.</div>'}</div>
   <span class="eyebrow">Ajustes de Lía</span>
@@ -1965,6 +1973,49 @@ async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
     toast(d&&d.ok?'Te envié un aviso de prueba: debería llegar en unos segundos.':d&&d.error==='sin_dispositivos'?'Este teléfono ya no está registrado. Desactiva y vuelve a activar los recordatorios.':d&&d.error==='solo_pro'?'Los recordatorios en el teléfono son parte de LIA Pro.':'No pude enviar el aviso de prueba. Inténtalo otra vez en un rato.');}
   catch(e){toast(mensajeError(e));}
   finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
+// ---------- Canales: Google Calendar (enlace iCal, sin Google Cloud) y WhatsApp (docs/canales.md) ----------
+// Para cuentas con sesión. Al activar uno, la app publica en Supabase sus próximas sesiones de estudio y evaluaciones
+// con su nombre (es lo que se ve en el calendario y en WhatsApp); al desactivar los dos, se borran.
+const WA_LIA='';  // El número de WhatsApp de LIA (el de prueba de Meta o el propio), solo dígitos con código de país: '15551234567'.
+const CAL_FN=()=>`${SB_CFG.url}/functions/v1/lia-calendario?t=`;
+const KEY_CANALES_FIRMA='lia.canales.firma';
+function canalesActivos(c=ui.canales){return !!(c&&(c.calendario||(c.whatsapp&&c.whatsapp.verificado)));}
+async function cargarCanales(){if(!state.cuenta||!cuentasActivas()||ui.canalesCargando)return;ui.canalesCargando=true;
+  try{ui.canales=(await sbRpc('canales_estado'))||{};}catch(e){ui.canales=ui.canales||{};}finally{ui.canalesCargando=false;}
+  if(ui.tab==='perfil')rerenderKeepScroll();if(canalesActivos())canalesLuego();}
+async function publicarCanales(forzar){if(!state.cuenta||!canalesActivos())return;
+  const ev=eventosCanales(state,P(),now()),firma=JSON.stringify(ev);let previa=null;try{previa=localStorage.getItem(KEY_CANALES_FIRMA);}catch(e){}
+  if(!forzar&&firma===previa)return;
+  try{await sbRpc('publicar_agenda',{p_eventos:ev});try{localStorage.setItem(KEY_CANALES_FIRMA,firma);}catch(e){}}catch(e){}}
+let canalesT=null;
+function canalesLuego(){if(!state.cuenta||!canalesActivos())return;clearTimeout(canalesT);canalesT=setTimeout(()=>{publicarCanales(false);},3000);}
+function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="eyebrow">Google Calendar y WhatsApp</span>';
+  if(!state.cuenta)return `<div class="card stack">${tit}<div class="small muted">Con tu cuenta de LIA, ves tus sesiones de estudio en Google Calendar y Lía te avisa por WhatsApp antes de cada una.</div></div>`;
+  if(ui.canales===undefined){cargarCanales();return `<div class="card stack">${tit}<div class="small muted" role="status">Cargando…</div></div>`;}
+  const c=ui.canales||{},w=c.whatsapp,oc=ui.canalesOcupado?' disabled':'';
+  const priv='<p class="small muted" style="margin:0">Al activar uno, LIA guarda en su servidor tus próximas sesiones de estudio y evaluaciones con su nombre, para mostrarlas ahí. Si desactivas los dos, se borran.</p>';
+  const cal=c.calendario?`<div class="stack" style="gap:8px"><b>Google Calendar</b>
+     <label class="f">Tu enlace secreto (no lo compartas)<input id="cal-url" readonly value="${esc(CAL_FN()+c.calendario)}"></label>
+     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», toca <b>+</b> y luego <b>Desde URL</b>.</li><li>Pega el enlace y toca <b>Agregar calendario</b>. Aparecerá «LIA · Estudio» en tu celular también.</li></ol>
+     <p class="small muted" style="margin:0">Google actualiza los calendarios por enlace cada cierto tiempo: un cambio puede tardar horas en verse.</p>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cal-copiar">Copiar enlace</button><button class="btn sec sm" data-a="cal-desactivar"${oc}>Dejar de compartir</button></div></div>`
+    :`<div class="stack" style="gap:8px"><b>Google Calendar</b><div class="small muted">Tus sesiones de estudio y evaluaciones en tu Google Calendar, con sus avisos. No necesitas darle permisos a nadie: solo agregas un enlace.</div>
+     <button class="btn sec sm" data-a="cal-activar"${oc}>Ver mi estudio en Google Calendar</button></div>`;
+  let wa;
+  if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><b>WhatsApp</b><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?».</div>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="wa-avisos" data-v="${w.avisos?'0':'1'}"${oc}>${w.avisos?'Pausar avisos':'Activar avisos'}</button><button class="btn sec sm" data-a="wa-quitar"${oc}>Desvincular</button></div></div>`;
+  else if(w&&w.codigo){const msg=`LIA ${w.codigo}`;
+    wa=`<div class="stack" style="gap:8px"><b>WhatsApp</b><div class="small">Desde el WhatsApp del <b>+${esc(w.numero)}</b>, envía este mensaje a LIA${WA_LIA?` (+${esc(WA_LIA)})`:''}:</div>
+     <p style="margin:0;font-size:1.3rem;font-weight:700;letter-spacing:.06em" class="tnum">${esc(msg)}</p><p class="small muted" style="margin:0">Vence en 15 minutos.</p>
+     <div class="row-h" style="flex-wrap:wrap">${WA_LIA?`<a class="btn pri sm" href="https://wa.me/${WA_LIA}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:''}<button class="btn sec sm" data-a="wa-revisar"${oc}>Ya lo envié</button><button class="btn sec sm" data-a="wa-cambiar"${oc}>Cambiar número</button></div></div>`;}
+  else wa=`<form class="stack" data-form="wa" style="gap:8px"><b>WhatsApp</b><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
+     <label class="f">Tu número de WhatsApp<input type="tel" name="numero" inputmode="tel" autocomplete="tel" required placeholder="987 654 321" value="${esc(w&&w.numero||'')}"></label>
+     ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<button class="btn sec sm" type="submit"${oc}>Vincular WhatsApp</button></form>`;
+  return `<div class="card stack">${tit}${priv}${cal}<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">${wa}</div>`;}
+async function accionCanal(fn,args,ok){ui.canalesOcupado=true;rerenderKeepScroll();
+  try{await sbRpc(fn,args||{});ui.canales=(await sbRpc('canales_estado'))||{};if(canalesActivos())await publicarCanales(true);if(ok)toast(ok);}
+  catch(e){const m=String((e&&e.message)||'');toast(/numero_invalido/.test(m)?'Ese número no parece de WhatsApp. Escríbelo con su código de país, por ejemplo 51 987 654 321.':/numero_ocupado/.test(m)?'Ese número ya está vinculado con otra cuenta de LIA.':mensajeError(e));}
+  finally{ui.canalesOcupado=false;rerenderKeepScroll();}}
 function avisosCard(){if(!cuentasActivas())return '';const titulo='<span class="eyebrow">Recordatorios en tu teléfono</span>';
   if(!isPro())return `<div class="card stack"><div class="between">${titulo}<span class="pro" aria-hidden="true">PRO</span></div>
    <div class="small muted">Con LIA Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.</div>
@@ -2019,7 +2070,7 @@ function minutosSesion(s){return Math.floor(Math.min(s.elapsed(),s.total)/60000)
 function registrarSesion(s,min){const t=new Date(s.inicio||Date.now()-min*60000);snapshot();
   state.done.push({id:uid(),evalId:s.ev,date:ymd(t),start:fmt(t.getHours()*60+t.getMinutes()),min});save();}
 function pedirPantalla(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}}
-function cerrarSesion(){ui.session=null;guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
+function cerrarSesion(){ui.session=null;ui.canales=undefined;try{localStorage.removeItem(KEY_CANALES_FIRMA);}catch(e){}guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
 // Aviso al terminar el tiempo: vibra y suena tres tonos (el sonido se habilita al tocar "Empezar").
 function avisarFin(){try{navigator.vibrate&&navigator.vibrate([300,150,300]);}catch(e){}
   try{const c=ui.audio;if(!c)return;const t=c.currentTime;[660,880,990].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain(),d=t+i*.25;
@@ -2039,7 +2090,7 @@ function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
   const d=el.dataset;if(!d.a)return null;
   return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
 let abridor=null;
-function render(){ensureState();avisosLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+function render(){ensureState();avisosLuego();canalesLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
   dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
   const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
@@ -2346,6 +2397,13 @@ const A={
  'ia-si':()=>{iaElegir('si');ui.sheet=null;const q=ui.iaPendiente;ui.iaPendiente=null;if(q)conIA(q);else{rerenderKeepScroll();toast('Listo: Lía usa la IA para entenderte.');}},
  'ia-no':()=>{iaElegir('no');ui.sheet=null;soltarPendienteIA();},
  'avisos-activar':()=>{activarAvisos();},
+ 'cal-activar':()=>{accionCanal('activar_calendario',null,'Listo. Copia el enlace y agrégalo en Google Calendar.');},
+ 'cal-desactivar':()=>{accionCanal('desactivar_calendario',null,'Listo: el enlace ya no funciona.');},
+ 'cal-copiar':()=>{const v=(document.getElementById('cal-url')||{}).value||'';(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Enlace copiado.'),()=>{const i=document.getElementById('cal-url');if(i){i.select();}toast('Selecciona el enlace y cópialo.');});},
+ 'wa-revisar':()=>{accionCanal('canales_estado',null,null).then(()=>{const w=ui.canales&&ui.canales.whatsapp;toast(w&&w.verificado?'Listo: WhatsApp vinculado.':'Aún no me llega tu mensaje. Envíalo tal cual y vuelve a tocar «Ya lo envié».');});},
+ 'wa-cambiar':()=>{accionCanal('quitar_whatsapp',null,null);},
+ 'wa-quitar':()=>{accionCanal('quitar_whatsapp',null,'Listo: desvinculé tu WhatsApp.');},
+ 'wa-avisos':d=>{accionCanal('avisos_whatsapp',{p_activos:d.v==='1'},d.v==='1'?'Listo: te vuelvo a avisar por WhatsApp.':'Listo: pausé los avisos por WhatsApp.');},
  'avisos-desactivar':()=>{desactivarAvisos();},
  'avisos-prueba':()=>{avisoDePrueba();},
  'ia-apagar':()=>{iaElegir('no');rerenderKeepScroll();toast('Listo: Lía te responde sin IA.');},
@@ -2417,6 +2475,8 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     snapshot();fz.vistos=Array.isArray(fz.vistos)?fz.vistos:[];let min=0;
     for(const b of l){const k=claveBloque(b);if(sel.has(k)){state.done.push(hechoDeBloque(b.evalId,b.date,b.s,b.e));min+=b.e-b.s;}else fz.vistos.push(k);}
     save();rerenderKeepScroll();toast(min?`Sumé ${hrs(min)} a tu avance.${sel.size<l.length?' Lo demás queda pendiente.':''}`:'Listo. Ese tiempo queda pendiente en tus evaluaciones.',true);return;}
+  if(f.dataset.form==='wa'){const n=String(fd.get('numero')||'');ui.waErr=n.replace(/[^0-9]/g,'').length<8?'Escribe tu número de WhatsApp, por ejemplo 987 654 321.':null;
+    if(ui.waErr){rerenderKeepScroll();return;}accionCanal('pedir_codigo_whatsapp',{p_numero:n},null);return;}
   if(f.dataset.form==='consolidado'){const idx=fd.getAll('cur').map(Number);if(!idx.length){toast('Marca al menos un curso.');return;}
     const enRegistro=!state.onboarded,fresco=!!state.frozen&&!planStale(),n=guardarConsolidado(idx);const ocio=enRegistro||!n?'':reubicarOcio();if(n)alDiaSiNoChoca(fresco);ui.sheet=null;ui.cons=null;rerenderKeepScroll();
     toast(!n?'Esos cursos ya estaban en tus rutinas.':`Agregué ${n} ${n===1?'curso':'cursos'} a tus rutinas.${enRegistro?'':isPro()?' Lía reorganizó tu semana.':!state.frozen?'':ocio?` ${ocio}`:' '+textoRutinaGratis().replace(/^Guardado\. /,'')}`,!!n);return;}
@@ -2626,7 +2686,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.7.0';
+const APP_VERSION='0.8.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
