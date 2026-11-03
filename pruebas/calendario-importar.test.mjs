@@ -76,7 +76,7 @@ test('horas de Lima: UTC, Lima, flotante, otra zona y nombres de Windows', () =>
 
 test('lo que se repite cada semana o cada día es una rutina, con su categoría por el título', () => {
   const c = leer();
-  assert.deepEqual(rutina(c, 'calculo@google.com'), { gcal: 'r:calculo@google.com', name: 'Cálculo II', type: 'otro', days: [1, 3], start: '08:00', end: '10:00' });
+  assert.deepEqual(rutina(c, 'calculo@google.com'), { gcal: 'r:calculo@google.com', name: 'Cálculo II', type: 'otro', days: [1, 3], start: '08:00', end: '10:00', hasta: '2026-12-11' }, 'termina con el ciclo (UNTIL en hora de Lima)');
   assert.equal(rutina(c, 'trabajo@google.com').type, 'trabajo');
   assert.deepEqual(rutina(c, 'trabajo@google.com').days, [1, 2, 3, 4, 5]);
   const f = rutina(c, 'futbol@google.com');
@@ -85,7 +85,26 @@ test('lo que se repite cada semana o cada día es una rutina, con su categoría 
   assert.deepEqual([a.type, a.days], ['comida', [0, 1, 2, 3, 4, 5, 6]]);
   assert.ok(!rutina(c, 'ingles@google.com'), 'terminó (UNTIL)');
   assert.ok(!rutina(c, 'oratoria@google.com'), 'terminó (COUNT)');
-  assert.ok(!rutina(c, 'natacion@google.com'), 'empieza en más de 7 días: llega en otra sincronización');
+  assert.deepEqual([rutina(c, 'natacion@google.com').desde, rutina(c, 'natacion@google.com').hasta], ['2026-11-16', undefined], 'empieza más adelante: no ocupa horas antes');
+  assert.equal(rutina(c, 'trabajo@google.com').hasta, undefined, 'sin fin');
+});
+
+test('una serie corta no es una rutina para siempre: lleva su fecha de fin', () => {
+  const c = L.deCalendario(L.leerIcs(ics(
+    [`DTSTART;${LIMA}:20261027T070000`, `DTEND;${LIMA}:20261027T080000`, 'RRULE:FREQ=DAILY;COUNT=3', 'UID:tres@g', 'SUMMARY:Curso intensivo'],
+    [`DTSTART;${LIMA}:20261019T180000`, `DTEND;${LIMA}:20261019T200000`, 'RRULE:FREQ=WEEKLY;COUNT=3;BYDAY=MO', 'UID:dos@g', 'SUMMARY:Taller de Excel'],
+    [`DTSTART;${LIMA}:20261124T100000`, `DTEND;${LIMA}:20261124T120000`, 'RRULE:FREQ=WEEKLY;UNTIL=20261209T050000Z;BYDAY=TU', 'UID:luego@g', 'SUMMARY:Laboratorio'],
+    [`DTSTART;${LIMA}:20270301T100000`, `DTEND;${LIMA}:20270301T120000`, 'RRULE:FREQ=WEEKLY;BYDAY=MO', 'UID:lejos@g', 'SUMMARY:Ciclo 2027-1'],
+  )), HOY);
+  const r = k => c.rutinas.find(x => x.gcal === 'r:' + k);
+  assert.deepEqual([r('tres@g').days, r('tres@g').desde, r('tres@g').hasta], [[0, 1, 2, 3, 4, 5, 6], '2026-10-27', '2026-10-29']);
+  assert.deepEqual([r('dos@g').desde, r('dos@g').hasta], [undefined, '2026-11-02'], 'quedan el 26-oct y el 2-nov');
+  assert.deepEqual([r('luego@g').desde, r('luego@g').hasta], ['2026-11-24', '2026-12-09']);
+  assert.ok(!r('lejos@g'), 'empieza después de los próximos 60 días');
+  // Fuera de sus fechas no ocupa horas.
+  const s = estado({ compromisos: c.rutinas.map(({ gcal, ...x }, i) => ({ id: 'g' + i, ...x })) });
+  const ocupa = f => L.busyFor(s, f).some(b => b.label === 'Curso intensivo');
+  assert.deepEqual(['2026-10-26', '2026-10-27', '2026-10-29', '2026-10-30'].map(ocupa), [false, true, true, false]);
 });
 
 test('fechas excluidas y clases movidas: libre ese día y, si se movió, un evento de un día', () => {
@@ -142,7 +161,7 @@ test('primera vez: entra lo elegido; lo no elegido no vuelve a proponerse', () =
   const elegidos = new Set(['r:calculo@google.com', 'l:calculo@google.com:2026-11-02', 'l:calculo@google.com:2026-10-28', 'e:calculo@google.com:2026-10-28', 'v:fisica@google.com', 'e:dentista@google.com']);
   const r = L.fusionarGcal(s, c, HOY, { elegidos, nuevoId, cupoEvals: Infinity });
   const calc = r.commitments.find(x => x.gcal === 'r:calculo@google.com');
-  assert.deepEqual({ ...calc, gh: undefined }, { id: calc.id, name: 'Cálculo II', type: 'otro', days: [1, 3], start: '08:00', end: '10:00', gcal: 'r:calculo@google.com', gh: undefined });
+  assert.deepEqual({ ...calc, gh: undefined }, { id: calc.id, name: 'Cálculo II', type: 'otro', days: [1, 3], start: '08:00', end: '10:00', hasta: '2026-12-11', gcal: 'r:calculo@google.com', gh: undefined });
   assert.ok(calc.gh, 'guarda la huella para saber si la cambias en LIA');
   assert.ok(r.commitments.some(x => x.id === 'mio'), 'lo propio no se toca');
   const libre = r.exceptions.find(x => x.gcal === 'l:calculo@google.com:2026-11-02');
@@ -210,6 +229,19 @@ test('lo que ya pasó no se quita; al quitarse una rutina se van sus ratos libre
   const r = L.fusionarGcal(s, c2, '2026-11-02', { nuevoId, cupoEvals: Infinity });
   assert.ok(r.exceptions.some(x => x.gcal === 'e:dentista@google.com'), 'pasado: se queda');
   assert.ok(!r.exceptions.some(x => x.gcal && x.gcal.startsWith('l:calculo@')), 'sus libres se van con la rutina');
+});
+
+test('en las siguientes lecturas, lo nuevo que ya tienes en LIA no entra dos veces', () => {
+  n = 0;
+  const c = leer(), s0 = estado({ compromisos: [{ id: 'mio', name: 'Turno en la tienda', type: 'trabajo', days: [1, 2, 3, 4, 5], start: '15:00', end: '19:00' }],
+    evaluaciones: [{ id: 'e1', type: 'parcial', course: 'Física 1', date: '2026-11-05' }] });
+  const r = L.fusionarGcal(s0, c, HOY, { nuevoId, cupoEvals: Infinity });
+  assert.equal(r.commitments.filter(x => x.name === 'Turno en la tienda').length, 1);
+  assert.equal(r.evals.filter(x => x.course === 'Física 1').length, 1);
+  assert.ok(r.gcal.ignorar.includes('r:trabajo@google.com') && r.gcal.ignorar.includes('v:fisica@google.com'));
+  // La primera vez, si la persona lo marca igual, entra: lo decidió ella.
+  const r2 = L.fusionarGcal(s0, c, HOY, { nuevoId, cupoEvals: Infinity, elegidos: new Set(['r:trabajo@google.com']) });
+  assert.equal(r2.commitments.filter(x => x.name === 'Turno en la tienda').length, 2);
 });
 
 test('Gratis: las evaluaciones entran hasta el cupo y las demás esperan', () => {

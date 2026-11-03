@@ -37,15 +37,15 @@ Quien ya usa Google Calendar tiene que escribir dos veces lo mismo: sus clases, 
 1. Perfil → «Google Calendar y WhatsApp» → «Traer mi Google Calendar». La persona copia la «Dirección secreta en formato iCal» (Google Calendar en la computadora → ⋮ junto a su calendario → «Configuración y uso compartido» → «Integrar el calendario») y la pega.
 2. La app la envía, con su sesión, a `lia-calendario` (`POST {accion:'importar', url}`). La función solo acepta direcciones `https` de `calendar.google.com/calendar/ical/`, de Outlook (`/owa/calendar/`) o de iCloud (`/published/`), con redirecciones solo dentro de esa lista, 10 s de espera como máximo, hasta 15 MB, y devuelve el texto sin lo que ya pasó. No guarda nada y su registro no lleva la dirección ni títulos.
 3. La app lo lee (`leerIcs`, `deCalendario` en la lógica) y propone:
-   - **Rutinas**: lo que se repite cada semana (o cada día) → una rutina con sus días y horas. Las fechas excluidas o movidas de los próximos 60 días quedan como «libre» ese día.
+   - **Rutinas**: lo que se repite cada semana (o cada día) → una rutina con sus días y horas, y con su fecha de inicio y de fin si las tiene (`desde` y `hasta`: fuera de ellas no ocupa horas). Las fechas excluidas o movidas de los próximos 60 días quedan como «libre» ese día.
    - **Evaluaciones**: un evento de una vez cuyo título dice parcial, examen, final, práctica (PC1…), control, quiz, entrega, exposición o sustentación (próximos 120 días). El curso sale del resto del título.
    - **Eventos de un día**: el resto de lo que pasa una vez en los próximos 60 días, y las repeticiones que no son semanales (cada dos semanas, cada mes) como días sueltos.
 4. Vista previa con casillas. Lo que ya está en LIA aparece marcado «Ya está en LIA» y sin elegir. «Agregar» lo guarda (con Deshacer). En Gratis, las evaluaciones respetan el límite de 3 próximas.
-5. Cada vez que se abre LIA (si pasaron 6 horas) o con «Traer cambios ahora»: lo nuevo entra, lo que cambió en Google se actualiza y lo que se borró en Google (y aún no pasó) se quita. Lo que la persona cambió o borró en LIA se queda como lo dejó y ya no se toca.
+5. Cada vez que se abre LIA (si pasaron 6 horas) o con «Traer cambios ahora»: lo nuevo entra (salvo lo que ya estaba en LIA), lo que cambió en Google se actualiza y lo que se borró en Google (y aún no pasó) se quita. Lo que la persona cambió o borró en LIA se queda como lo dejó y ya no se toca. Estas lecturas reflejan Google y no tienen Deshacer; esperan a que pase el Deshacer de otra acción para no pisarlo.
 
 **De LIA a Google Calendar**
 
-- El enlace secreto que ya existe (`GET lia-calendario?t=…`, calendario «LIA») ahora lleva, además del estudio y las evaluaciones, los **eventos de un día** y las **rutinas** de los próximos 14 días. Las rutinas se pueden apagar («También mis rutinas»).
+- El enlace secreto que ya existe (`GET lia-calendario?t=…`, calendario «LIA») ahora lleva, además del estudio y las evaluaciones, los **eventos de un día** y las **rutinas** de los próximos 14 días si la persona lo elige («También mis eventos y rutinas», `settings.calTodo`). Quien activa el calendario desde esta versión lo acepta al activarlo (el botón lo dice) y lo puede apagar; quien lo activó antes lo ve apagado hasta que lo marque, porque solo había aceptado estudio y evaluaciones (hallazgo del revisor).
 - Nunca se publica lo que vino de Google Calendar (evita duplicados).
 
 ## Historias
@@ -71,7 +71,7 @@ Quien ya usa Google Calendar tiene que escribir dos veces lo mismo: sus clases, 
    - [ ] Horas en UTC (`Z`), con `TZID` (cualquier zona de `Intl` y los nombres de Windows más comunes) y flotantes, convertidas a hora de Lima.
    - [ ] `RRULE` semanal y diaria con `BYDAY`, `UNTIL`, `COUNT` e `INTERVAL`; `EXDATE`; instancias movidas o canceladas (`RECURRENCE-ID`).
    - [ ] Se omiten: cancelados, «Disponible» (`TRANSP:TRANSPARENT`), de todo el día (salvo entregas), de más de 16 horas, y lo que ya pasó. La vista previa dice cuántos y por qué.
-   - [ ] Una rutina que terminó (`UNTIL` o `COUNT` en el pasado) no se trae; una que empieza en más de 7 días llega en una sincronización posterior.
+   - [ ] Una rutina que terminó (`UNTIL` o `COUNT` en el pasado) no se trae; una que termina o empieza dentro de los próximos 60 días lleva `hasta` o `desde`; una que empieza después llega en una sincronización posterior.
 3. **Vista previa y guardado.**
    - [ ] Agrupada en Rutinas, Evaluaciones y Eventos de un día, con casillas; lo que ya está en LIA, sin elegir.
    - [ ] Lo que no se eligió no vuelve a proponerse.
@@ -80,12 +80,12 @@ Quien ya usa Google Calendar tiene que escribir dos veces lo mismo: sus clases, 
 4. **Sincronizar al abrir.**
    - [ ] Con sesión y dirección guardada, a las 6 horas de la última lectura.
    - [ ] Nuevo en Google → entra; cambió en Google → se actualiza; se borró en Google y es futuro → se quita (con lo estudiado para esa evaluación).
-   - [ ] Lo editado o borrado en LIA no se toca nunca más.
+   - [ ] Lo editado o borrado en LIA no se toca nunca más, y lo nuevo que ya estaba en LIA no entra dos veces.
    - [ ] Solo avisa si algo cambió («Traje 2 cambios de Google Calendar», con Deshacer).
 5. **Publicar lo de LIA en Google Calendar.**
-   - [ ] Eventos de un día (no los «No disponible» que crea mover un bloque) y rutinas de los próximos 14 días, sin las horas que una excepción «libre» liberó.
+   - [ ] Eventos de un día (no los «No disponible» que crea mover un bloque) y rutinas de los próximos 14 días, sin las horas que una excepción «libre» liberó, solo con `settings.calTodo`.
    - [ ] Nada que tenga origen en Google.
-   - [ ] Las rutinas se pueden apagar; por defecto van.
+   - [ ] Con más de 300, se recortan primero eventos y rutinas, no el estudio ni las evaluaciones.
 6. **Privacidad.**
    - [ ] La dirección secreta vive solo en el navegador (en los datos de LIA) y se borra al cerrar sesión.
    - [ ] La tarjeta dice qué se publica (estudio, evaluaciones, eventos y rutinas con su nombre) antes de activar.

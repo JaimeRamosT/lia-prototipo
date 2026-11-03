@@ -10,7 +10,7 @@
 | **Enlace iCal secreto** | Sin Google Cloud ni permisos; funciona en Google, Apple y Outlook | Google lo actualiza cada cierto tiempo (no instantáneo) | **Sí**. Desde el 3-nov, también de Google hacia LIA (ADR-004 en `docs/calendario.md`) |
 | WhatsApp por la Cloud API de Meta | Donde ya está la gente; avisos y consultas sin instalar nada | Número de prueba: 5 destinatarios; fuera de 24 h hace falta una plantilla aprobada; costo por mensaje con número real | **Sí**, empezando con el número de prueba |
 
-Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase lo de los próximos 14 días **con su nombre** («Estudiar Cálculo II»): sesiones de estudio, evaluaciones, eventos de un día y, si la persona no lo apaga, sus rutinas (desde el 3-nov). Sin eso, el calendario y WhatsApp no podrían mostrarlos. La persona lo lee en la tarjeta antes de activar; al desactivar los dos canales, se borra. No se publican mensajes del chat, nombre, correo ni lo que vino de su Google Calendar.
+Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase lo de los próximos 14 días **con su nombre** («Estudiar Cálculo II»): sesiones de estudio y evaluaciones y, si la persona lo elige, sus eventos de un día y rutinas (desde el 3-nov). Sin eso, el calendario y WhatsApp no podrían mostrarlos. La persona lo lee en la tarjeta antes de activar; al desactivar los dos canales, se borra. No se publican mensajes del chat, nombre, correo ni lo que vino de su Google Calendar.
 
 ## Piezas
 
