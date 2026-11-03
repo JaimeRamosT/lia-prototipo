@@ -1234,14 +1234,179 @@ function leerConsolidado(items){
 // Un curso como rutina de clases: un horario por cada par de horas, con todos sus días.
 function rutinaDeCurso(c){const t={};for(const h of c.horarios){const k=h.inicio+'-'+h.fin;(t[k]=t[k]||{days:[],start:h.inicio,end:h.fin}).days.push(h.dia);}
   return{name:c.nombre,type:'clase',tramos:Object.values(t).map(x=>({...x,days:[...new Set(x.days)].sort((a,b)=>a-b)}))};}
-// Canales (docs/canales.md): Las sesiones de estudio y evaluaciones de los próximos 14 días, con hora de Lima.
+// Canales (docs/canales.md y docs/calendario.md): lo de los próximos 14 días, con hora de Lima: sesiones de estudio,
+// evaluaciones, eventos de un día y rutinas (sin las horas que se liberaron ese día). Nunca lo que vino de Google Calendar.
 function iso(f,min){const d=min>=1440?ymd(addDays(fromYmd(f),1)):f;return `${d}T${fmt(min%1440)}:00-05:00`;}
 function eventosCanales(st,p,n){const hoy=ymd(n),hasta=ymd(addDays(n,14)),out=[];
   for(const b of p.blocks){if(b.date<hoy||b.date>hasta)continue;const e=st.evals.find(x=>x.id===b.evalId);
     out.push({inicio:iso(b.date,b.s),fin:iso(b.date,b.e),titulo:`Estudiar ${e?e.course:'para tu evaluación'}`.slice(0,80),tipo:'estudio'});}
-  for(const e of st.evals){if(e.date<hoy||e.date>hasta||!e.time)continue;const t=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,s=toMin(e.time);
+  for(const e of st.evals){if(e.gcal||e.date<hoy||e.date>hasta||!e.time)continue;const t=EVAL_TYPES[e.type]||EVAL_TYPES.parcial,s=toMin(e.time);
     out.push({inicio:iso(e.date,s),fin:iso(e.date,s+(e.type==='entrega'?15:60)),titulo:`${t.label} de ${e.course}`.slice(0,80),tipo:'evaluacion'});}
+  const libres=(ref,f)=>ref?st.exceptions.filter(x=>x.libre&&x.ref===ref&&x.date===f).map(x=>intervalo(x.start,x.end)):[];
+  const poner=(f,r,titulo,tipo,ref)=>{let partes=[r];for(const l of libres(ref,f))partes=subtract(partes,l.s,l.e);
+    for(const q of partes)if(q.e-q.s>=15)out.push({inicio:iso(f,q.s),fin:iso(f,q.e),titulo:String(titulo).slice(0,80),tipo});};
+  // «No disponible» es lo que deja mover un bloque de estudio: no es un evento de la persona.
+  for(const x of st.exceptions){if(x.libre||x.gcal||!x.label||x.label==='No disponible'||x.date<hoy||x.date>hasta||!HHMM.test(x.start)||!HHMM.test(x.end))continue;
+    poner(x.date,intervalo(x.start,x.end),x.label,x.cat==='clase'?'clase':'otro',x.id);}
+  if(st.settings.calRutinas!==false)for(let i=0;i<=14;i++){const f=ymd(addDays(n,i)),wd=fromYmd(f).getDay();
+    for(const c of st.commitments){if(c.gcal||!c.days.includes(wd)||!HHMM.test(c.start)||!HHMM.test(c.end)||c.start===c.end)continue;
+      poner(f,intervalo(c.start,c.end),c.name,c.type==='clase'?'clase':'otro',c.id);}}
   return out.sort((a,b)=>a.inicio.localeCompare(b.inicio)).slice(0,300);}
+
+// ---------- Google Calendar → LIA (docs/calendario.md) ----------
+// leerIcs() lee el iCal de la «dirección secreta» (Google, Outlook o iCloud) y pasa todas las horas a hora de Lima
+// (UTC−5, sin horario de verano). deCalendario() propone rutinas, evaluaciones, eventos de un día y ratos libres;
+// fusionarGcal() los junta con lo guardado. Lo traído lleva gcal (su clave) y gh (su huella, para saber si se cambió en LIA).
+const GC={ventana:60,ventanaEvals:120,antesRutina:7,maxDur:16*60};
+const ICS_DIA={SU:0,MO:1,TU:2,WE:3,TH:4,FR:5,SA:6};
+const TZ_WINDOWS={'SA Pacific Standard Time':'America/Bogota','SA Western Standard Time':'America/La_Paz','Pacific SA Standard Time':'America/Santiago',
+  'Argentina Standard Time':'America/Argentina/Buenos_Aires','E. South America Standard Time':'America/Sao_Paulo','Central America Standard Time':'America/Guatemala',
+  'Pacific Standard Time':'America/Los_Angeles','Mountain Standard Time':'America/Denver','Central Standard Time':'America/Chicago','Eastern Standard Time':'America/New_York',
+  'GMT Standard Time':'Europe/London','W. Europe Standard Time':'Europe/Berlin','Romance Standard Time':'Europe/Paris','UTC':'UTC'};
+const diaN=f=>Date.UTC(+f.slice(0,4),+f.slice(5,7)-1,+f.slice(8,10))/864e5;
+const sumarDias=(f,n)=>ymd(addDays(fromYmd(f),n));
+function desfaseTz(tz,ms){const p={};
+  for(const x of new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date(ms)))p[x.type]=x.value;
+  return(Date.UTC(+p.year,+p.month-1,+p.day,+p.hour%24,+p.minute,+p.second)-ms)/6e4;}
+// «20261103», «20261103T090000» (con o sin TZID) o «20261103T140000Z» → {f, min, dia} en Lima. corre: cuántos días se
+// movió la fecha al pasar a Lima (los días de la semana de una repetición se corren igual).
+function horaLima(valor,tzid){const m=/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(String(valor||'').trim());if(!m)return null;
+  if(m[4]===undefined)return{f:`${m[1]}-${m[2]}-${m[3]}`,min:0,dia:true,corre:0};
+  const pared=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0));let ms;
+  if(m[7])ms=pared;
+  else{let tz=String(tzid||'').replace(/^"|"$/g,'');tz=TZ_WINDOWS[tz]||tz;
+    if(!tz||tz==='America/Lima')ms=pared+300*6e4;   // sin zona: la hora de quien lo anotó, que está en Lima
+    else{try{const o=desfaseTz(tz,pared);ms=pared-o*6e4;const o2=desfaseTz(tz,ms);if(o2!==o)ms=pared-o2*6e4;}catch(e){ms=pared+300*6e4;}}}
+  const l=new Date(ms-300*6e4),f=`${l.getUTCFullYear()}-${pad(l.getUTCMonth()+1)}-${pad(l.getUTCDate())}`;
+  return{f,min:l.getUTCHours()*60+l.getUTCMinutes(),dia:false,corre:diaN(f)-diaN(`${m[1]}-${m[2]}-${m[3]}`)};}
+function duracionIcs(v){const m=/^\+?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(String(v||'').trim());
+  return m?(+m[1]||0)*10080+(+m[2]||0)*1440+(+m[3]||0)*60+(+m[4]||0):null;}
+const textoIcs=v=>String(v||'').replace(/\\([\;,nN])/g,(x,c)=>c==='n'||c==='N'?' ':c).replace(/\s+/g,' ').trim();
+function lineaIcs(l){let q=false,i=0;for(;i<l.length;i++){if(l[i]==='"')q=!q;else if(l[i]===':'&&!q)break;}if(i>=l.length)return null;
+  const cab=l.slice(0,i).split(';'),p={};for(const x of cab.slice(1)){const k=x.indexOf('=');if(k>0)p[x.slice(0,k).toUpperCase()]=x.slice(k+1).replace(/^"|"$/g,'');}
+  return{n:cab[0].trim().toUpperCase(),p,v:l.slice(i+1).trim()};}
+function leerIcs(texto){const out=[];if(!/BEGIN:VCALENDAR/i.test(String(texto||'')))return out;let ev=null,prof=0;
+  for(const l of String(texto).replace(/\r?\n[ \t]/g,'').split(/\r?\n/)){const x=lineaIcs(l);if(!x)continue;
+    if(x.n==='BEGIN'){if(x.v.toUpperCase()==='VEVENT'&&!ev){ev={exdates:[],P:{}};prof=0;}else if(ev)prof++;continue;}
+    if(x.n==='END'){if(ev&&prof){prof--;continue;}if(ev&&x.v.toUpperCase()==='VEVENT'){const e=cerrarVevento(ev);if(e)out.push(e);ev=null;}continue;}
+    if(!ev||prof)continue;   // lo de una alarma (VALARM) no es del evento
+    if(x.n==='EXDATE'){for(const s of x.v.split(',')){const h=horaLima(s,x.p.TZID);if(h)ev.exdates.push({f:h.f,min:h.min});}continue;}
+    if(!(x.n in ev.P))ev.P[x.n]=x;}
+  return out;}
+function cerrarVevento({P,exdates}){const ini=P.DTSTART&&horaLima(P.DTSTART.v,P.DTSTART.p.TZID);if(!ini)return null;
+  const fin=P.DTEND&&horaLima(P.DTEND.v,P.DTEND.p.TZID),dd=P.DURATION?duracionIcs(P.DURATION.v):null;
+  const dur=fin?(diaN(fin.f)*1440+fin.min)-(diaN(ini.f)*1440+ini.min):dd!=null?dd:ini.dia?1440:60;
+  let rrule=null;
+  if(P.RRULE){const r={};for(const kv of P.RRULE.v.split(';')){const i=kv.indexOf('=');if(i>0)r[kv.slice(0,i).toUpperCase()]=kv.slice(i+1);}
+    const freq=(r.FREQ||'').toUpperCase(),dias=(r.BYDAY||'').split(',').filter(Boolean),simples=dias.filter(d=>d in ICS_DIA);
+    rrule={freq,interval:Math.max(1,parseInt(r.INTERVAL,10)||1),count:r.COUNT?parseInt(r.COUNT,10):null,until:r.UNTIL?horaLima(r.UNTIL,P.DTSTART.p.TZID):null,
+      byday:[...new Set(simples.map(d=>(ICS_DIA[d]+ini.corre+7)%7))].sort((a,b)=>a-b),bymonthday:(r.BYMONTHDAY||'').split(',').filter(Boolean).map(Number),
+      compleja:simples.length<dias.length||!!(r.BYSETPOS||r.BYWEEKNO||r.BYYEARDAY||r.BYHOUR||r.BYMINUTE||r.BYMONTH)||(dias.length>0&&(freq==='MONTHLY'||freq==='YEARLY'))};}
+  const rid=P['RECURRENCE-ID']&&horaLima(P['RECURRENCE-ID'].v,P['RECURRENCE-ID'].p.TZID);
+  return{uid:P.UID?P.UID.v:`sin-uid-${ini.f}-${ini.min}`,titulo:P.SUMMARY?textoIcs(P.SUMMARY.v):'',inicio:{f:ini.f,min:ini.min,dia:ini.dia},dur,rrule,exdates,
+    rid:rid?{f:rid.f,min:rid.min}:null,cancelado:!!P.STATUS&&P.STATUS.v.toUpperCase()==='CANCELLED',libre:!!P.TRANSP&&P.TRANSP.v.toUpperCase()==='TRANSPARENT'};}
+// Fechas (en Lima) en que se repite un evento entre desde y hasta. mas: si sigue después de hasta.
+function ocurrencias(e,desde,hasta){const r=e.rrule,f0=e.inicio.f,d0=fromYmd(f0),out=[];let n=0,mas=false,pasos=0;
+  const tope=r.until?(r.until.dia?diaN(r.until.f)*1440+1439:diaN(r.until.f)*1440+r.until.min):Infinity;
+  const tomar=f=>{if(f<f0)return true;if(diaN(f)*1440+e.inicio.min>tope||(r.count!=null&&n>=r.count))return false;n++;if(f>hasta){mas=true;return false;}if(f>=desde)out.push(f);return true;};
+  if(r.freq==='DAILY'){for(let k=0;pasos++<20000;k+=r.interval){const f=ymd(addDays(d0,k));if(r.byday.length&&!r.byday.includes(fromYmd(f).getDay()))continue;if(!tomar(f))break;}}
+  else if(r.freq==='WEEKLY'){const dias=(r.byday.length?r.byday:[d0.getDay()]).slice().sort((a,b)=>((a+6)%7)-((b+6)%7)),lunes=addDays(d0,-((d0.getDay()+6)%7));
+    semanas:for(let k=0;pasos++<5000;k+=r.interval)for(const d of dias){if(!tomar(ymd(addDays(lunes,k*7+(d+6)%7))))break semanas;}}
+  else if(r.freq==='MONTHLY'||r.freq==='YEARLY'){const paso=r.freq==='MONTHLY'?r.interval:12*r.interval,dias=r.freq==='MONTHLY'&&r.bymonthday.length?r.bymonthday:[d0.getDate()];
+    meses:for(let k=0;pasos++<3000;k+=paso){const a=d0.getFullYear(),m=d0.getMonth()+k,ult=new Date(a,m+1,0).getDate();
+      for(const x of dias.map(x=>x<0?ult+1+x:x).filter(x=>x>=1&&x<=ult).sort((p,q)=>p-q)){if(!tomar(ymd(new Date(a,m,x))))break meses;}}}
+  else return null;
+  if(r.until==null&&r.count==null)mas=true;
+  return{fechas:out,mas};}
+// Tipo de evaluación y curso por el título («Parcial de Física 1», «PC2 - Estadística», «Examen final de Química»).
+const GC_EVAL={parcial:'parcial',parciales:'parcial',examen:'examen',final:'final',practica:'practica',pc:'practica',pc1:'practica',pc2:'practica',pc3:'practica',pc4:'practica',pc5:'practica',
+  control:'control',quiz:'control',entrega:'entrega',entregable:'entrega',exposicion:'exposicion',sustentacion:'exposicion',evaluacion:'examen'};
+const GC_RELLENO=new Set(['','de','del','la','el','los','las','al','a','y','en','n','no','nro','n°','calificada','calificado']);
+const palabrasIcs=t=>String(t||'').split(/\s+/).filter(Boolean);
+const normPal=p=>norm(p).replace(/[^a-z0-9ñ°]/g,'');
+function evalDeTitulo(t){const pal=palabrasIcs(t),n=pal.map(normPal),tipos=n.map(x=>GC_EVAL[x]).filter(Boolean);if(!tipos.length)return null;
+  let i=0;while(i<pal.length&&(GC_EVAL[n[i]]||GC_RELLENO.has(n[i])||/^\d+$/.test(n[i])))i++;
+  const c=pal.slice(i).join(' ').trim()||String(t).trim();return{type:tipos.includes('final')?'final':tipos[0],course:cap(c).slice(0,40)};}
+function catDeTitulo(t){for(const p of palabrasIcs(t).map(normPal)){const c=CAT_EVENTO[p]||COMMIT_KW[p];if(c)return c;}return 'otro';}
+function deCalendario(evs,hoy){const c={rutinas:[],evals:[],eventos:[],libres:[],omitidos:{todoElDia:0,largos:0,repeticiones:0,disponibles:0}},o=c.omitidos;
+  const hasta=sumarDias(hoy,GC.ventana),hastaE=sumarDias(hoy,GC.ventanaEvals),enV=f=>f>=hoy&&f<=hasta,cambios={};
+  const nombre=e=>(e.titulo||'Ocupado').slice(0,40),hora=(min,dur)=>({start:fmt(min),end:fmt((min+dur)%1440)});
+  const evento=(k,x,base)=>{if(x.cancelado||x.libre||x.inicio.dia||x.dur<=0||x.dur>GC.maxDur||!enV(x.inicio.f))return;
+    c.eventos.push({gcal:k,date:x.inicio.f,...hora(x.inicio.min,x.dur),label:nombre(x.titulo?x:base),cat:catDeTitulo(x.titulo||base.titulo)});};
+  for(const e of evs)if(e.rid)(cambios[e.uid]=cambios[e.uid]||[]).push(e);
+  for(const e of evs){if(e.rid||e.cancelado)continue;const cuenta=e.rrule||enV(e.inicio.f);
+    if(e.libre){if(cuenta)o.disponibles++;continue;}
+    const ev=!e.rrule&&evalDeTitulo(e.titulo);
+    if(e.inicio.dia){if(ev&&ev.type==='entrega'&&e.inicio.f>=hoy&&e.inicio.f<=hastaE)c.evals.push({gcal:'v:'+e.uid,type:'entrega',course:ev.course,date:e.inicio.f,time:'23:59'});
+      else if(cuenta)o.todoElDia++;continue;}
+    if(e.dur<=0)continue;
+    if(e.dur>GC.maxDur){if(cuenta)o.largos++;continue;}
+    if(!e.rrule){if(ev&&e.inicio.f>=hoy&&e.inicio.f<=hastaE)c.evals.push({gcal:'v:'+e.uid,type:ev.type,course:ev.course,date:e.inicio.f,time:fmt(e.inicio.min)});
+      else evento('e:'+e.uid,e,e);continue;}
+    const r=e.rrule,oc=r.compleja?null:ocurrencias(e,hoy,hasta);
+    if(!oc){o.repeticiones++;continue;}
+    if(!oc.fechas.length&&!oc.mas)continue;   // ya terminó
+    const movidas=new Map((cambios[e.uid]||[]).map(x=>[x.rid.f,x]));
+    if(r.interval===1&&(r.freq==='WEEKLY'||r.freq==='DAILY')){
+      if(e.inicio.f>sumarDias(hoy,GC.antesRutina))continue;   // empieza más adelante: llega en otra sincronización
+      const k='r:'+e.uid,h=hora(e.inicio.min,e.dur);
+      c.rutinas.push({gcal:k,name:nombre(e),type:catDeTitulo(e.titulo),days:r.freq==='DAILY'&&!r.byday.length?[0,1,2,3,4,5,6]:r.byday.length?r.byday:[fromYmd(e.inicio.f).getDay()],...h});
+      // Ese día no hay (EXDATE) o se movió (RECURRENCE-ID): queda libre; si se movió, el nuevo horario es de un día.
+      const libre=(f,min)=>{if(enV(f)&&!c.libres.some(l=>l.gcal===`l:${e.uid}:${f}`))c.libres.push({gcal:`l:${e.uid}:${f}`,rutina:k,date:f,...hora(min,e.dur)});};
+      for(const x of e.exdates)libre(x.f,x.min);
+      for(const [f,x] of movidas){libre(f,x.rid.min);evento(`e:${e.uid}:${f}`,x,e);}
+      continue;}
+    const ex=new Set(e.exdates.map(x=>x.f));
+    for(const f of oc.fechas){if(ex.has(f))continue;const x=movidas.get(f);if(x)evento(`e:${e.uid}:${f}`,x,e);else evento(`e:${e.uid}:${f}`,{...e,inicio:{...e.inicio,f}},e);}}
+  c.eventos.sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start));c.eventos=c.eventos.slice(0,300);
+  c.evals.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  return c;}
+// Lo que ya está en LIA (escrito a mano o del consolidado) no se propone dos veces.
+function yaEnLia(st,x){const n=s=>norm(String(s||'')).replace(/\s+/g,' ').trim(),k=x.gcal[0];
+  if(k==='r')return st.commitments.some(c=>!c.gcal&&n(c.name)===n(x.name)&&c.start===x.start&&c.end===x.end&&x.days.some(d=>c.days.includes(d)));
+  if(k==='v')return st.evals.some(e=>!e.gcal&&n(e.course)===n(x.course)&&e.date===x.date);
+  if(k==='e')return st.exceptions.some(e=>!e.gcal&&!e.libre&&e.date===x.date&&e.start===x.start&&e.end===x.end&&n(e.label)===n(x.label));
+  return false;}
+function huellaGcal(o){const k=String(o.gcal||'')[0];
+  return k==='r'?[o.name,o.type,(o.days||[]).join(','),o.start,o.end].join('|'):k==='v'?[o.type,o.course,o.date,o.time].join('|')
+    :[o.date,o.start,o.end,o.label,o.cat||'',o.libre?1:0].join('|');}
+// Junta lo que trae Google con lo guardado, sin mutar st. Lo nuevo entra; lo que cambió en Google se actualiza; lo que
+// se borró en Google se quita si aún no pasó. Lo que la persona cambió o borró en LIA (o no eligió) queda en ignorar.
+// op: {elegidos (la primera vez), cupoEvals (Gratis), nuevoId}.
+function fusionarGcal(st,cand,hoy,op={}){const g=st.gcal||{},nuevoId=op.nuevoId||(()=>Math.random().toString(36).slice(2,10));
+  const ign=new Set(g.ignorar||[]),cambios={nuevos:0,cambiados:0,quitados:0},rutinas=cand.rutinas||[],libresC=cand.libres||[],eventos=cand.eventos||[],evals=cand.evals||[];
+  if(op.elegidos)for(const x of [...rutinas,...libresC,...eventos,...evals])if(!op.elegidos.has(x.gcal))ign.add(x.gcal);
+  let cs=st.commitments.map(c=>({...c})),xs=st.exceptions.map(x=>({...x})),es=st.evals.map(e=>({...e})),done=[...st.done];
+  const presentes=new Set([...cs,...xs,...es].filter(o=>o.gcal).map(o=>o.gcal));
+  for(const k of g.traidos||[])if(!presentes.has(k))ign.add(k);
+  for(const o of [...cs,...xs,...es])if(o.gcal&&o.gh&&o.gh!==huellaGcal(o))ign.add(o.gcal);
+  const vivo=o=>o.gcal&&!ign.has(o.gcal);
+  const actualizar=(lista,M,campos)=>{for(const o of lista){if(!vivo(o)||!M.has(o.gcal))continue;const v=campos(M.get(o.gcal));
+    if(huellaGcal({...o,...v})!==o.gh){Object.assign(o,v);o.gh=huellaGcal(o);cambios.cambiados++;}}};
+  // Rutinas
+  const R=new Map(rutinas.map(r=>[r.gcal,r])),fuera=new Set(),campoR=r=>({name:r.name,type:r.type,days:[...r.days],start:r.start,end:r.end});
+  cs=cs.filter(c=>{if(!vivo(c)||R.has(c.gcal))return true;fuera.add(c.id);cambios.quitados++;return false;});
+  actualizar(cs,R,campoR);
+  for(const r of rutinas){if(ign.has(r.gcal)||cs.some(c=>c.gcal===r.gcal))continue;const c={id:nuevoId(),...campoR(r),gcal:r.gcal};c.gh=huellaGcal(c);cs.push(c);cambios.nuevos++;}
+  const porClave=new Map(cs.filter(c=>c.gcal).map(c=>[c.gcal,c])),suelta=id=>{const c=cs.find(x=>x.id===id);return !!(c&&c.gcal&&ign.has(c.gcal));};
+  // Ratos libres de las rutinas y eventos de un día
+  const X=new Map();
+  for(const l of libresC){const c=porClave.get(l.rutina);if(c&&!ign.has(l.rutina))X.set(l.gcal,{date:l.date,start:l.start,end:l.end,label:`Sin ${c.name}`.slice(0,40),libre:true,ref:c.id});}
+  for(const e of eventos)X.set(e.gcal,{date:e.date,start:e.start,end:e.end,label:e.label,cat:e.cat});
+  xs=xs.filter(x=>{if(x.libre&&fuera.has(x.ref))return false;if(!vivo(x)||X.has(x.gcal)||x.date<hoy||(x.libre&&suelta(x.ref)))return true;cambios.quitados++;return false;});
+  actualizar(xs,X,o=>o);
+  for(const [k,o] of X){if(ign.has(k)||xs.some(x=>x.gcal===k))continue;const x={id:nuevoId(),...o,gcal:k};x.gh=huellaGcal(x);xs.push(x);cambios.nuevos++;}
+  // Evaluaciones (en Gratis, hasta el cupo; las demás esperan sin ignorarse)
+  const V=new Map(evals.map(v=>[v.gcal,v])),sinEval=new Set(),campoV=v=>({type:v.type,course:v.course,date:v.date,time:v.time});
+  es=es.filter(e=>{if(!vivo(e)||V.has(e.gcal)||e.date<hoy)return true;sinEval.add(e.id);cambios.quitados++;return false;});
+  if(sinEval.size)done=done.filter(d=>!sinEval.has(d.evalId));
+  actualizar(es,V,campoV);
+  let cupo=op.cupoEvals===undefined?Infinity:op.cupoEvals,sinCupo=0;const nuevasEvals=[];
+  for(const v of evals){if(ign.has(v.gcal)||es.some(e=>e.gcal===v.gcal))continue;
+    if(v.date>=hoy){if(cupo<=0){sinCupo++;continue;}cupo--;}
+    const e={id:nuevoId(),...campoV(v),hours:(EVAL_TYPES[v.type]||EVAL_TYPES.parcial).h,gcal:v.gcal};e.gh=huellaGcal(e);es.push(e);nuevasEvals.push(e.id);cambios.nuevos++;}
+  const ignorar=[...ign].filter(k=>{const m=/:(\d{4}-\d{2}-\d{2})$/.exec(k);return !m||m[1]>=hoy;}).slice(-2000);
+  return{commitments:cs,exceptions:xs,evals:es,done,gcal:{...g,ignorar,traidos:[...cs,...xs,...es].filter(o=>o.gcal).map(o=>o.gcal)},cambios,nuevasEvals,sinCupo};}
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -1766,7 +1931,8 @@ function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaCorta
    ${op('add-commit',I.repeat,'Rutina semanal','Clases, trabajo, gimnasio: lo que se repite cada semana.')}
    ${op('add-evento',I.cal,'Algo de un solo día','Un cumpleaños, una cita, un turno extra.')}
    ${op('add-eval',I.list,'Evaluación','Un examen, una práctica o una entrega.')}
-   ${op('consolidado',I.cal,'Consolidado de matrícula','Sube el PDF de tu matrícula y agrego tus clases.')}</div>
+   ${op('consolidado',I.cal,'Consolidado de matrícula','Sube el PDF de tu matrícula y agrego tus clases.')}
+   ${state.cuenta&&cuentasActivas()?op('gcal-abrir',I.cal,'Desde Google Calendar','Traigo tus clases, evaluaciones y eventos.'):''}</div>
    <button class="btn sec" data-a="close">Cancelar</button>`;}
 // ---------- Consolidado de matrícula (PDF) ----------
 // El PDF se lee en el teléfono con pdf.js (vendor/pdfjs, se carga solo al usarlo) y no se envía a ningún lado.
@@ -1974,8 +2140,8 @@ async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
   catch(e){toast(mensajeError(e));}
   finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
 // ---------- Canales: Google Calendar (enlace iCal, sin Google Cloud) y WhatsApp (docs/canales.md) ----------
-// Para cuentas con sesión. Al activar uno, la app publica en Supabase sus próximas sesiones de estudio y evaluaciones
-// con su nombre (es lo que se ve en el calendario y en WhatsApp); al desactivar los dos, se borran.
+// Para cuentas con sesión. Al activar uno, la app publica en Supabase sus próximas sesiones de estudio, evaluaciones,
+// eventos de un día y rutinas con su nombre (es lo que se ve en el calendario y en WhatsApp); al desactivar los dos, se borran.
 const WA_LIA='15551404567';  // número de prueba de Meta (2-nov-2026)  // El número de WhatsApp de LIA (el de prueba de Meta o el propio), solo dígitos con código de país: '15551234567'.
 const CAL_FN=()=>`${SB_CFG.url}/functions/v1/lia-calendario?t=`;
 const KEY_CANALES_FIRMA='lia.canales.firma';
@@ -1993,14 +2159,21 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="ey
   if(!state.cuenta)return `<div class="card stack">${tit}<div class="small muted">Con tu cuenta de LIA, ves tus sesiones de estudio en Google Calendar y Lía te avisa por WhatsApp antes de cada una.</div></div>`;
   if(ui.canales===undefined){cargarCanales();return `<div class="card stack">${tit}<div class="small muted" role="status">Cargando…</div></div>`;}
   const c=ui.canales||{},w=c.whatsapp,oc=ui.canalesOcupado?' disabled':'';
-  const priv='<p class="small muted" style="margin:0">Al activar uno, LIA guarda en su servidor tus próximas sesiones de estudio y evaluaciones con su nombre, para mostrarlas ahí. Si desactivas los dos, se borran.</p>';
-  const cal=c.calendario?`<div class="stack" style="gap:8px"><b>Google Calendar</b>
+  const priv='<p class="small muted" style="margin:0">Al activar uno, LIA guarda en su servidor lo de tus próximos 14 días con su nombre (estudio, evaluaciones, eventos y, si quieres, rutinas) para mostrarlo ahí. Si desactivas los dos, se borra.</p>';
+  const cal=c.calendario?`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b>
      <label class="f">Tu enlace secreto (no lo compartas)<input id="cal-url" readonly value="${esc(CAL_FN()+c.calendario)}"></label>
-     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», toca <b>+</b> y luego <b>Desde URL</b>.</li><li>Pega el enlace y toca <b>Agregar calendario</b>. Aparecerá «LIA · Estudio» en tu celular también.</li></ol>
+     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», toca <b>+</b> y luego <b>Desde URL</b>.</li><li>Pega el enlace y toca <b>Agregar calendario</b>. Aparecerá «LIA» en tu celular también.</li></ol>
+     <label class="opt"><input type="checkbox" id="cal-rutinas" ${state.settings.calRutinas===false?'':'checked'}><span><b>También mis rutinas</b><br><span class="small muted">Clases, trabajo y lo que se repite cada semana. Lo que trajiste de Google no se repite.</span></span></label>
      <p class="small muted" style="margin:0">Google actualiza los calendarios por enlace cada cierto tiempo: un cambio puede tardar horas en verse.</p>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cal-copiar">Copiar enlace</button><button class="btn sec sm" data-a="cal-desactivar"${oc}>Dejar de compartir</button></div></div>`
-    :`<div class="stack" style="gap:8px"><b>Google Calendar</b><div class="small muted">Tus sesiones de estudio y evaluaciones en tu Google Calendar, con sus avisos. No necesitas darle permisos a nadie: solo agregas un enlace.</div>
-     <button class="btn sec sm" data-a="cal-activar"${oc}>Ver mi estudio en Google Calendar</button></div>`;
+    :`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b><div class="small muted">Tu estudio, tus evaluaciones, tus eventos y tus rutinas en tu Google Calendar, con sus avisos. No necesitas darle permisos a nadie: solo agregas un enlace.</div>
+     <button class="btn sec sm" data-a="cal-activar"${oc}>Ver LIA en mi Google Calendar</button></div>`;
+  const g=state.gcal,gl=ui.gcalLeyendo?' disabled':'';
+  const imp=g&&g.url?`<div class="stack" style="gap:8px"><b>De Google Calendar a LIA</b>
+     <div class="small muted" role="status">${g.error==='no_encontrado'?'Google ya no reconoce tu dirección secreta (quizá la restableciste). Vuelve a pegarla con «Cambiar la dirección».':g.error?'La última vez no pude leer tu calendario. Lo vuelvo a intentar al abrir LIA.':`Conectado.${g.ultima?` Última lectura: ${cuandoTxt(g.ultima)}.`:''} Traigo los cambios cuando abres LIA, cada 6 horas como máximo.`}</div>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="gcal-ahora"${gl}>${ui.gcalLeyendo?'Leyendo…':'Traer cambios ahora'}</button><button class="btn sec sm" data-a="gcal-abrir"${gl}>Cambiar la dirección</button><button class="btn sec sm" data-a="gcal-dejar"${gl}>Dejar de traer</button></div></div>`
+    :`<div class="stack" style="gap:8px"><b>De Google Calendar a LIA</b><div class="small muted">Trae tus clases, evaluaciones y eventos sin escribirlos otra vez. Antes de guardar, eliges qué entra.</div>
+     <button class="btn sec sm" data-a="gcal-abrir">Traer mi Google Calendar</button></div>`;
   let wa;
   if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><b>WhatsApp</b><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?».</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="wa-avisos" data-v="${w.avisos?'0':'1'}"${oc}>${w.avisos?'Pausar avisos':'Activar avisos'}</button><button class="btn sec sm" data-a="wa-quitar"${oc}>Desvincular</button></div></div>`;
@@ -2015,7 +2188,84 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="ey
   else wa=`<form class="stack" data-form="wa" style="gap:8px"><b>WhatsApp</b><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
      <label class="f">Tu número de WhatsApp<input type="tel" name="numero" inputmode="tel" autocomplete="tel" required placeholder="987 654 321" value="${esc(w&&w.numero||'')}"></label>
      ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<button class="btn sec sm" type="submit"${oc}>Vincular WhatsApp</button></form>`;
-  return `<div class="card stack">${tit}${priv}${cal}<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">${wa}</div>`;}
+  const sep='<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">';
+  return `<div class="card stack">${tit}${priv}${cal}${sep}${imp}${sep}${wa}</div>`;}
+// ---------- Google Calendar → LIA (docs/calendario.md) ----------
+// La «dirección secreta en formato iCal» se guarda solo en este navegador (state.gcal.url) y se borra al cerrar sesión.
+// lia-calendario la lee (Google no deja leerla desde otra página) y la app decide qué traer (leerIcs, deCalendario y
+// fusionarGcal, en la lógica). Al abrir LIA, cada 6 horas, trae los cambios. Lo que vino de Google no se publica de vuelta.
+const GCAL_CADA=6*3600e3;
+const GCAL_ERRORES={no_permitida:'Esa no parece la dirección secreta de tu calendario. Cópiala de «Integrar el calendario» → «Dirección secreta en formato iCal».',
+  no_encontrado:'Google ya no reconoce esa dirección: quizá la restableciste. Copia la nueva y pégala aquí.',
+  no_es_calendario:'Esa dirección no devolvió un calendario. Revisa que sea la «Dirección secreta en formato iCal», no la pública ni la de la página.',
+  muy_grande:'Tu calendario es demasiado grande para traerlo. Prueba con un calendario solo para la universidad.',
+  tiempo:'Google tardó demasiado en responder. Inténtalo en un momento.',no_responde:'No pude leer tu calendario ahora. Inténtalo en un momento.',
+  sesion:'Tu sesión venció: vuelve a entrar en Perfil.',red:'Sin conexión. Conéctate y vuelve a intentarlo.'};
+function cuandoTxt(ms){const d=new Date(ms),f=ymd(d),h=fmt(d.getHours()*60+d.getMinutes());return f===ymd(new Date())?`hoy a las ${h}`:`el ${fechaCorta(f)} a las ${h}`;}
+async function tokenSesion(){const {data}=await sb().then(c=>c.auth.getSession());return data&&data.session&&data.session.access_token||null;}
+async function leerGcal(url){const t=await tokenSesion();if(!t)throw{error:'sesion'};let res;
+  try{res=await fetch(`${SB_CFG.url}/functions/v1/lia-calendario`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify({accion:'importar',url})});}
+  catch(e){throw{error:navigator.onLine===false?'red':'no_responde'};}
+  const d=await res.json().catch(()=>null);if(!d||!d.ok)throw{error:(d&&d.error)||'no_responde'};
+  return deCalendario(leerIcs(d.ics),ymd(now()));}
+function abrirGcal(){ui.gcal={estado:'pedir'};ui.sheet=sheetGcal();render();}
+function sheetGcal(){const g=ui.gcal||{estado:'pedir'},head='<div class="grab"></div><h2>Traer tu Google Calendar</h2>';
+  if(g.estado==='leyendo')return `${head}<p class="muted" role="status">Leyendo tu calendario…</p><button class="btn sec" data-a="close">Cancelar</button>`;
+  if(g.estado==='listo'){const c=g.cand,fila=(x,t,d)=>{const ya=yaEnLia(state,x);
+      return `<label class="opt"><input type="checkbox" name="k" value="${esc(x.gcal)}" ${ya?'':'checked'}><span><b>${esc(t)}</b><br><span class="small muted">${esc(d)}${ya?' · Ya está en LIA':''}</span></span></label>`;};
+    const grupo=(t,filas)=>filas.length?`<fieldset class="stack" style="gap:8px;border:0;padding:0;margin:0"><legend class="eyebrow" style="margin-bottom:8px">${t} (${filas.length})</legend>${filas.join('')}</fieldset>`:'';
+    const rs=c.rutinas.map(r=>fila(r,r.name,`${COMMIT_TYPES[r.type]} · ${diasTxt(r.days)} · ${r.start} – ${r.end}`));
+    const vs=c.evals.map(v=>fila(v,`${EVAL_TYPES[v.type].label} de ${v.course}`,`${cap(fechaCorta(v.date))} · ${v.time}`));
+    const es=c.eventos.map(e=>fila(e,e.label,`${cap(fechaCorta(e.date))} · ${e.start} – ${e.end}`));
+    const o=c.omitidos,no=[o.todoElDia&&`${o.todoElDia} de todo el día`,o.largos&&`${o.largos} de más de 16 horas`,o.repeticiones&&`${o.repeticiones} que se repiten de otra forma (por ejemplo, el primer lunes de cada mes)`,o.disponibles&&`${o.disponibles} marcados como «Disponible»`].filter(Boolean);
+    const notaNo=no.length?`<p class="small muted" style="margin:0">No traigo: ${no.join(', ')}.</p>`:'';
+    if(!rs.length&&!vs.length&&!es.length)return `${head}<p style="margin:0">No encontré clases, evaluaciones ni eventos de aquí a 60 días en ese calendario.</p>${notaNo}
+      <button class="btn pri" data-a="gcal-abrir">Probar con otra dirección</button><button class="btn sec" data-a="close">Cerrar</button>`;
+    const room=evalRoom(),cupo=!isPro()&&c.evals.length>room?`<p class="small muted" style="margin:0">En Gratis puedes tener hasta ${FREE_EVALS} evaluaciones próximas: ${room===0?'las que marques entran cuando tengas espacio':room===1?'entra la más próxima que marques y las demás, cuando tengas espacio':`entran las ${room} más próximas que marques y las demás, cuando tengas espacio`}. Con LIA Pro entran todas.</p>`:'';
+    return `<form class="stack" data-form="gcal-elegir" style="gap:16px">${head}<p class="small muted" style="margin:0">Elige qué entra a LIA. Lo que traigas de Google no se vuelve a publicar en Google.</p>
+     ${grupo('Se repiten cada semana',rs)}${grupo('Evaluaciones',vs)}${cupo}${grupo('De un solo día (próximos 60 días)',es)}${notaNo}
+     <button class="btn pri" type="submit">Agregar a LIA</button><button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+  return `<form class="stack" data-form="gcal-url" style="gap:14px">${head}
+   <p class="small muted" style="margin:0">Traigo tus clases, tus evaluaciones y tus eventos. Antes de guardar, eliges qué entra.</p>
+   <ol class="small" style="margin:0;padding-left:18px"><li>En una computadora, abre <b>Google Calendar</b>.</li><li>En «Mis calendarios», junto a tu calendario, toca <b>⋮</b> y luego <b>Configuración y uso compartido</b>.</li><li>Baja hasta «Integrar el calendario» y copia la <b>Dirección secreta en formato iCal</b>.</li></ol>
+   <label class="f">Dirección secreta en formato iCal<input id="gcal-url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" required placeholder="https://calendar.google.com/calendar/ical/…" value="${esc(g.url||'')}"${g.err?' aria-invalid="true" aria-describedby="gcal-err"':''}></label>
+   ${g.err?`<p class="ferr" id="gcal-err" role="alert">${esc(g.err)}</p>`:''}
+   <p class="small muted" style="margin:0">Esa dirección abre tu calendario a quien la tenga: se guarda solo en este navegador y LIA no guarda en su servidor lo que lee. Con una cuenta de la universidad, puede que el administrador la haya desactivado.</p>
+   <button class="btn pri" type="submit">Traer mis eventos</button><button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+async function pedirGcal(url){ui.gcal={estado:'leyendo',url};ui.sheet=sheetGcal();render();anunciar('Leyendo tu calendario…');
+  try{const cand=await leerGcal(url);ui.gcal={estado:'listo',url,cand};}
+  catch(e){ui.gcal={estado:'pedir',url,err:GCAL_ERRORES[e&&e.error]||GCAL_ERRORES.no_responde};}
+  if(!ui.sheet)return;   // la cerró mientras leía
+  ui.sheet=sheetGcal();render();const n=ui.gcal.cand;if(n)anunciar(`Encontré ${n.rutinas.length+n.evals.length+n.eventos.length} para traer.`);}
+// Junta lo traído con lo guardado. Con cambios, guarda un Deshacer; en Gratis, lo nuevo entra al horario armado como siempre.
+function aplicarGcal(cand,op){const hoy=ymd(now()),r=fusionarGcal(state,cand,hoy,{...op,nuevoId:uid,cupoEvals:evalRoom()});
+  const n=r.cambios.nuevos+r.cambios.cambiados+r.cambios.quitados,fresco=!!state.frozen&&!planStale();
+  if(n||op.elegidos)snapshot();
+  Object.assign(state,{commitments:r.commitments,exceptions:r.exceptions,evals:r.evals,done:r.done});
+  state.gcal={...r.gcal,url:op.url||(state.gcal&&state.gcal.url),ultima:Date.now()};delete state.gcal.error;save();
+  let extra='';if(n){if(r.nuevasEvals.length)agendarNuevas(r.nuevasEvals);const ocio=reubicarOcio();alDiaSiNoChoca(fresco);
+    extra=isPro()?' Lía reorganizó tu semana.':!state.frozen?'':ocio?` ${ocio}`:' '+textoRutinaGratis().replace(/^Guardado\. /,'');}
+  if(r.sinCupo)extra+=` ${r.sinCupo===1?'Una evaluación espera':`${r.sinCupo} evaluaciones esperan`} espacio en Gratis.`;
+  return{n,extra};}
+let gcalT=null;
+function gcalLuego(){const g=state.gcal;if(!g||!g.url||!state.cuenta||ui.gcalLeyendo||Date.now()-(g.ultima||0)<GCAL_CADA)return;
+  clearTimeout(gcalT);gcalT=setTimeout(()=>{sincronizarGcal(false);},4000);}
+async function sincronizarGcal(manual){const g=state.gcal;if(!g||!g.url||ui.gcalLeyendo)return;ui.gcalLeyendo=true;if(manual)rerenderKeepScroll();
+  try{const cand=await leerGcal(g.url);if(!state.gcal||state.gcal.url!==g.url)return;const {n,extra}=aplicarGcal(cand,{});
+    if(n){rerenderKeepScroll();toast(`Traje ${n} ${n===1?'cambio':'cambios'} de tu Google Calendar.${extra}`,true);}else if(manual)toast(`Tu Google Calendar no tiene cambios.${extra}`);}
+  catch(e){const err=(e&&e.error)||'no_responde';if(state.gcal&&state.gcal.url===g.url){state.gcal.ultima=Date.now();state.gcal.error=err;save();}
+    if(manual)toast(GCAL_ERRORES[err]||GCAL_ERRORES.no_responde);}
+  finally{ui.gcalLeyendo=false;rerenderKeepScroll();}}
+function sheetGcalDejar(){return `<div class="grab"></div><h2>¿Dejo de traer tu Google Calendar?</h2>
+  <p class="muted" style="margin:0">Olvido tu dirección secreta en este navegador. Lo que ya traje puede quedarse en LIA o irse.</p>
+  <button class="btn pri" data-a="gcal-dejar-si" data-v="mantener">Dejar de traer, conservar lo traído</button>
+  <button class="btn danger" data-a="gcal-dejar-si" data-v="quitar">Dejar de traer y quitar lo traído</button>
+  <button class="btn sec" data-a="close">Cancelar</button>`;}
+function dejarGcal(quitar){snapshot();delete state.gcal;
+  if(quitar){const ids=new Set(state.evals.filter(e=>e.gcal).map(e=>e.id)),cs=new Set(state.commitments.filter(c=>c.gcal).map(c=>c.id));
+    state.commitments=state.commitments.filter(c=>!c.gcal);state.evals=state.evals.filter(e=>!e.gcal);state.done=state.done.filter(d=>!ids.has(d.evalId));
+    state.exceptions=state.exceptions.filter(x=>!x.gcal&&!(x.libre&&cs.has(x.ref)));}
+  save();}
 // Pide el código y lia-whatsapp lo envía por WhatsApp con la plantilla de autenticación. Si no puede, la tarjeta
 // muestra el código para que la persona se lo envíe a LIA (camino anterior).
 const WA_ERRORES={espera:'Espera un minuto antes de pedir otro código.',numero_invalido:'Ese número no parece de WhatsApp. Escríbelo con su código de país, por ejemplo 51 987 654 321.',numero_ocupado:'Ese número ya está vinculado con otra cuenta de LIA.',sesion:'Tu sesión venció: vuelve a entrar en Perfil.'};
@@ -2091,7 +2341,7 @@ function minutosSesion(s){return Math.floor(Math.min(s.elapsed(),s.total)/60000)
 function registrarSesion(s,min){const t=new Date(s.inicio||Date.now()-min*60000);snapshot();
   state.done.push({id:uid(),evalId:s.ev,date:ymd(t),start:fmt(t.getHours()*60+t.getMinutes()),min});save();}
 function pedirPantalla(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}}
-function cerrarSesion(){ui.session=null;ui.canales=undefined;try{localStorage.removeItem(KEY_CANALES_FIRMA);}catch(e){}guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
+function cerrarSesion(){ui.session=null;ui.canales=undefined;if(state.gcal&&state.gcal.url){delete state.gcal.url;save();}try{localStorage.removeItem(KEY_CANALES_FIRMA);}catch(e){}guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
 // Aviso al terminar el tiempo: vibra y suena tres tonos (el sonido se habilita al tocar "Empezar").
 function avisarFin(){try{navigator.vibrate&&navigator.vibrate([300,150,300]);}catch(e){}
   try{const c=ui.audio;if(!c)return;const t=c.currentTime;[660,880,990].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain(),d=t+i*.25;
@@ -2111,7 +2361,7 @@ function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
   const d=el.dataset;if(!d.a)return null;
   return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
 let abridor=null;
-function render(){ensureState();avisosLuego();canalesLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+function render(){ensureState();avisosLuego();canalesLuego();gcalLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
   dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
   const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
@@ -2420,6 +2670,10 @@ const A={
  'avisos-activar':()=>{activarAvisos();},
  'cal-activar':()=>{accionCanal('activar_calendario',null,'Listo. Copia el enlace y agrégalo en Google Calendar.');},
  'cal-desactivar':()=>{accionCanal('desactivar_calendario',null,'Listo: el enlace ya no funciona.');},
+ 'gcal-abrir':()=>{ui.agregarPre=null;abrirGcal();},
+ 'gcal-ahora':()=>{sincronizarGcal(true);},
+ 'gcal-dejar':()=>{ui.sheet=sheetGcalDejar();render();},
+ 'gcal-dejar-si':d=>{const q=d.v==='quitar';dejarGcal(q);ui.sheet=null;rerenderKeepScroll();toast(q?'Listo: ya no traigo tu Google Calendar y quité lo que había traído.':'Listo: ya no traigo tu Google Calendar. Lo traído se queda.',true);},
  'cal-copiar':()=>{const v=(document.getElementById('cal-url')||{}).value||'';(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast('Enlace copiado.'),()=>{const i=document.getElementById('cal-url');if(i){i.select();}toast('Selecciona el enlace y cópialo.');});},
  'wa-revisar':()=>{accionCanal('canales_estado',null,null).then(()=>{const w=ui.canales&&ui.canales.whatsapp;toast(w&&w.verificado?'Listo: WhatsApp vinculado.':'Aún no me llega tu mensaje. Envíalo tal cual y vuelve a tocar «Ya lo envié».');});},
  'wa-cambiar':()=>{ui.waErr=null;accionCanal('quitar_whatsapp',null,null);},
@@ -2486,7 +2740,8 @@ Object.assign(A,{
 });
 document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;const f=A[el.dataset.a];if(!f)return;
   if(el.dataset.a==='scrim'){f(el.dataset,el,ev);return;}ev.preventDefault();f(el.dataset,el,ev);});
-document.addEventListener('change',ev=>{const t=ev.target;if(t&&t.id==='cons-file'&&t.files&&t.files[0])leerArchivoConsolidado(t.files[0]);});
+document.addEventListener('change',ev=>{const t=ev.target;if(t&&t.id==='cons-file'&&t.files&&t.files[0])leerArchivoConsolidado(t.files[0]);
+  if(t&&t.id==='cal-rutinas'){state.settings.calRutinas=t.checked;save();publicarCanales(true);toast(t.checked?'Listo: tus rutinas van a tu Google Calendar.':'Listo: tus rutinas ya no van a tu Google Calendar.');}});
 document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();const fd=new FormData(f);
   if(f.dataset.form==='cuenta'){enviarCuenta(String(fd.get('email')||'').trim(),String(fd.get('password')||''));return;}
   if(f.dataset.form==='chat'||f.dataset.form==='dictar'){const q=fd.get('q')||'';handleText(String(q),f.dataset.form==='chat'?'chat':f.dataset.kind);return;}
@@ -2500,6 +2755,12 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
   if(f.dataset.form==='wa'){const n=String(fd.get('numero')||'');ui.waErr=n.replace(/[^0-9]/g,'').length<8?'Escribe tu número de WhatsApp, por ejemplo 987 654 321.':null;
     if(ui.waErr){rerenderKeepScroll();return;}pedirCodigoWa(n);return;}
   if(f.dataset.form==='wa-codigo'){const c=String(fd.get('codigo')||'').replace(/[^0-9]/g,'');if(c.length!==6){ui.waErr='Escribe los 6 dígitos del código.';rerenderKeepScroll();return;}confirmarCodigoWa(c);return;}
+  if(f.dataset.form==='gcal-url'){const u=String(fd.get('url')||'').trim();if(u)pedirGcal(u);return;}
+  if(f.dataset.form==='gcal-elegir'){const g=ui.gcal;if(!g||!g.cand)return;const k=new Set(fd.getAll('k').map(String));
+    if(!k.size){toast('Marca al menos una.');return;}
+    for(const l of g.cand.libres)if(k.has(l.rutina))k.add(l.gcal);   // los días sin clase van con su rutina
+    const n=[...g.cand.rutinas,...g.cand.evals,...g.cand.eventos].filter(x=>k.has(x.gcal)).length,r=aplicarGcal(g.cand,{elegidos:k,url:g.url});
+    ui.sheet=null;ui.gcal=null;rerenderKeepScroll();toast(`Agregué ${n} de tu Google Calendar.${r.extra}`,true);return;}
   if(f.dataset.form==='consolidado'){const idx=fd.getAll('cur').map(Number);if(!idx.length){toast('Marca al menos un curso.');return;}
     const enRegistro=!state.onboarded,fresco=!!state.frozen&&!planStale(),n=guardarConsolidado(idx);const ocio=enRegistro||!n?'':reubicarOcio();if(n)alDiaSiNoChoca(fresco);ui.sheet=null;ui.cons=null;rerenderKeepScroll();
     toast(!n?'Esos cursos ya estaban en tus rutinas.':`Agregué ${n} ${n===1?'curso':'cursos'} a tus rutinas.${enRegistro?'':isPro()?' Lía reorganizó tu semana.':!state.frozen?'':ocio?` ${ocio}`:' '+textoRutinaGratis().replace(/^Guardado\. /,'')}`,!!n);return;}
@@ -2709,7 +2970,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.8.2';
+const APP_VERSION='0.9.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
