@@ -69,8 +69,11 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     s = await guardado(pg);
     assert.ok(s.exceptions.some(x => x.label === 'Charla de empleabilidad' && x.gcal));
     assert.ok(!s.exceptions.some(x => x.label === 'Cita con el dentista'), 'lo que no elegiste no vuelve');
-    // Al cerrar sesión se olvida la dirección; lo traído se queda.
+    // Terminar una sesión de estudio no toca la cuenta (antes borraba la dirección y el Deshacer).
     await pg.evaluate(() => cerrarSesion());
+    assert.equal((await guardado(pg)).gcal.url, GOOGLE);
+    // Al cerrar sesión se olvida la dirección; lo traído se queda.
+    await pg.evaluate(() => quitarCuenta());
     s = await guardado(pg);
     assert.equal(s.gcal.url, undefined);
     assert.ok(s.commitments.some(c => c.gcal));

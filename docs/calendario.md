@@ -1,5 +1,7 @@
 # LIA · Google Calendar en los dos sentidos
 
+> Desde la 0.10.0, quien conecta su cuenta usa «Conectar con Google» (`docs/google.md`), que es al instante. Este enlace iCal queda como plan B (sin las claves de Google en el servidor, o para Apple y Outlook).
+
 3 de noviembre de 2026. Especificación (paso 1 de `docs/fabrica.md`) del pedido de Coconut: «importar eventos desde Calendar hacia LIA y que los eventos que se registran con LIA se registren automáticamente en Calendar», sin Google Cloud (decisión del 2-nov, ADR-003 en `docs/canales.md`) y con la cuenta de Google como opción, no como requisito.
 
 ## Problema
