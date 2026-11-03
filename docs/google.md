@@ -55,6 +55,11 @@ Privacidad: el servidor no guarda eventos ni títulos; solo el permiso (en Vault
 5. **Desconectar.** Revoca el permiso, deja de recibir avisos, borra el calendario «LIA» y pregunta qué hacer con lo traído (como en la 0.9.0).
 6. **Registros.** Nunca tokens, códigos, correos, títulos ni ids de eventos.
 
+## Limitaciones conocidas
+
+- **iPhone con LIA instalada:** Google se abre fuera de la app y vuelve a Safari, que tiene otro almacenamiento. Hay que conectar desde Safari con la misma cuenta; después, la app instalada ve la conexión (es de la cuenta). La tarjeta lo dice.
+- **Modo de prueba de Google:** la pantalla «Google no verificó esta app» y las dos casillas de permiso. La tarjeta avisa antes de ir.
+
 ## Lo que hace Coconut (una vez)
 
 Proyecto de Google Cloud sin facturación, Google Calendar API habilitada, pantalla de consentimiento externa con usuarios de prueba, los dos permisos, cliente web con la URI `https://lvtthltugrpbqjezwnsd.supabase.co/functions/v1/lia-google`, y los secretos `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en Supabase. En modo de prueba, Google pide volver a conectar cada 7 días; al publicar la app (sin verificar), deja de pedirlo, pero muestra «Google no verificó esta app».

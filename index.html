@@ -332,7 +332,7 @@ button.ico::before{content:"";position:absolute;inset:-11px}
 .big-check svg{width:28px;height:28px}
 .linkbtn{font-size:13px;font-weight:600;color:var(--pri);padding:6px 0;min-height:44px}
 .ferr{margin:0;font-size:13px;font-weight:600;color:var(--exam-ink)}
-.btn[disabled]{opacity:.6;cursor:default}
+.btn[disabled],.btn[aria-disabled="true"]{opacity:.6;cursor:default}
 /* Computadora (decisión del 2-nov: LIA es una página web, no solo una app del celular): desde 900 px, las secciones
    pasan a una barra lateral, el contenido se ensancha y las hojas se abren como diálogos centrados. */
 @media (min-width:900px){
@@ -2193,43 +2193,45 @@ async function publicarCanales(forzar){if(!state.cuenta||!canalesActivos())retur
   try{await sbRpc('publicar_agenda',{p_eventos:ev});try{localStorage.setItem(KEY_CANALES_FIRMA,firma);}catch(e){}}catch(e){}}
 let canalesT=null;
 function canalesLuego(){if(!state.cuenta||!canalesActivos())return;clearTimeout(canalesT);canalesT=setTimeout(()=>{publicarCanales(false);},3000);}
-function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="eyebrow">Google Calendar y WhatsApp</span>';
+function canalesCard(){if(!cuentasActivas())return '';const tit='<h2 class="eyebrow" style="margin:0">Google Calendar y WhatsApp</h2>';
   if(!state.cuenta)return `<div class="card stack">${tit}<div class="small muted">Con tu cuenta de LIA, traes tus clases y eventos desde Google Calendar, ves tu estudio ahí y Lía te avisa por WhatsApp antes de cada sesión.</div></div>`;
   if(ui.canales===undefined){cargarCanales();return `<div class="card stack">${tit}<div class="small muted" role="status">Cargando…</div></div>`;}
   const c=ui.canales||{},w=c.whatsapp,oc=ui.canalesOcupado?' disabled':'';
-  const priv=`<p class="small muted" style="margin:0">${ui.google&&ui.google.configurado?'Si vinculas WhatsApp o usas un enlace iCal':'Si compartes LIA con Google Calendar o vinculas WhatsApp'}, LIA guarda en su servidor tus próximos 14 días, con sus nombres, para mostrarlos ahí: tu estudio, tus evaluaciones y, si lo eliges, tus eventos y rutinas. Si dejas de compartir y desvinculas WhatsApp, se borra todo.</p>${canalesActivos(c)?`
+  const priv=`<p class="small muted" style="margin:0">${ui.google&&ui.google.configurado?'Si vinculas WhatsApp o usas un enlace iCal':'Si compartes LIA con Google Calendar o vinculas WhatsApp'}, LIA guarda en su servidor tus próximos 14 días, con sus nombres, para mostrarlos ahí: tu estudio, tus evaluaciones y, si lo eliges, tus eventos y rutinas. ${ui.google&&ui.google.configurado?'Si apagas el enlace iCal y desvinculas WhatsApp, se borra todo.':'Si dejas de compartir y desvinculas WhatsApp, se borra todo.'}</p>${canalesActivos(c)?`
      <label class="opt"><input type="checkbox" id="cal-todo" ${state.settings.calTodo===true?'checked':''}><span><b>También mis eventos y rutinas</b><br><span class="small muted">Lo que anotas para un solo día y lo que se repite cada semana, con su nombre. Lo que trajiste de Google Calendar no se vuelve a publicar.</span></span></label>`:''}`;
-  const cal=c.calendario?`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b>
+  // Con «Conectar con Google», el enlace iCal es para Apple u Outlook (en Google se vería todo dos veces).
+  const gc=!!(ui.google&&ui.google.configurado),hCal=`<h3 style="font-size:inherit;margin:0">${gc?'De LIA a Apple u Outlook':'De LIA a Google Calendar'}</h3>`;
+  const cal=c.calendario?`<div class="stack" style="gap:8px">${hCal}
      <label class="f">Tu enlace secreto (no lo compartas)<input id="cal-url" readonly value="${esc(CAL_FN()+c.calendario)}"></label>
-     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», haz clic en <b>+</b> y luego en <b>Desde URL</b>.</li><li>Pega el enlace y haz clic en <b>Agregar calendario</b>. Aparecerá «LIA» en tu celular también.</li></ol>
-     <p class="small muted" style="margin:0">Google actualiza los calendarios por enlace cada cierto tiempo: un cambio puede tardar horas en verse.</p>
+     ${gc?'<p class="small muted" style="margin:0">En Apple Calendar u Outlook, busca «Suscribirse a un calendario» (o «Agregar desde Internet») y pega el enlace.</p>':`<ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», haz clic en <b>+</b> y luego en <b>Desde URL</b>.</li><li>Pega el enlace y haz clic en <b>Agregar calendario</b>. Aparecerá «LIA» en tu celular también.</li></ol>`}
+     <p class="small muted" style="margin:0">${gc?'Los calendarios por enlace se actualizan':'Google actualiza los calendarios por enlace'} cada cierto tiempo: un cambio puede tardar horas en verse.</p>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cal-copiar">Copiar enlace</button><button class="btn sec sm" data-a="cal-desactivar"${oc}>Dejar de compartir</button></div></div>`
-    :`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b><div class="small muted">Tu estudio, tus evaluaciones, tus eventos y tus rutinas en tu Google Calendar, con sus avisos. No necesitas darle permisos a nadie: solo agregas un enlace. Luego puedes dejar solo el estudio y las evaluaciones.</div>
-     <button class="btn sec sm" data-a="cal-activar"${oc}>Ver LIA en mi Google Calendar</button></div>`;
+    :`<div class="stack" style="gap:8px">${hCal}<div class="small muted">${gc?'Ves tu estudio y tus evaluaciones en Apple Calendar u Outlook con un enlace. Si ya conectaste Google, no lo agregues allá: verías todo dos veces.':`Tu estudio, tus evaluaciones, tus eventos y tus rutinas en tu Google Calendar, con sus avisos. No necesitas darle permisos a nadie: solo agregas un enlace. Luego puedes dejar solo el estudio y las evaluaciones.`}</div>
+     <button class="btn sec sm" data-a="cal-activar"${oc}>${gc?'Crear mi enlace iCal':'Ver LIA en mi Google Calendar'}</button></div>`;
   const g=state.gcal,gl=ui.gcalLeyendo?' disabled':'';
-  const imp=g&&g.url?`<div class="stack" style="gap:8px"><b>De Google Calendar a LIA</b>
+  const imp=g&&g.url?`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">De Google Calendar a LIA</h3>
      <div class="small muted" role="status">${g.error==='no_encontrado'?'Google ya no reconoce tu dirección secreta (quizá la restableciste). Copia la nueva en Google Calendar y pégala con «Cambiar la dirección».':g.error==='sesion'?'Tu sesión venció: vuelve a entrar para traer los cambios.':g.error?'La última vez no pude leer tu calendario. Lo vuelvo a intentar en una hora, o usa «Traer cambios ahora».':`Conectado.${g.ultima?` Última lectura: ${cuandoTxt(g.ultima)}.`:''} Cuando abres LIA, traigo los cambios si pasaron 6 horas desde la última lectura.`}</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="gcal-ahora"${gl}>${ui.gcalLeyendo?'Leyendo…':'Traer cambios ahora'}</button><button class="btn sec sm" data-a="gcal-abrir"${gl}>Cambiar la dirección</button><button class="btn sec sm" data-a="gcal-dejar"${gl}>Dejar de traer</button></div></div>`
-    :`<div class="stack" style="gap:8px"><b>De Google Calendar a LIA</b><div class="small muted">Trae tus clases, evaluaciones y eventos sin escribirlos otra vez. Antes de guardar, eliges qué entra.</div>
+    :`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">De Google Calendar a LIA</h3><div class="small muted">Trae tus clases, evaluaciones y eventos sin escribirlos otra vez. Antes de guardar, eliges qué entra.</div>
      <button class="btn sec sm" data-a="gcal-abrir">Traer mi Google Calendar</button></div>`;
   let wa;
-  if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><b>WhatsApp</b><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?».</div>
+  if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?».</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="wa-avisos" data-v="${w.avisos?'0':'1'}"${oc}>${w.avisos?'Pausar avisos':'Activar avisos'}</button><button class="btn sec sm" data-a="wa-quitar"${oc}>Desvincular</button></div></div>`;
-  else if(w&&w.esperando)wa=`<form class="stack" data-form="wa-codigo" style="gap:8px"><b>WhatsApp</b><div class="small">Te envié un código por WhatsApp al <b>+${esc(w.numero)}</b>${WA_LIA?`, desde el número de LIA (+${esc(WA_LIA)})`:''}. Escríbelo aquí:</div>
+  else if(w&&w.esperando)wa=`<form class="stack" data-form="wa-codigo" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small">Te envié un código por WhatsApp al <b>+${esc(w.numero)}</b>${WA_LIA?`, desde el número de LIA (+${esc(WA_LIA)})`:''}. Escríbelo aquí:</div>
      <label class="f">Código de 6 dígitos<input name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
      ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<p class="small muted" style="margin:0">Vence en 15 minutos.</p>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn pri sm" type="submit"${oc}>Confirmar</button><button class="btn sec sm" type="button" data-a="wa-reenviar"${oc}>Enviar otro código</button><button class="btn sec sm" type="button" data-a="wa-cambiar"${oc}>Cambiar número</button></div></form>`;
   else if(w&&w.codigo){const msg=`LIA ${w.codigo}`;
-    wa=`<div class="stack" style="gap:8px"><b>WhatsApp</b><div class="small">Desde el WhatsApp del <b>+${esc(w.numero)}</b>, envía este mensaje a LIA${WA_LIA?` (+${esc(WA_LIA)})`:''}:</div>
+    wa=`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small">Desde el WhatsApp del <b>+${esc(w.numero)}</b>, envía este mensaje a LIA${WA_LIA?` (+${esc(WA_LIA)})`:''}:</div>
      <p style="margin:0;font-size:1.3rem;font-weight:700;letter-spacing:.06em" class="tnum">${esc(msg)}</p><p class="small muted" style="margin:0">Vence en 15 minutos.</p>
      <div class="row-h" style="flex-wrap:wrap">${WA_LIA?`<a class="btn pri sm" href="https://wa.me/${WA_LIA}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:''}<button class="btn sec sm" data-a="wa-revisar"${oc}>Ya lo envié</button><button class="btn sec sm" data-a="wa-cambiar"${oc}>Cambiar número</button></div></div>`;}
-  else wa=`<form class="stack" data-form="wa" style="gap:8px"><b>WhatsApp</b><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
+  else wa=`<form class="stack" data-form="wa" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
      <label class="f">Tu número de WhatsApp<input type="tel" name="numero" inputmode="tel" autocomplete="tel" required placeholder="987 654 321" value="${esc(w&&w.numero||'')}"></label>
      ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<button class="btn sec sm" type="submit"${oc}>Vincular WhatsApp</button></form>`;
   const sep='<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">',gg=ui.google;
   if(gg===undefined)cargarGoogle();
   if(gg&&gg.configurado)return `<div class="card stack">${tit}${googleBloque(gg)}${sep}${priv}${wa}${sep}
-    <details><summary class="small" style="cursor:pointer;min-height:44px;display:flex;align-items:center">Otra forma: enlaces iCal (Apple, Outlook)</summary><div class="stack" style="gap:12px;margin-top:8px">${cal}${gg.conectado?'':sep+imp}</div></details></div>`;
+    <details data-ical${ui.icalAbierto?' open':''}><summary id="ical-sum" class="small" style="cursor:pointer;min-height:44px;padding:12px 0;box-sizing:border-box;color:var(--pri);font-weight:600">Otra forma: enlaces iCal (Apple, Outlook)</summary><div class="stack" style="gap:12px;margin-top:8px">${cal}${gg.conectado?'':sep+imp}</div></details></div>`;
   return `<div class="card stack">${tit}${priv}${cal}${sep}${imp}${sep}${wa}</div>`;}
 // ---------- Conectar con Google (docs/google.md): Google Calendar al instante en los dos sentidos ----------
 // lia-google guarda el permiso de Google (en Vault), avisa por Realtime (google_senal) cuando cambia el calendario
@@ -2245,35 +2247,45 @@ async function cargarGoogle(){if(!state.cuenta||ui.googleCargando)return;ui.goog
   catch(e){ui.google=null;}
   finally{ui.googleCargando=false;}
   if(googleActivo()){suscribirGoogle();if(!ui.googleEscritoAlAbrir){ui.googleEscritoAlAbrir=true;escribirGoogle(true);}}  // por si borraron el calendario «LIA»
-  if(ui.tab==='perfil'&&calm())rerenderKeepScroll();}
+  if(ui.tab==='perfil'&&calm())rerenderKeepScroll();
+  irAlBotonGoogle();}
 const googleActivo=()=>!!(state.cuenta&&ui.google&&ui.google.conectado&&ui.google.estado==='activa');
-function googleBloque(gg){const oc=ui.googleOcupado||ui.googleLeyendo?' disabled':'',head='<b>Google Calendar</b>';
+// aria-disabled (no disabled): el botón ocupado no pierde el foco del teclado.
+function googleBloque(gg){const oc=ui.googleOcupado||ui.googleLeyendo?' aria-disabled="true"':'',head='<h3 style="font-size:inherit;margin:0">Google Calendar</h3>';
   if(!gg.conectado)return `<div class="stack" style="gap:8px">${head}<div class="small muted">Conecta tu cuenta de Google y LIA queda unida a tu Google Calendar: lo que anotas allá aparece aquí en segundos, y tu estudio, tus evaluaciones, tus eventos y tus rutinas aparecen allá, en un calendario «LIA».</div>
-     <button class="btn pri sm" data-a="google-conectar"${oc}>${ui.googleOcupado?'Abriendo Google…':'Conectar con Google'}</button>
-     <p class="small muted" style="margin:0">Google te pedirá permiso para ver tus eventos y crear el calendario «LIA». LIA no guarda tus eventos en su servidor.</p></div>`;
+     ${ui.googleMsg?`<p class="ferr" id="google-msg" style="margin:0">${esc(ui.googleMsg)}</p>`:''}
+     <button class="btn pri sm" data-a="google-conectar"${oc}${ui.googleMsg?' aria-describedby="google-msg"':''}>${ui.googleOcupado==='confirmar'?'Conectando…':ui.googleOcupado?'Abriendo Google…':'Conectar con Google'}</button>
+     ${isIOS()&&isStandalone()?'<p class="small" style="margin:0">En la app instalada del iPhone, Google se abre aparte y no puede volver aquí: conecta desde Safari, con tu misma cuenta de LIA. Después, la conexión sirve también en esta app.</p>':''}
+     <p class="small muted" style="margin:0">Verás «Google no verificó esta app» porque LIA está en prueba: toca «Continuar». Luego deja marcadas las dos casillas: ver tus eventos (LIA solo lee tu calendario principal) y crear el calendario «LIA». LIA no guarda tus eventos en su servidor, y puedes desconectar cuando quieras.</p></div>`;
   if(gg.estado!=='activa')return `<div class="stack" style="gap:8px">${head}<div class="small" role="status">Tu conexión con Google venció o quitaste el permiso. Vuelve a conectar para seguir al día.</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn pri sm" data-a="google-conectar"${oc}>Volver a conectar</button><button class="btn sec sm" data-a="google-desconectar"${oc}>Desconectar</button></div></div>`;
   const g=state.gcal,eligio=!!(g&&g.fuente==='google'),ult=eligio&&g.ultima?` Última lectura: ${cuandoTxt(g.ultima)}.`:'';
-  if(!eligio)return `<div class="stack" style="gap:8px">${head}<div class="small" role="status">Conectado. Falta que elijas qué traes de tu Google Calendar; hasta entonces, no traigo nada.</div>
+  if(!eligio)return `<div class="stack" style="gap:8px">${head}<div class="small" role="status">Conectado. Lo de LIA ya está en tu calendario «LIA». Falta que elijas qué traer de tu Google Calendar; hasta entonces, no traigo nada.</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn pri sm" data-a="google-leer"${oc}>${ui.googleLeyendo?'Leyendo…':'Elegir qué traer'}</button><button class="btn sec sm" data-a="google-desconectar"${oc}>Desconectar</button></div></div>`;
   const cuando=gg.avisos?'aparece aquí en segundos':'aparece aquí al abrir LIA o al volver a esta pestaña';
   return `<div class="stack" style="gap:8px">${head}<div class="small muted" role="status">Conectado. Lo que cambies en tu Google Calendar ${cuando}, y lo de LIA está en tu calendario «LIA».${ult}</div>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="google-leer"${oc}>${ui.googleLeyendo?'Leyendo…':'Traer ahora'}</button><button class="btn sec sm" data-a="google-desconectar"${oc}>Desconectar</button></div></div>`;}
 // Al volver de Google (?google=ok|cancelado|permisos|error): se limpia la dirección y se lee el calendario.
-const GOOGLE_MOTIVOS={cancelado:'No conectaste Google: cancelaste el permiso.',permisos:'Google no dio los dos permisos que LIA necesita. Vuelve a conectar y deja marcadas las dos casillas.',error:'No pude conectar con Google. Inténtalo otra vez.'};
+const GOOGLE_MOTIVOS={cancelado:'No conecté Google porque cancelaste. Cuando quieras, toca «Conectar con Google».',permisos:'Faltó marcar una casilla en Google, así que no conecté nada. Toca «Conectar con Google» y deja marcadas las dos.',error:'No pude terminar la conexión con Google. Toca «Conectar con Google» otra vez en un momento.'};
+// Al volver sin conectar, el motivo queda junto al botón y el foco va a él (el aviso solo dura unos segundos).
+function avisarGoogle(m){ui.googleMsg=GOOGLE_MOTIVOS[m]||GOOGLE_MOTIVOS.error;ui.irAGoogle=true;toast(ui.googleMsg);}
 // El nonce lo guarda este navegador al iniciar: sin él (o con otra cuenta), lia-google no confirma la conexión.
 const KEY_GOOGLE_NONCE='lia.google.nonce';
 function alVolverDeGoogle(){let m=null,e=null;try{const q=new URLSearchParams(location.search);m=q.get('google');e=q.get('e');if(!m)return;q.delete('google');q.delete('e');
     history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(err){return;}
   let nonce=null;try{nonce=sessionStorage.getItem(KEY_GOOGLE_NONCE);sessionStorage.removeItem(KEY_GOOGLE_NONCE);}catch(err){}
+  try{nonce=nonce||localStorage.getItem(KEY_GOOGLE_NONCE);localStorage.removeItem(KEY_GOOGLE_NONCE);}catch(err){}
   ui.tab='perfil';render();
-  if(m!=='ok'){toast(GOOGLE_MOTIVOS[m]||GOOGLE_MOTIVOS.error);return;}
-  if(!e||!nonce||!state.cuenta){toast(GOOGLE_MOTIVOS.error);return;}
-  ui.googleOcupado=true;rerenderKeepScroll();
+  if(m!=='ok'){avisarGoogle(m);if(ui.google)irAlBotonGoogle();return;}
+  if(!e||!nonce||!state.cuenta){avisarGoogle('error');if(ui.google)irAlBotonGoogle();return;}
+  ui.googleOcupado='confirmar';ui.googleRecien=true;rerenderKeepScroll();anunciar('Conectando con Google…');
   llamarGoogle('confirmar',{estado:e,nonce}).then(()=>{ui.google=undefined;ui.googleEscritoAlAbrir=true;return cargarGoogle();})
     .then(()=>{if(googleActivo()){toast('Listo: LIA está conectada con tu Google Calendar.');escribirGoogle(true);}})
-    .catch(()=>{toast(GOOGLE_MOTIVOS.error);})
-    .finally(()=>{ui.googleOcupado=false;if(calm())rerenderKeepScroll();});}
+    .catch(()=>{avisarGoogle('error');})
+    .finally(()=>{ui.googleOcupado=false;if(calm())rerenderKeepScroll();irAlBotonGoogle();});}
+function irAlBotonGoogle(){if(!ui.irAGoogle||ui.sheet)return;const b=document.querySelector('[data-a="google-conectar"]');if(b){ui.irAGoogle=false;b.scrollIntoView({block:'center'});b.focus({preventScroll:true});}}
+// Volver con «Atrás» desde Google (Safari puede restaurar la página): el botón no queda en «Abriendo Google…».
+window.addEventListener('pageshow',e=>{if(e.persisted&&ui.googleOcupado){ui.googleOcupado=false;if(calm())rerenderKeepScroll();}});
 // Leer: la primera vez (o hasta que la persona elija) abre la vista previa; después, los cambios entran solos.
 let googleUltima=0,googleLeerT=null,googleT=null;
 async function leerGoogle(manual){if(ui.googleLeyendo||!googleActivo())return;ui.googleLeyendo=true;googleUltima=Date.now();if(ui.tab==='perfil'&&calm())rerenderKeepScroll();
@@ -2281,8 +2293,8 @@ async function leerGoogle(manual){if(ui.googleLeyendo||!googleActivo())return;ui
     const yaEligio=!!(g&&(g.fuente==='google'||(g.traidos&&g.traidos.length)));
     const vacio=!cand.rutinas.length&&!cand.evals.length&&!cand.eventos.length;
     // Sin nada que elegir, queda conectado: lo que agregue después en Google entra solo.
-    if(!yaEligio&&vacio){aplicarGcal(cand,{fuente:'google'});if(manual||!ui.googleVioPrevia)toast('Tu Google Calendar no tiene nada de aquí a 60 días. Lo que agregues allá aparece aquí solo.');ui.googleVioPrevia=true;return;}
-    if(!yaEligio){if((manual||!ui.googleVioPrevia)&&!(ui.sheet&&ui.gcal&&ui.gcal.estado==='listo')){ui.googleVioPrevia=true;ui.gcal={estado:'listo',cand,fuente:'google'};ui.sheet=sheetGcal();render();}return;}
+    if(!yaEligio&&vacio){aplicarGcal(cand,{fuente:'google'});if(manual||ui.googleRecien)toast('Tu Google Calendar no tiene nada de aquí a 60 días. Lo que agregues allá aparece aquí solo.');ui.googleRecien=false;return;}
+    if(!yaEligio){if((manual||ui.googleRecien)&&!(ui.sheet&&ui.gcal&&ui.gcal.estado==='listo')){ui.googleRecien=false;ui.gcal={estado:'listo',cand,fuente:'google'};ui.sheet=sheetGcal();render();}return;}
     const {n,extra}=aplicarGcal(cand,{fuente:'google'});
     if(n){rerenderKeepScroll();toast(`Traje ${n} ${n===1?'cambio':'cambios'} de tu Google Calendar.${extra}`);}else if(manual)toast(`Tu Google Calendar no tiene cambios.${extra}`);}
   catch(e){const err=e&&e.error;if(err==='vencida'){ui.google={...ui.google,estado:'vencida'};soltarGoogle();toast('Tu conexión con Google venció: vuelve a conectar en Perfil.');}
@@ -2296,6 +2308,7 @@ function suscribirGoogle(){if(ui.googleCanal||!googleActivo())return;const uid=s
     .catch(()=>{ui.googleCanal=null;});
   leerGoogleLuego(0);}   // lo que cambió en Google mientras LIA estaba cerrada
 function soltarGoogle(){const ch=ui.googleCanal;ui.googleCanal=null;if(ch&&ch!=='…')sb().then(c=>c.removeChannel(ch)).catch(()=>{});}
+document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details[data-ical]'))ui.icalAbierto=e.target.open;},true);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&googleActivo()&&Date.now()-googleUltima>60000)leerGoogleLuego(500);});
 // Escribir: cuando cambia el plan, en 3 segundos el calendario «LIA» queda igual a lo de LIA.
 // Si Google falla, espera cada vez más (1, 2, 4… hasta 15 minutos) antes de reintentar.
@@ -2310,10 +2323,10 @@ async function escribirGoogle(forzar){if(!googleActivo()||googleEscribiendo||Dat
     else{googleFallos++;googleEsperaHasta=Date.now()+Math.min(15*60e3,60e3*2**(googleFallos-1));}}
   finally{googleEscribiendo=false;}}
 function sheetGoogleDejar(){return `<div class="grab"></div><h2>¿Desconecto tu Google Calendar?</h2>
-  <p class="muted" style="margin:0">Dejo de leer tu calendario, quito el permiso que le diste a LIA y borro el calendario «LIA» de tu Google. ¿Qué hago con lo que traje?</p>
-  <button class="btn pri" data-a="google-dejar-si" data-v="mantener">Desconectar y conservar lo traído</button>
-  <button class="btn danger" data-a="google-dejar-si" data-v="quitar">Desconectar y quitar lo traído</button>
-  <button class="btn sec" data-a="close">Cancelar</button>`;}
+  <p class="muted" style="margin:0">Dejo de leer tu Google Calendar, quito el permiso que le diste a LIA y borro el calendario «LIA». Tus demás eventos de Google no se tocan. ¿Qué hago con las clases, evaluaciones y eventos que traje a LIA?</p>
+  <button class="btn pri" data-a="google-dejar-si" data-v="mantener">Desconectar y conservarlos</button>
+  <button class="btn danger" data-a="google-dejar-si" data-v="quitar">Desconectar y quitarlos de LIA</button>
+  <button class="btn sec" data-a="close">Seguir conectado</button>`;}
 // ---------- Google Calendar → LIA (docs/calendario.md) ----------
 // La «dirección secreta en formato iCal» se guarda solo en este navegador (state.gcal.url) y se borra al cerrar sesión.
 // lia-calendario la lee (Google no deja leerla desde otra página) y la app decide qué traer (leerIcs, deCalendario y
@@ -2348,7 +2361,7 @@ function sheetGcal(){const g=ui.gcal||{estado:'pedir'},head='<div class="grab"><
     const room=evalRoom(),cupo=!isPro()&&c.evals.length>room?`<p class="small muted" style="margin:0">En Gratis puedes tener hasta ${FREE_EVALS} evaluaciones próximas: ${room===0?'las que marques entran cuando tengas espacio':room===1?'entra la más próxima que marques y las demás, cuando tengas espacio':`entran las ${room} más próximas que marques y las demás, cuando tengas espacio`}. Con LIA Pro entran todas.</p>`:'';
     return `<form class="stack" data-form="gcal-elegir" style="gap:16px">${head}<p class="small muted" style="margin:0">Elige qué entra a LIA. Lo que traigas de Google no se vuelve a publicar en Google.</p>
      ${grupo('Se repiten cada semana',rs)}${grupo('Evaluaciones',vs)}${cupo}${grupo('De un solo día · próximos 60 días',es)}${notaNo}
-     <div class="pie"><button class="btn pri" type="submit">Agregar a LIA</button><button class="btn sec" type="button" data-a="close">Cancelar</button></div></form>`;}
+     <div class="pie"><button class="btn pri" type="submit">Agregar a LIA</button><button class="btn sec" type="button" data-a="close">${g.fuente==='google'?'Ahora no':'Cancelar'}</button></div></form>`;}
   return `<form class="stack" data-form="gcal-url" style="gap:14px">${head}
    <p class="small muted" style="margin:0">Traigo tus clases, tus evaluaciones y tus eventos. Antes de guardar, eliges qué entra.</p>
    <ol class="small" style="margin:0;padding-left:18px"><li>En una computadora, abre <b>Google Calendar</b>.</li><li>En «Mis calendarios», junto a tu calendario, haz clic en <b>⋮</b> y luego en <b>Configuración y uso compartido</b>.</li><li>Baja hasta «Integrar el calendario» y copia la <b>Dirección secreta en formato iCal</b>.</li></ol>
@@ -2803,18 +2816,19 @@ const A={
  'cal-activar':()=>{if(state.settings.calTodo===undefined){state.settings.calTodo=true;save();}accionCanal('activar_calendario',null,'Listo. Copia el enlace y agrégalo en Google Calendar.');},
  'cal-desactivar':()=>{accionCanal('desactivar_calendario',null,'Listo: el enlace ya no funciona.');},
  'gcal-abrir':()=>{ui.agregarPre=null;abrirGcal();},
- 'google-conectar':async()=>{ui.googleOcupado=true;rerenderKeepScroll();
+ 'google-conectar':async()=>{ui.googleMsg=null;ui.googleOcupado=true;rerenderKeepScroll();
    const a=new Uint8Array(32);crypto.getRandomValues(a);const nonce=[...a].map(b=>b.toString(16).padStart(2,'0')).join('');
-   try{sessionStorage.setItem(KEY_GOOGLE_NONCE,nonce);}catch(e){}
+   try{sessionStorage.setItem(KEY_GOOGLE_NONCE,nonce);}catch(e){}try{localStorage.setItem(KEY_GOOGLE_NONCE,nonce);}catch(e){}
    try{const d=await llamarGoogle('iniciar',{nonce});location.assign(d.url);}
-   catch(e){ui.googleOcupado=false;rerenderKeepScroll();toast(e&&e.error==='sin_configurar'?'La conexión con Google todavía no está lista.':GCAL_ERRORES[e&&e.error]||'No pude abrir Google. Inténtalo en un momento.');}},
+   catch(e){const m=e&&e.error;ui.googleOcupado=false;rerenderKeepScroll();toast(m==='sin_configurar'?'La conexión con Google todavía no está lista. Mientras tanto, usa «Otra forma: enlaces iCal».':m==='red'||m==='sesion'?GCAL_ERRORES[m]:'No pude abrir Google. Inténtalo en un momento.');}},
  'google-leer':()=>{if(ui.sheet){ui.sheet=null;ui.agregarPre=null;render();}leerGoogle(true);googleEsperaHasta=0;escribirGoogle(true);},
  'google-desconectar':()=>{ui.sheet=sheetGoogleDejar();render();},
  'google-dejar-si':async d=>{const q=d.v==='quitar';ui.sheet=null;ui.googleOcupado=true;rerenderKeepScroll();
    try{await llamarGoogle('desconectar');}
-   catch(e){if(!(e&&e.error==='no_conectado')){ui.googleOcupado=false;rerenderKeepScroll();toast(GCAL_ERRORES[e&&e.error]||'No pude desconectar Google. Inténtalo en un momento.');return;}}
+   catch(e){const m=e&&e.error;if(m!=='no_conectado'){ui.googleOcupado=false;rerenderKeepScroll();toast(m==='red'||m==='sesion'?GCAL_ERRORES[m]:'No pude desconectar Google. Sigues conectado; inténtalo en un momento.');return;}}
    soltarGoogle();ui.google={...(ui.google||{}),conectado:false,estado:null};ui.googleOcupado=false;try{localStorage.removeItem(KEY_GOOGLE_FIRMA);}catch(e){}
-   dejarGcal(q);undoStack=null;undoTras=null;rerenderKeepScroll();toast(q?'Listo: desconecté Google y quité lo que había traído.':'Listo: desconecté Google. Lo traído se queda.');},  // sin Deshacer: la conexión ya se cerró en Google
+   dejarGcal(q);undoStack=null;undoTras=null;rerenderKeepScroll();toast(q?'Listo: desconecté Google y quité lo que había traído.':'Listo: desconecté Google. Lo traído se queda.');  // sin Deshacer: la conexión ya se cerró en Google
+   const b=document.querySelector('[data-a="google-conectar"]');if(b)b.focus({preventScroll:true});},
  'gcal-ahora':()=>{sincronizarGcal(true);},
  'gcal-dejar':()=>{ui.sheet=sheetGcalDejar();render();},
  'gcal-dejar-si':d=>{const q=d.v==='quitar';dejarGcal(q);ui.sheet=null;rerenderKeepScroll();toast(q?'Listo: ya no traigo tu Google Calendar y quité lo que había traído.':'Listo: ya no traigo tu Google Calendar. Lo traído se queda.',true);},
@@ -2882,7 +2896,7 @@ Object.assign(A,{
  'sub-expire':()=>{if(!isPro()||!modoPruebas())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
    toast(sigue?'LIA Pro se renovó por un mes más (demo: sin cobro real).':'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');}).catch(e=>toast(mensajeError(e)));},
 });
-document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;const f=A[el.dataset.a];if(!f)return;
+document.addEventListener('click',ev=>{const el=ev.target.closest('[data-a]');if(!el)return;if(el.getAttribute('aria-disabled')==='true')return;const f=A[el.dataset.a];if(!f)return;
   if(el.dataset.a==='scrim'){f(el.dataset,el,ev);return;}ev.preventDefault();f(el.dataset,el,ev);});
 document.addEventListener('change',ev=>{const t=ev.target;if(t&&t.id==='cons-file'&&t.files&&t.files[0])leerArchivoConsolidado(t.files[0]);
   if(t&&t.id==='cal-todo'){state.settings.calTodo=t.checked;save();publicarCanales(true);toast(t.checked?'Listo: también publico tus eventos y rutinas.':'Listo: solo publico tu estudio y tus evaluaciones.');}});
@@ -2901,7 +2915,7 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
   if(f.dataset.form==='wa-codigo'){const c=String(fd.get('codigo')||'').replace(/[^0-9]/g,'');if(c.length!==6){ui.waErr='Escribe los 6 dígitos del código.';rerenderKeepScroll();return;}confirmarCodigoWa(c);return;}
   if(f.dataset.form==='gcal-url'){const u=String(fd.get('url')||'').trim();if(u)pedirGcal(u);return;}
   if(f.dataset.form==='gcal-elegir'){const g=ui.gcal;if(!g||!g.cand)return;const k=new Set(fd.getAll('k').map(String));
-    if(!k.size){toast('No marcaste nada. Marca lo que quieras traer o elige «Cancelar».');return;}
+    if(!k.size){toast(`No marcaste nada. Marca lo que quieras traer o elige «${g.fuente==='google'?'Ahora no':'Cancelar'}».`);return;}
     for(const l of g.cand.libres)if(k.has(l.rutina))k.add(l.gcal);   // los días sin clase van con su rutina
     const el=[...g.cand.rutinas,...g.cand.evals,...g.cand.eventos].filter(x=>k.has(x.gcal)),r=aplicarGcal(g.cand,{elegidos:k,url:g.url,fuente:g.fuente});
     const cu=(p,s1,pl)=>{const m=el.filter(x=>x.gcal[0]===p).length;return m?`${m} ${m===1?s1:pl}`:'';},ps=[cu('r','rutina','rutinas'),cu('v','evaluación','evaluaciones'),cu('e','evento','eventos')].filter(Boolean);

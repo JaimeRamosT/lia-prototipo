@@ -77,7 +77,7 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     // Desconectar y conservar lo traído.
     await pestana(pg, 'Perfil');
     await pg.getByRole('button', { name: 'Desconectar', exact: true }).click();
-    await pg.getByRole('button', { name: 'Desconectar y conservar lo traído' }).click();
+    await pg.getByRole('button', { name: 'Desconectar y conservarlos' }).click();
     await pg.getByText(/desconecté Google/).waitFor();
     assert.ok(g.pedidos.includes('desconectar'));
     await pg.getByRole('button', { name: 'Conectar con Google' }).waitFor();
@@ -99,7 +99,8 @@ test('sin las claves de Google en el servidor, la tarjeta sigue con el enlace iC
 test('volver de Google en otro navegador (sin el nonce) no conecta nada', async () => {
   const { ctx, pg, errores, g } = await preparar('iPhone');
   await pg.goto(srv.url + '?google=ok&e=e1');
-  await pg.getByText('No pude conectar con Google. Inténtalo otra vez.').waitFor();
+  await pg.getByText('No pude terminar la conexión con Google. Toca «Conectar con Google» otra vez en un momento.').first().waitFor();
+  assert.equal(await pg.evaluate(() => document.activeElement && document.activeElement.dataset.a), 'google-conectar', 'el foco va al botón para reintentar');
   assert.ok(!g.pedidos.includes('confirmar'));
   assert.equal(g.conectado, false);
   assert.deepEqual(errores, []);
@@ -109,7 +110,7 @@ test('volver de Google en otro navegador (sin el nonce) no conecta nada', async 
 test('si la persona cancela en Google, LIA lo dice y no guarda nada', async () => {
   const { ctx, pg, errores } = await preparar('Computadora');
   await pg.goto(srv.url + '?google=cancelado');
-  await pg.getByText('No conectaste Google: cancelaste el permiso.').waitFor();
+  await pg.getByText('No conecté Google porque cancelaste. Cuando quieras, toca «Conectar con Google».').first().waitFor();
   assert.equal((await guardado(pg)).gcal, undefined);
   assert.deepEqual(errores, []);
   await ctx.close();
