@@ -330,6 +330,23 @@ button.ico::before{content:"";position:absolute;inset:-11px}
 .linkbtn{font-size:13px;font-weight:600;color:var(--pri);padding:6px 0;min-height:44px}
 .ferr{margin:0;font-size:13px;font-weight:600;color:var(--exam-ink)}
 .btn[disabled]{opacity:.6;cursor:default}
+/* Computadora (decisión del 2-nov: LIA es una página web, no solo una app del celular): desde 900 px, las secciones
+   pasan a una barra lateral, el contenido se ensancha y las hojas se abren como diálogos centrados. */
+@media (min-width:900px){
+  .app{max-width:1200px;flex-direction:row;align-items:stretch;gap:40px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+  .tabs{order:-1;flex:none;width:224px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:4px;padding:28px 16px 24px 0;border-top:0;border-right:1px solid var(--line);background:none}
+  .tabs::before{content:"LIA";content:"LIA" / "";font-size:24px;font-weight:800;letter-spacing:-.03em;color:var(--pri);padding:0 12px 20px}
+  .tab{flex-direction:row;justify-content:flex-start;gap:12px;padding:10px 12px;border-radius:12px;font-size:15px}
+  .tab:hover{background:var(--surface);color:var(--ink)}
+  .tab[aria-current="page"]{background:var(--pri-soft);color:var(--pri)}
+  .tab .av{width:28px!important;height:28px!important}
+  main{max-width:760px;margin-inline:auto;padding-block:32px 48px;scrollbar-width:thin}
+  main::-webkit-scrollbar{display:block;width:8px}
+  .scrim{align-items:center;padding:32px}
+  .sheet{max-width:560px;border-radius:24px;max-height:min(88vh,920px);padding:28px 32px}
+  .grab{display:none}
+  .toast{bottom:28px}
+}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -1563,7 +1580,7 @@ function rowHTML(x,date){const isToday=date===ymd(now());const nm=now().getHours
   const k=x.kind==='excepcion'&&x.cat?tipoRutina(x.cat):x.kind,cat=COMMIT_TYPES[k]?icoRutina(k):'',catSr=COMMIT_TYPES[k]?`<span class="sr-only"> (${COMMIT_TYPES[k]})</span>`:'';
   return `<button class="ag ${past?'past':''}" ${act}><span class="t tnum">${fmt(x.s)}</span><span class="blk k-${k}"><b>${cat}${esc(x.label)}${catSr}</b><small class="tnum">${fmt(x.s)} – ${fmt(x.e)}${sub?' · '+esc(sub):''}</small></span></button>`;}
 // Un hueco libre: se toca para agregar algo con esa fecha y esas horas.
-function huecoHTML(h,date){return `<button class="ag" data-a="agregar" data-d="${date}" data-s="${h.s}" data-e="${h.e}" aria-label="Libre de ${fmt(h.s)} a ${fmt(h.e)}. Agregar algo"><span class="t tnum">${fmt(h.s)}</span><span class="blk k-hueco"><b>Libre · ${hrs(h.e-h.s)}</b><small>Toca para agregar algo</small></span></button>`;}
+function huecoHTML(h,date){return `<button class="ag" data-a="agregar" data-d="${date}" data-s="${h.s}" data-e="${h.e}" aria-label="Libre de ${fmt(h.s)} a ${fmt(h.e)}. Agregar algo"><span class="t tnum">${fmt(h.s)}</span><span class="blk k-hueco"><b>Libre · ${hrs(h.e-h.s)}</b><small>Agrega algo aquí</small></span></button>`;}
 // Resumen del día en texto (lo que lee el lector de pantalla) y una barra con cada tramo en su color.
 function resumenDiaHTML(date,P0){const r=resumenDia(state,P0,date),S=state.settings;if(!r.despierto)return '';
   const pct=m=>Math.round((m-r.tramos[0].s)/r.despierto*1000)/10;
@@ -1588,7 +1605,7 @@ function vWelcome(){return `<section class="welcome">
   <h1>Estudia en las horas que de verdad tienes libres.</h1>
   <p style="margin:0;opacity:.85">Para universitarios que estudian y trabajan: cada semana Lía te arma un horario para estudiar en tus horas libres, para que no te amanezcas antes de cada examen.</p>
   <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button></div>
-  <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este teléfono.</p></section>`;}
+  <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este navegador.</p></section>`;}
 
 function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
   if(s===1)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 1 de 2</span></div>
@@ -2000,7 +2017,7 @@ function sheetPerdidos(){const l=P().perdidos||[];
   return `<div class="grab"></div><h2>¿Qué bloques estudiaste?</h2><p class="muted" style="margin:0">Marca los que sí hiciste. Lo demás queda pendiente en tus evaluaciones.</p>
   <form data-form="perdidos" class="stack">${l.map(b=>{const e=evById(b.evalId);return `<label class="opt"><input type="checkbox" name="b" value="${esc(claveBloque(b))}"><span class="grow"><b>${esc(e?e.course:'')}</b><br><span class="small muted tnum">${cap(fechaCorta(b.date))} · ${fmt(b.s)} – ${fmt(b.e)}</span></span></label>`;}).join('')}
   <button class="btn pri" type="submit">Guardar</button></form><button class="btn sec" data-a="close">Ahora no</button>`;}
-function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus rutinas, evaluaciones y sesiones de este teléfono. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
+function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus rutinas, evaluaciones y sesiones de este navegador. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
 
 // ---------- Planes y pago (modo demo) ----------
 const WHY={
@@ -2009,7 +2026,7 @@ const WHY={
  reorg:{t:'Deja que Lía reorganice tu semana',d:'Con Pro, cuando algo cambia, Lía mueve tus bloques de estudio al instante.'},
  session:{t:'Modo sesión con LIA Pro',d:'Temporizador y modo concentración para cada bloque. Al terminar, Lía suma lo que estudiaste.'},
  rearm:{t:'Rearma tu semana cuando quieras',d:''},
- avisos:{t:'Recordatorios en tu teléfono',d:'Con Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.'},
+ avisos:{t:'Recordatorios con notificaciones',d:'Con Pro, Lía te avisa con una notificación, aunque LIA esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.'},
  plans:{t:'Pásate a LIA Pro',d:'Lía arma tu horario y lo reorganiza sola cuando algo cambia. Sin límite de evaluaciones, con voz y modo sesión.'}};
 function openPaywall(why,ctx){const prev=ui.pay||{};ui.pay={why,ctx:ctx||null,period:prev.period||'ciclo',method:prev.method||'yape'};ui.sheet=sheetPaywall();render();}
 function rememberChoice(name,key){const el=document.querySelector(`input[name="${name}"]:checked`);if(el&&ui.pay)ui.pay[key]=el.value;}
@@ -2055,7 +2072,7 @@ function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
    ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas entran solas en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
    ['Voz','—',`Dictado ilimitado. Notas de voz ${soon}`],
    ['Sílabos y aula virtual','—',`Lía los lee y agrega las evaluaciones ${soon}`],
-   ['Recordatorios','Dentro de la app','En tu teléfono, aunque la app esté cerrada: exámenes, cada sesión de estudio y un resumen cada mañana. Modo sesión']];
+   ['Recordatorios','Dentro de la app','Con notificaciones, aunque LIA esté cerrada: exámenes, cada sesión de estudio y un resumen cada mañana. Modo sesión']];
   return `<div class="grab"></div><h2>LIA Gratis y LIA Pro</h2>
   <div style="overflow-x:auto"><table class="cmp"><thead><tr><th scope="col"><span class="sr-only">Función</span></th><th scope="col">Gratis${pro?'':' · tu plan'}</th><th scope="col">Pro${pro?' · tu plan':''}</th></tr></thead>
   <tbody>${rows.map(r=>`<tr><th scope="row">${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table></div>
@@ -2101,7 +2118,7 @@ const aB64u=buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g
 async function activarAvisos(){if(!isPro()){openPaywall('avisos');return;}if(!avisosSoportados()||ui.avisosOcupado){rerenderKeepScroll();return;}
   ui.avisosOcupado=true;rerenderKeepScroll();
   try{const permiso=await Notification.requestPermission();
-    if(permiso!=='granted'){toast(permiso==='denied'?'Bloqueaste los avisos de LIA. Puedes permitirlos en los ajustes de tu teléfono.':'No activé los avisos. Puedes hacerlo cuando quieras.');return;}
+    if(permiso!=='granted'){toast(permiso==='denied'?'Bloqueaste los avisos de LIA. Puedes permitirlos en los ajustes de tu navegador o de tu teléfono.':'No activé los avisos. Puedes hacerlo cuando quieras.');return;}
     const pub=await sbRpc('clave_publica_avisos');
     if(!pub){toast('Los recordatorios todavía se están preparando. Inténtalo otra vez en un minuto.');return;}
     const reg=await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
@@ -2111,15 +2128,15 @@ async function activarAvisos(){if(!isPro()){openPaywall('avisos');return;}if(!av
     await sbRpc('guardar_dispositivo',{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
     guardarAvisosLocal({endpoint:j.endpoint});
     await programarAvisos(true);
-    toast('Listo: Lía te avisará en este teléfono.');}
+    toast('Listo: Lía te avisará en este dispositivo.');}
   catch(e){const m=String((e&&(e.message||e.hint))||'');
-    toast(/LIA Pro|solo_pro/.test(m)?'Los recordatorios en el teléfono son parte de LIA Pro.':mensajeError(e).startsWith('No pudimos')?'No pude activar los avisos en este teléfono. Inténtalo otra vez.':mensajeError(e));}
+    toast(/LIA Pro|solo_pro/.test(m)?'Los recordatorios con notificaciones son parte de LIA Pro.':mensajeError(e).startsWith('No pudimos')?'No pude activar los avisos en este dispositivo. Inténtalo otra vez.':mensajeError(e));}
   finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
 async function desactivarAvisos(){const l=avisosLocal();guardarAvisosLocal(null);
   try{const reg=await navigator.serviceWorker.ready,sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe();}catch(e){}
   try{if(l&&l.endpoint)await sbRpc('quitar_dispositivo',{p_endpoint:l.endpoint});}catch(e){}
   try{await caches.delete(CACHE_AVISOS);}catch(e){}
-  rerenderKeepScroll();toast('Listo: ya no recibirás avisos en este teléfono.');}
+  rerenderKeepScroll();toast('Listo: ya no recibirás avisos en este dispositivo.');}
 // Programa los avisos de los próximos 8 días: los textos, en este teléfono; hora, tipo y referencia, en Supabase.
 // Solo se envía si algo cambió desde la última vez. Sin internet, queda para la próxima.
 async function programarAvisos(forzar){if(!avisosActivos())return;
@@ -2136,7 +2153,7 @@ async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
     if(!t){toast('Tu sesión venció. Vuelve a iniciarla en Perfil.');return;}
     const r=await fetch(`${SB_CFG.url}/functions/v1/lia-avisos`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify({accion:'prueba'})});
     const d=await r.json().catch(()=>null);
-    toast(d&&d.ok?'Te envié un aviso de prueba: debería llegar en unos segundos.':d&&d.error==='sin_dispositivos'?'Este teléfono ya no está registrado. Desactiva y vuelve a activar los recordatorios.':d&&d.error==='solo_pro'?'Los recordatorios en el teléfono son parte de LIA Pro.':'No pude enviar el aviso de prueba. Inténtalo otra vez en un rato.');}
+    toast(d&&d.ok?'Te envié un aviso de prueba: debería llegar en unos segundos.':d&&d.error==='sin_dispositivos'?'Este dispositivo ya no está registrado. Desactiva y vuelve a activar los recordatorios.':d&&d.error==='solo_pro'?'Los recordatorios con notificaciones son parte de LIA Pro.':'No pude enviar el aviso de prueba. Inténtalo otra vez en un rato.');}
   catch(e){toast(mensajeError(e));}
   finally{ui.avisosOcupado=false;rerenderKeepScroll();}}
 // ---------- Canales: Google Calendar (enlace iCal, sin Google Cloud) y WhatsApp (docs/canales.md) ----------
@@ -2162,7 +2179,7 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="ey
   const priv='<p class="small muted" style="margin:0">Al activar uno, LIA guarda en su servidor lo de tus próximos 14 días con su nombre (estudio, evaluaciones, eventos y, si quieres, rutinas) para mostrarlo ahí. Si desactivas los dos, se borra.</p>';
   const cal=c.calendario?`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b>
      <label class="f">Tu enlace secreto (no lo compartas)<input id="cal-url" readonly value="${esc(CAL_FN()+c.calendario)}"></label>
-     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», toca <b>+</b> y luego <b>Desde URL</b>.</li><li>Pega el enlace y toca <b>Agregar calendario</b>. Aparecerá «LIA» en tu celular también.</li></ol>
+     <ol class="small muted" style="margin:0;padding-left:18px"><li>En una computadora, abre Google Calendar.</li><li>Junto a «Otros calendarios», haz clic en <b>+</b> y luego en <b>Desde URL</b>.</li><li>Pega el enlace y haz clic en <b>Agregar calendario</b>. Aparecerá «LIA» en tu celular también.</li></ol>
      <label class="opt"><input type="checkbox" id="cal-rutinas" ${state.settings.calRutinas===false?'':'checked'}><span><b>También mis rutinas</b><br><span class="small muted">Clases, trabajo y lo que se repite cada semana. Lo que trajiste de Google no se repite.</span></span></label>
      <p class="small muted" style="margin:0">Google actualiza los calendarios por enlace cada cierto tiempo: un cambio puede tardar horas en verse.</p>
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cal-copiar">Copiar enlace</button><button class="btn sec sm" data-a="cal-desactivar"${oc}>Dejar de compartir</button></div></div>`
@@ -2227,7 +2244,7 @@ function sheetGcal(){const g=ui.gcal||{estado:'pedir'},head='<div class="grab"><
      <button class="btn pri" type="submit">Agregar a LIA</button><button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
   return `<form class="stack" data-form="gcal-url" style="gap:14px">${head}
    <p class="small muted" style="margin:0">Traigo tus clases, tus evaluaciones y tus eventos. Antes de guardar, eliges qué entra.</p>
-   <ol class="small" style="margin:0;padding-left:18px"><li>En una computadora, abre <b>Google Calendar</b>.</li><li>En «Mis calendarios», junto a tu calendario, toca <b>⋮</b> y luego <b>Configuración y uso compartido</b>.</li><li>Baja hasta «Integrar el calendario» y copia la <b>Dirección secreta en formato iCal</b>.</li></ol>
+   <ol class="small" style="margin:0;padding-left:18px"><li>En una computadora, abre <b>Google Calendar</b>.</li><li>En «Mis calendarios», junto a tu calendario, haz clic en <b>⋮</b> y luego en <b>Configuración y uso compartido</b>.</li><li>Baja hasta «Integrar el calendario» y copia la <b>Dirección secreta en formato iCal</b>.</li></ol>
    <label class="f">Dirección secreta en formato iCal<input id="gcal-url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" required placeholder="https://calendar.google.com/calendar/ical/…" value="${esc(g.url||'')}"${g.err?' aria-invalid="true" aria-describedby="gcal-err"':''}></label>
    ${g.err?`<p class="ferr" id="gcal-err" role="alert">${esc(g.err)}</p>`:''}
    <p class="small muted" style="margin:0">Esa dirección abre tu calendario a quien la tenga: se guarda solo en este navegador y LIA no guarda en su servidor lo que lee. Con una cuenta de la universidad, puede que el administrador la haya desactivado.</p>
@@ -2289,20 +2306,20 @@ async function accionCanal(fn,args,ok){ui.canalesOcupado=true;rerenderKeepScroll
   finally{ui.canalesOcupado=false;rerenderKeepScroll();}}
 function avisosCard(){if(!cuentasActivas())return '';const titulo='<span class="eyebrow">Recordatorios en tu teléfono</span>';
   if(!isPro())return `<div class="card stack"><div class="between">${titulo}<span class="pro" aria-hidden="true">PRO</span></div>
-   <div class="small muted">Con LIA Pro, Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.</div>
+   <div class="small muted">Con LIA Pro, Lía te avisa con una notificación, aunque LIA esté cerrada: la noche antes de cada examen, 15 minutos antes de estudiar y con un resumen cada mañana.</div>
    <button class="btn sec sm" data-a="paywall" data-why="avisos">Ver LIA Pro</button></div>`;
   const ocupado=ui.avisosOcupado?' disabled':'';let cuerpo;
   if(!avisosSoportados())cuerpo=isIOS()&&!isStandalone()
     ?'<div class="small muted">En iPhone, los avisos llegan solo con LIA instalada. En Safari, toca <strong>Compartir</strong> y luego <strong>Agregar a inicio</strong>. Después abre LIA desde su ícono y vuelve aquí.</div>'
     :'<div class="small muted">Este navegador no permite avisos. Usa Chrome en Android o, en iPhone, LIA instalada en tu pantalla de inicio.</div>';
-  else if(permisoAvisos()==='denied')cuerpo='<div class="small muted">Bloqueaste los avisos de LIA. Para recibirlos, entra a los ajustes de tu teléfono, busca LIA (o tu navegador) en Notificaciones y permítelos. Luego vuelve aquí.</div>';
-  else if(!avisosActivos())cuerpo=`<div class="small muted">Lía te avisa en la pantalla de tu teléfono, aunque la app esté cerrada: tus exámenes, cada sesión de estudio y un resumen cada mañana.</div>
+  else if(permisoAvisos()==='denied')cuerpo='<div class="small muted">Bloqueaste los avisos de LIA. Para recibirlos, permite las notificaciones de LIA en los ajustes de tu navegador (o de tu teléfono, si la instalaste). Luego vuelve aquí.</div>';
+  else if(!avisosActivos())cuerpo=`<div class="small muted">Lía te avisa con una notificación, aunque LIA esté cerrada: tus exámenes, cada sesión de estudio y un resumen cada mañana.</div>
    <button class="btn pri sm" data-a="avisos-activar"${ocupado}>${ui.avisosOcupado?'Activando…':'Activar recordatorios'}</button>`;
   else{const T={...AVISOS_DEF,...(state.settings.avisos||{})};
     const op=(k,t,d)=>`<label class="opt"><input type="checkbox" data-aviso="${k}" ${T[k]?'checked':''}><span><b>${t}</b><br><span class="small muted">${d}</span></span></label>`;
-    cuerpo=`<div class="small muted">Activos en este teléfono.</div><div class="stack" style="gap:8px">
+    cuerpo=`<div class="small muted">Activos en este dispositivo.</div><div class="stack" style="gap:8px">
      ${op('examen','Exámenes y entregas','La noche anterior, a las 20:00, y 2 horas antes')}${op('sesion','Antes de estudiar','15 minutos antes de cada bloque de estudio')}${op('resumen','Resumen de la mañana','Al despertar, los días que estudias o tienes evaluación')}${op('sinMarcar','Estudio sin marcar','30 minutos antes de dormir, si quedó estudio sin marcar')}</div>
-     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="avisos-prueba"${ocupado}>Enviarme un aviso de prueba</button><button class="btn sec sm" data-a="avisos-desactivar"${ocupado}>Desactivar en este teléfono</button></div>`;}
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="avisos-prueba"${ocupado}>Enviarme un aviso de prueba</button><button class="btn sec sm" data-a="avisos-desactivar"${ocupado}>Desactivar en este dispositivo</button></div>`;}
   return `<div class="card stack">${titulo}${cuerpo}</div>`;}
 function modoPruebas(){try{const q=new URLSearchParams(location.search).get('pruebas');if(q==='1')localStorage.setItem('lia.pruebas','1');else if(q==='0')localStorage.removeItem('lia.pruebas');
   return localStorage.getItem('lia.pruebas')==='1';}catch(e){return false;}}
@@ -2792,7 +2809,7 @@ document.addEventListener('change',ev=>{const el=ev.target;
   if(el.closest&&el.closest('form[data-form="rutina"]')){if(el.name==='ru-tipo'){const n=document.getElementById('c-name');if(n)n.placeholder=COMMIT_TYPES[el.value]||'';}refrescarTramos();return;}
   if(el.id==='ev-start'||el.id==='ev-end'){const a=document.getElementById('ev-start').value,b=document.getElementById('ev-end').value,n=document.getElementById('ev-noche');
     if(n)n.hidden=!(a&&b&&toMin(b)<toMin(a));return;}
-  if(el.dataset&&'metricas' in el.dataset){try{if(el.checked)localStorage.removeItem(METRICAS_KEY);else localStorage.setItem(METRICAS_KEY,'no');}catch(e){}toast(el.checked?'Gracias: nos ayudas a mejorar LIA.':'Listo: ya no contamos nada desde este teléfono.');return;}
+  if(el.dataset&&'metricas' in el.dataset){try{if(el.checked)localStorage.removeItem(METRICAS_KEY);else localStorage.setItem(METRICAS_KEY,'no');}catch(e){}toast(el.checked?'Gracias: nos ayudas a mejorar LIA.':'Listo: ya no contamos nada desde este navegador.');return;}
   if(el.dataset&&el.dataset.aviso){state.settings.avisos={...AVISOS_DEF,...(state.settings.avisos||{}),[el.dataset.aviso]:el.checked};save();programarAvisos(true);toast(el.checked?'Listo: te avisaré.':'Listo: ya no te aviso eso.');return;}
   const k=el.dataset&&el.dataset.set;if(!k)return;let v=el.value;if(k==='maxDay'||k==='block')v=+v;
   if((k==='wake'||k==='sleep')&&!v)return;state.settings[k]=v;if(k==='wake'||k==='sleep')state.settings.suenoListo=true;save();
@@ -2865,7 +2882,7 @@ function alConfirmarCorreo(){const mismo=tomarRegistro(),p=tomarPagoPendiente();
 function sheetCorreoOk(){const c=ui.correoOk||{},email=state.cuenta&&state.cuenta.email,cuenta=email?`Tu cuenta <b style="overflow-wrap:anywhere">${esc(email)}</b>`:'Tu cuenta',ok=`<span class="big-check" aria-hidden="true">${I.check}</span>`;
   if(!c.mismo)return `<div class="grab"></div>${ok}<h2 style="text-align:center">Confirmaste tu correo</h2>
    <p class="muted" style="margin:0;text-align:center">${cuenta} ya está activa.</p>
-   <p class="muted" style="margin:0;text-align:center">Si la creaste en otro celular o navegador, vuelve allí e inicia sesión con tu correo y tu contraseña: tus horarios están guardados en ese dispositivo.</p>
+   <p class="muted" style="margin:0;text-align:center">Si la creaste en otro dispositivo o navegador, vuelve allí e inicia sesión con tu correo y tu contraseña: tus horarios están guardados en ese dispositivo.</p>
    <button class="btn pri" data-a="close">Entendido</button>`;
   return `<div class="grab"></div>${ok}<h2 style="text-align:center">¡Listo! Confirmaste tu correo</h2>
    <p class="muted" style="margin:0;text-align:center">${cuenta} está activa y ya iniciaste sesión.${c.pago?' Ahora sigue tu pago para pasarte a LIA Pro.':''}</p>
@@ -2914,7 +2931,7 @@ function sheetCuenta(){const f=ui.cuentaForm,reg=f.modo==='registro',pro=f.paraP
    <button class="btn sec" type="button" data-a="close">Ahora no</button></form>`;
   return `<form class="stack" data-form="cuenta" style="gap:14px" novalidate><div class="grab"></div>
    <h2>${reg?(f.paraPro?'Crea tu cuenta para pasarte a Pro':'Crea tu cuenta'):'Inicia sesión'}</h2>
-   <p class="muted small" style="margin:0">${reg?'Con una cuenta, tu plan Pro te acompaña en cualquier dispositivo. Tus horarios siguen guardados solo en este teléfono.':'Entra con el correo y la contraseña de tu cuenta de LIA.'}</p>
+   <p class="muted small" style="margin:0">${reg?'Con una cuenta, tu plan Pro te acompaña en cualquier dispositivo. Tus horarios siguen guardados solo en este navegador.':'Entra con el correo y la contraseña de tu cuenta de LIA.'}</p>
    ${correo}${campoClave(f,reg)}
    ${reg?'':'<button class="linkbtn" type="button" data-a="cuenta-recuperar" style="align-self:flex-start;margin-top:-10px">¿Olvidaste tu contraseña?</button>'}
    ${avisosCuenta(f)}${enviar(reg?'Crear cuenta':'Iniciar sesión')}
@@ -2950,8 +2967,8 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
         else{ui.cuentaForm=null;ui.sheet=null;rerenderKeepScroll();}});})
     .catch(fallo);}
 function cuentaCard(){if(!cuentasActivas())return '';
-  if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este teléfono. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
-  return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este teléfono</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
+  if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este navegador. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
+  return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este navegador</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
  'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=sheetCheckout();render();}else A.close();},
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
@@ -2998,8 +3015,8 @@ function evento(nombre){if(!metricasActivas())return;const id=idInstalacion();if
     .catch(()=>{});}
 function metricasCard(){if(!SB_CFG.url)return '';let on=true;try{on=localStorage.getItem(METRICAS_KEY)!=='no';}catch(e){}
   return `<label class="opt"><input type="checkbox" data-metricas ${on?'checked':''}><span><b>Ayudar a mejorar LIA</b><br><span class="small muted">Contamos de forma anónima cuántas personas abren la app y terminan el registro. No enviamos tus horarios, cursos, mensajes ni tu nombre.</span></span></label>`;}
-function installCard(){const base='Todo se guarda solo en este teléfono, en este navegador.';
-  if(isStandalone())return `<div class="card small muted">Todo se guarda solo en este teléfono, dentro de la app. Si la desinstalas o borras los datos del navegador, se pierde.</div>`;
+function installCard(){const base='Todo se guarda solo en este navegador.';
+  if(isStandalone())return `<div class="card small muted">Todo se guarda solo en este dispositivo, dentro de la app. Si la desinstalas o borras los datos del navegador, se pierde.</div>`;
   if(installEvt)return `<div class="card stack"><span class="small muted">${base} Instálala para abrirla como app, incluso sin internet.</span><button class="btn pri" data-a="install">Instalar LIA</button></div>`;
   if(isIOS())return `<div class="card small muted">${base} Para usarla como app, en Safari abre <b>Compartir</b> y elige <b>Agregar a inicio</b>. Instalada, Safari no borra tus datos aunque pases días sin abrirla.</div>`;
   return `<div class="card small muted">${base} Para usarla como app, busca en el menú del navegador <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.</div>`;}

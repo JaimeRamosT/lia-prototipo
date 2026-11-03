@@ -1,6 +1,6 @@
 # LIA · instrucciones para Claude
 
-LIA es un prototipo de app web instalable (HTML, CSS y JavaScript en un solo `index.html`) que arma horarios de estudio en las horas libres de universitarios que trabajan. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Con Pro, Lía entiende primero con reglas y, si no entienden, con un modelo de IA a través de la Edge Function `lia-ia`: desde el 2-nov-2026, `openai/gpt-oss-120b` en Groq, con Gemini de respaldo (ver `docs/ia-con-gemini.md`). Responde y escribe en español.
+LIA es un prototipo de página web (HTML, CSS y JavaScript en un solo `index.html`; también se puede instalar) que arma horarios de estudio en las horas libres de universitarios que trabajan. Desde el 2-nov-2026 se piensa para la computadora y el celular por igual: desde 900 px, barra lateral y hojas como diálogos. Es del Grupo 8, en Perú. Se publica en Cloudflare (Worker `lia-prototipo`, solo archivos estáticos) desde `main`, con una vista previa por rama. Los datos viven en `localStorage` (`lia.app.v1`). Versión freemium única: sin cuenta, LIA Gratis; LIA Pro requiere una cuenta de Supabase. El checkout es de prueba y no cobra. Con Pro, Lía entiende primero con reglas y, si no entienden, con un modelo de IA a través de la Edge Function `lia-ia`: desde el 2-nov-2026, `openai/gpt-oss-120b` en Groq, con Gemini de respaldo (ver `docs/ia-con-gemini.md`). Responde y escribe en español.
 
 ## Skills: llámalos, no los omitas
 
@@ -10,7 +10,7 @@ Antes de empezar cada tarea, revisa esta tabla. Si una fila aplica, carga ese sk
 |---|---|
 | Vas a cambiar `plan()`, `planCongelado()`, `interpret()` o el formato de los datos guardados | `engineering:testing-strategy` antes; `engineering:code-review` al terminar |
 | Terminas cualquier cambio en `index.html` o `sw.js` | `engineering:code-review` |
-| Alguien reporta un error al probar la app (en el celular, en otro navegador o en la app instalada) | `engineering:debug`. Antes de cambiar el código, reprodúcelo en Playwright simulando un celular (iPhone y Android, también abierta como app instalada) |
+| Alguien reporta un error al probar la app (en el celular, en otro navegador o en la app instalada) | `engineering:debug`. Antes de cambiar el código, reprodúcelo en Playwright simulando un celular (iPhone y Android, también abierta como app instalada) o una computadora (`DISPOSITIVOS` en `pruebas/navegador/ayuda.mjs`) |
 | Tocas pantallas, componentes, colores o tamaños | `design:accessibility-review` y `design:design-critique` |
 | Escribes o cambias texto que ve la persona (Lía, errores, estados vacíos) | `design:ux-copy`, en español peruano |
 | Vas a hacer un commit | `anthropic-skills:conventional-commit` |
