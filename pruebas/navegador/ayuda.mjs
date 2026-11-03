@@ -29,9 +29,12 @@ export const CELULARES = {
   Android: { viewport: { width: 412, height: 915 }, deviceScaleFactor: 2.6, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36' },
 };
 
-// Abre la app en un celular. Devuelve la página y la lista de errores de JavaScript que vaya juntando.
+// LIA también se usa como página web en una computadora (decisión del 2-nov).
+export const DISPOSITIVOS = { ...CELULARES, Computadora: { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 } };
+
+// Abre la app en un celular o en una computadora. Devuelve la página y la lista de errores de JavaScript que vaya juntando.
 export async function abrir(navegador, url, celular, { oscuro = false } = {}) {
-  const ctx = await navegador.newContext({ ...CELULARES[celular], locale: 'es-PE', timezoneId: 'America/Lima', colorScheme: oscuro ? 'dark' : 'light', serviceWorkers: 'block' });
+  const ctx = await navegador.newContext({ ...DISPOSITIVOS[celular], locale: 'es-PE', timezoneId: 'America/Lima', colorScheme: oscuro ? 'dark' : 'light', serviceWorkers: 'block' });
   await ctx.route('**/*.supabase.co/**', r => r.abort());
   const pg = await ctx.newPage();
   const errores = [];
