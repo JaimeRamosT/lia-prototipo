@@ -168,3 +168,14 @@ test('los ejemplos de las instrucciones de Gemini pasan la revisión de la app',
     assert.notEqual(r.intent, 'help', frase);
   }
 });
+
+// Si cambia el proveedor (IA_PROVEEDOR), cambian el aviso de privacidad y la tarjeta de Perfil (CLAUDE.md).
+test('la tarjeta «Lía con IA» y el aviso de privacidad nombran al proveedor principal y al respaldo', async () => {
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const tarjeta = html.slice(html.indexOf('function iaCard()'), html.indexOf('function iaCard()') + 700);
+  assert.match(tarjeta, /Groq y, si no responde, Gemini/);
+  assert.doesNotMatch(tarjeta, /con Gemini\./);
+  assert.match(html, /Groq y, si no responde, Gemini de Google/);
+  assert.equal(F.PROVEEDORES.groq.defecto, 'openai/gpt-oss-120b');
+});
