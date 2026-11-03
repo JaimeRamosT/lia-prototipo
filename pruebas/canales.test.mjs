@@ -161,3 +161,72 @@ test('whatsapp: los registros no llevan textos ni números', async () => {
   const t = JSON.stringify(m.logs);
   assert.ok(!t.includes('51987654321') && !t.includes('Cálculo') && !t.includes('tengo'));
 });
+
+// ---------- Vincular recibiendo el código (2-nov-2026) ----------
+const PROD = 'https://lia-prototipo.jaime-ramos-93c.workers.dev';
+function app({ env = {}, codigo = '482913', rpcStatus = 200, rpcCuerpo = null, metaStatus = [200] } = {}) {
+  const llamadas = [], enviados = [];
+  const E = { ...ENV, SUPABASE_ANON_KEY: 'anon', WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '123', WHATSAPP_APP_SECRET: SECRETO, WHATSAPP_PLANTILLA_CODIGO: 'lia_codigo', ...env };
+  let m = 0;
+  const deps = { env: k => E[k], log: () => {}, crypto: webcrypto,
+    fetch: async (url, op) => {
+      const body = op.body ? JSON.parse(op.body) : null;
+      if (url.includes('graph.facebook.com')) { enviados.push(body); return new Response('{}', { status: metaStatus[Math.min(m++, metaStatus.length - 1)] }); }
+      llamadas.push({ fn: url.split('/rpc/')[1], body, auth: op.headers.Authorization });
+      if (url.endsWith('pedir_codigo_whatsapp')) return new Response(JSON.stringify(rpcCuerpo ?? codigo), { status: rpcStatus });
+      return new Response('null');
+    } };
+  return { deps, llamadas, enviados };
+}
+const pedirCodigo = (deps, numero = '987 654 321', origin = PROD) => W.manejar(new Request('https://x/lia-whatsapp', {
+  method: 'POST', headers: { origin, authorization: 'Bearer usuario', apikey: 'anon', 'content-type': 'application/json' }, body: JSON.stringify({ accion: 'codigo', numero }) }), deps);
+
+test('código: con la sesión de la persona pide el código y lo envía con la plantilla de autenticación', async () => {
+  const a = app();
+  const r = await pedirCodigo(a.deps);
+  assert.deepEqual(await r.json(), { ok: true, enviado: true });
+  assert.equal(r.headers.get('access-control-allow-origin'), PROD);
+  assert.deepEqual([a.llamadas[0].fn, a.llamadas[0].auth], ['pedir_codigo_whatsapp', 'Bearer usuario'], 'como la persona, no como el servidor');
+  assert.deepEqual(a.enviados[0].template.components, [{ type: 'body', parameters: [{ type: 'text', text: '482913' }] }, { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '482913' }] }]);
+  assert.deepEqual([a.enviados[0].to, a.enviados[0].template.name], ['51987654321', 'lia_codigo']);
+  assert.deepEqual(a.llamadas.at(-1), { fn: 'codigo_whatsapp_enviado', body: { p_numero: '51987654321' }, auth: 'Bearer srv' });
+});
+
+test('código: si la plantilla no tiene botón, reintenta solo con el cuerpo', async () => {
+  const a = app({ metaStatus: [400, 200] });
+  assert.equal((await (await pedirCodigo(a.deps)).json()).enviado, true);
+  assert.equal(a.enviados.length, 2);
+  assert.equal(a.enviados[1].template.components.length, 1);
+});
+
+test('código: sin plantilla o si Meta falla, no lo marca como enviado (la app muestra el código)', async () => {
+  let a = app({ env: { WHATSAPP_PLANTILLA_CODIGO: '' } });
+  assert.deepEqual(await (await pedirCodigo(a.deps)).json(), { ok: true, enviado: false, motivo: 'sin_plantilla' });
+  assert.equal(a.llamadas.some(l => l.fn === 'codigo_whatsapp_enviado'), false);
+  a = app({ metaStatus: [500] });
+  assert.equal((await (await pedirCodigo(a.deps)).json()).enviado, false);
+  assert.equal(a.llamadas.some(l => l.fn === 'codigo_whatsapp_enviado'), false);
+});
+
+test('código: errores claros y nada enviado', async () => {
+  for (const [msg, error, status] of [['espera', 'espera', 400], ['numero_ocupado', 'numero_ocupado', 400]]) {
+    const a = app({ rpcStatus: 400, rpcCuerpo: { message: msg } });
+    const r = await pedirCodigo(a.deps);
+    assert.deepEqual([r.status, (await r.json()).error], [status, error]);
+    assert.equal(a.enviados.length, 0);
+  }
+  let a = app({ rpcStatus: 401, rpcCuerpo: { message: 'JWT expired' } });
+  assert.equal((await (await pedirCodigo(a.deps)).json()).error, 'sesion');
+  a = app();
+  assert.equal((await pedirCodigo(a.deps, '123')).status, 400);
+  assert.equal((await pedirCodigo(a.deps, '987654321', 'https://otro.sitio')).status, 403);
+  assert.equal(a.llamadas.length + a.enviados.length, 0);
+  assert.equal((await W.manejar(new Request('https://x/lia-whatsapp', { method: 'OPTIONS', headers: { origin: PROD } }), a.deps)).status, 204);
+});
+
+test('código: normaliza el número como la base', () => {
+  assert.equal(W.normalizarNumero('987 654 321'), '51987654321');
+  assert.equal(W.normalizarNumero('+51 987-654-321'), '51987654321');
+  assert.equal(W.normalizarNumero('+1 (555) 140-4567'), '15551404567');
+  assert.equal(W.normalizarNumero('12'), null);
+});

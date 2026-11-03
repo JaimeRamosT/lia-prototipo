@@ -32,11 +32,21 @@ Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase 
    | `WHATSAPP_APP_SECRET` | App settings → Basic → App secret |
    | `WHATSAPP_VERIFY_TOKEN` | Una palabra secreta que inventes (la misma del paso 4) |
    | `WHATSAPP_PLANTILLA` | Opcional: el nombre de la plantilla del paso 5 |
+   | `WHATSAPP_PLANTILLA_CODIGO` | El nombre de la plantilla de autenticación del paso 7 |
 
 4. En WhatsApp → **Configuration → Webhook**: URL `https://lvtthltugrpbqjezwnsd.supabase.co/functions/v1/lia-whatsapp`, «Verify token» = `WHATSAPP_VERIFY_TOKEN`. Luego suscríbete al campo **messages**.
 5. Opcional, para avisos fuera de las 24 horas: en WhatsApp Manager crea una plantilla de categoría **Utility**, idioma español (`es`), con el cuerpo «Hola, soy Lía. A las {{1}} empieza: {{2}}. Escribe «pausa» si no quieres estos avisos.» y pon su nombre en `WHATSAPP_PLANTILLA`. Sin plantilla, los avisos llegan solo si la persona le escribió a LIA en las últimas 24 horas.
-6. El número de LIA (el de prueba, con código de país y sin «+») va en `WA_LIA` de `index.html`: así la app muestra «Abrir WhatsApp» con el código ya escrito.
-7. En LIA (con tu cuenta) → Perfil → WhatsApp → escribe tu número → envía «LIA 123456» (el código que te muestra) al número de LIA → «Ya lo envié».
+6. El número de LIA (el de prueba, con código de país y sin «+») va en `WA_LIA` de `index.html` (hoy `15551404567`).
+7. **Plantilla del código (para vincular recibiendo el código, pedido de Coconut del 2-nov):** en WhatsApp Manager → Plantillas de mensajes → Crear plantilla → categoría **Autenticación** → nombre `lia_codigo` → idioma **Español** → entrega del código «**Copiar código**» → enviar a revisión. Cuando esté aprobada, agrega el secreto `WHATSAPP_PLANTILLA_CODIGO` = `lia_codigo` (y `WHATSAPP_PLANTILLA_CODIGO_IDIOMA` si el idioma no es `es`).
+8. En LIA (con tu cuenta) → Perfil → WhatsApp → escribe tu número → «Vincular WhatsApp». LIA te envía el código por WhatsApp y lo escribes en la app. Sin la plantilla, la app muestra el código y tú se lo envías a LIA («LIA 123456»): ese camino necesita que Meta entregue los mensajes que llegan (paso 4).
+
+## Si LIA no recibe los mensajes que le escribes
+
+La función registra cada mensaje que llega (sin textos ni números). Si en Supabase → Edge Functions → lia-whatsapp → Logs no aparece ninguno:
+
+1. En WhatsApp → Configuration → Webhook fields, junto a **messages**, toca **Test**. Si el registro muestra `"error":"firma"`, `WHATSAPP_APP_SECRET` no coincide con App settings → Basic → App secret.
+2. Si la prueba llega pero tus mensajes reales no, la app no está suscrita a tu cuenta de WhatsApp Business: en el Graph API Explorer, con tu token, haz `POST /<WABA_ID>/subscribed_apps` (el WABA ID está en API Setup).
+3. Si sigue sin llegar, pasa la app a modo **Live** (pide una URL de política de privacidad).
 
 ## Pendiente
 
