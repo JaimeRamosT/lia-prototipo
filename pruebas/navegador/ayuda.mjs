@@ -56,7 +56,7 @@ export async function registrar(pg, { rutinas = ['trabajo de lunes a viernes de 
   await pg.getByRole('button', { name: 'Ver mi semana' }).click();
 }
 
-export async function pestana(pg, nombre) { await pg.getByRole('button', { name: nombre, exact: true }).last().click(); await pg.waitForTimeout(200); }
+export async function pestana(pg, nombre) { await pg.locator('#tabs').getByRole('button', { name: nombre, exact: true }).click(); await pg.waitForTimeout(200); }
 
 // Escribe en el chat de Lía y devuelve el último mensaje.
 export async function decir(pg, frase) {

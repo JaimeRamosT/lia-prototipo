@@ -55,7 +55,7 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     assert.equal(await anchoDeMas(pg), false, 'la hoja no se sale de la pantalla');
     await hoja.getByRole('checkbox', { name: /Cita con el dentista/ }).uncheck();
     await hoja.getByRole('button', { name: 'Agregar a LIA' }).click();
-    await pg.getByText(/Agregué 2 de tu Google Calendar/).waitFor();
+    await pg.getByText(/Agregué 1 rutina y 1 evaluación de tu Google Calendar/).waitFor();
     let s = await guardado(pg);
     assert.equal(s.gcal.url, GOOGLE, 'la dirección se queda en este navegador');
     assert.deepEqual(s.commitments.filter(c => c.gcal).map(c => [c.name, c.days, c.start, c.end]), [['Cálculo II', [2, 4], '08:00', '10:00']]);
