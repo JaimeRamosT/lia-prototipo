@@ -1279,6 +1279,10 @@ function eventosCanales(st,p,n){const hoy=ymd(n),hasta=ymd(addDays(n,14)),out=[]
       poner(f,intervalo(c.start,c.end),c.name,c.type==='clase'?'clase':'otro',c.id);}}
   out.sort(orden);return [...out.slice(0,300),...resto.sort(orden).slice(0,Math.max(0,300-out.length))].sort(orden);}
 
+// «Conectar con Google» (docs/google.md): al calendario «LIA» de la persona va todo lo de LIA de los próximos 14 días
+// (estudio, evaluaciones, eventos y rutinas), sin lo que vino de Google. No pasa por agenda_canales.
+function eventosGoogle(st,p,n){return eventosCanales({...st,settings:{...st.settings,calTodo:true}},p,n);}
+
 // ---------- Google Calendar → LIA (docs/calendario.md) ----------
 // leerIcs() lee el iCal de la «dirección secreta» (Google, Outlook o iCloud) y pasa todas las horas a hora de Lima
 // (UTC−5, sin horario de verano). deCalendario() propone rutinas, evaluaciones, eventos de un día y ratos libres;
@@ -1467,6 +1471,8 @@ function snapshot(){undoStack=JSON.stringify(state);undoTras=null;quitarAvisoDes
 // El estado justo después de la acción que se puede deshacer (lo anotan los avisos y mensajes con Deshacer).
 function marcarDeshacer(){if(undoStack)undoTras=claveDeshacer();}
 function revisarDeshacer(){if(undoStack&&undoTras&&claveDeshacer()!==undoTras){undoStack=null;undoTras=null;quitarAvisoDeshacer();}}
+// Mientras se ve el botón Deshacer de otra acción, la sincronización con Google espera para no pisarlo.
+const deshacerVisible=()=>!!document.querySelector('#toastbox [data-a="undo"]');
 function quitarAvisoDeshacer(){const b=document.getElementById('toastbox');if(b&&b.querySelector('[data-a="undo"]')){clearTimeout(toastT);b.innerHTML='';}}
 function undo(){if(!undoStack)return;undoTras=null;const sub=state.sub,cuenta=state.cuenta;state=JSON.parse(undoStack);if(sub)state.sub=sub;state.cuenta=cuenta||null;undoStack=null;save();render();toast('Listo, lo dejé como estaba.');}
 
@@ -1964,7 +1970,7 @@ function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaCorta
    ${op('add-evento',I.cal,'Algo de un solo día','Un cumpleaños, una cita, un turno extra.')}
    ${op('add-eval',I.list,'Evaluación','Un examen, una práctica o una entrega.')}
    ${op('consolidado',I.cal,'Consolidado de matrícula','Sube el PDF de tu matrícula y agrego tus clases.')}
-   ${state.cuenta&&cuentasActivas()?op('gcal-abrir',I.cal,'Desde Google Calendar','Traigo tus clases, evaluaciones y eventos.'):''}</div>
+   ${state.cuenta&&cuentasActivas()?op(googleActivo()?'google-leer':'gcal-abrir',I.cal,'Desde Google Calendar','Traigo tus clases, evaluaciones y eventos.'):''}</div>
    <button class="btn sec" data-a="close">Cancelar</button>`;}
 // ---------- Consolidado de matrícula (PDF) ----------
 // El PDF se lee en el teléfono con pdf.js (vendor/pdfjs, se carga solo al usarlo) y no se envía a ningún lado.
@@ -2191,7 +2197,7 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="ey
   if(!state.cuenta)return `<div class="card stack">${tit}<div class="small muted">Con tu cuenta de LIA, traes tus clases y eventos desde Google Calendar, ves tu estudio ahí y Lía te avisa por WhatsApp antes de cada sesión.</div></div>`;
   if(ui.canales===undefined){cargarCanales();return `<div class="card stack">${tit}<div class="small muted" role="status">Cargando…</div></div>`;}
   const c=ui.canales||{},w=c.whatsapp,oc=ui.canalesOcupado?' disabled':'';
-  const priv=`<p class="small muted" style="margin:0">Si compartes LIA con Google Calendar o vinculas WhatsApp, LIA guarda en su servidor tus próximos 14 días, con sus nombres, para mostrarlos ahí: tu estudio, tus evaluaciones y, si lo eliges, tus eventos y rutinas. Si dejas de compartir y desvinculas WhatsApp, se borra todo.</p>${canalesActivos(c)?`
+  const priv=`<p class="small muted" style="margin:0">${ui.google&&ui.google.configurado?'Si vinculas WhatsApp o usas un enlace iCal':'Si compartes LIA con Google Calendar o vinculas WhatsApp'}, LIA guarda en su servidor tus próximos 14 días, con sus nombres, para mostrarlos ahí: tu estudio, tus evaluaciones y, si lo eliges, tus eventos y rutinas. Si dejas de compartir y desvinculas WhatsApp, se borra todo.</p>${canalesActivos(c)?`
      <label class="opt"><input type="checkbox" id="cal-todo" ${state.settings.calTodo===true?'checked':''}><span><b>También mis eventos y rutinas</b><br><span class="small muted">Lo que anotas para un solo día y lo que se repite cada semana, con su nombre. Lo que trajiste de Google Calendar no se vuelve a publicar.</span></span></label>`:''}`;
   const cal=c.calendario?`<div class="stack" style="gap:8px"><b>De LIA a Google Calendar</b>
      <label class="f">Tu enlace secreto (no lo compartas)<input id="cal-url" readonly value="${esc(CAL_FN()+c.calendario)}"></label>
@@ -2220,8 +2226,78 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<span class="ey
   else wa=`<form class="stack" data-form="wa" style="gap:8px"><b>WhatsApp</b><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
      <label class="f">Tu número de WhatsApp<input type="tel" name="numero" inputmode="tel" autocomplete="tel" required placeholder="987 654 321" value="${esc(w&&w.numero||'')}"></label>
      ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<button class="btn sec sm" type="submit"${oc}>Vincular WhatsApp</button></form>`;
-  const sep='<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">';
+  const sep='<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">',gg=ui.google;
+  if(gg===undefined)cargarGoogle();
+  if(gg&&gg.configurado)return `<div class="card stack">${tit}${googleBloque(gg)}${sep}${priv}${wa}${sep}
+    <details><summary class="small" style="cursor:pointer;min-height:44px;display:flex;align-items:center">Otra forma: enlaces iCal (Apple, Outlook)</summary><div class="stack" style="gap:12px;margin-top:8px">${cal}${gg.conectado?'':sep+imp}</div></details></div>`;
   return `<div class="card stack">${tit}${priv}${cal}${sep}${imp}${sep}${wa}</div>`;}
+// ---------- Conectar con Google (docs/google.md): Google Calendar al instante en los dos sentidos ----------
+// lia-google guarda el permiso de Google (en Vault), avisa por Realtime (google_senal) cuando cambia el calendario
+// principal y escribe lo de LIA en un calendario «LIA». La app no guarda nada de Google fuera de sus datos de siempre.
+const KEY_GOOGLE_FIRMA='lia.google.firma';
+async function llamarGoogle(accion,extra){const t=await tokenSesion();if(!t)throw{error:'sesion'};let res;
+  try{res=await fetch(`${SB_CFG.url}/functions/v1/lia-google`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify({accion,...(extra||{})})});}
+  catch(e){throw{error:navigator.onLine===false?'red':'no_responde'};}
+  const d=await res.json().catch(()=>null);if(!d||!d.ok)throw{error:(d&&d.error)||'no_responde'};return d;}
+// ui.google: undefined (sin cargar), null (lia-google no responde: la tarjeta queda como antes) o {configurado, conectado, estado}.
+async function cargarGoogle(){if(!state.cuenta||ui.googleCargando)return;ui.googleCargando=true;
+  try{const d=await llamarGoogle('estado');ui.google={configurado:!!d.configurado,conectado:!!d.conectado,estado:d.estado||null};}
+  catch(e){ui.google=null;}
+  finally{ui.googleCargando=false;}
+  if(googleActivo())suscribirGoogle();
+  if(ui.tab==='perfil'&&calm())rerenderKeepScroll();}
+const googleActivo=()=>!!(state.cuenta&&ui.google&&ui.google.conectado&&ui.google.estado==='activa');
+function googleBloque(gg){const oc=ui.googleOcupado||ui.googleLeyendo?' disabled':'',head='<b>Google Calendar</b>';
+  if(!gg.conectado)return `<div class="stack" style="gap:8px">${head}<div class="small muted">Conecta tu cuenta de Google y LIA queda unida a tu Google Calendar: lo que anotas allá aparece aquí en segundos, y tu estudio, tus evaluaciones, tus eventos y tus rutinas aparecen allá, en un calendario «LIA».</div>
+     <button class="btn pri sm" data-a="google-conectar"${oc}>${ui.googleOcupado?'Abriendo Google…':'Conectar con Google'}</button>
+     <p class="small muted" style="margin:0">Google te pedirá permiso para ver tus eventos y crear el calendario «LIA». LIA no guarda tus eventos en su servidor.</p></div>`;
+  if(gg.estado!=='activa')return `<div class="stack" style="gap:8px">${head}<div class="small" role="status">Tu conexión con Google venció o quitaste el permiso. Vuelve a conectar para seguir al día.</div>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn pri sm" data-a="google-conectar"${oc}>Volver a conectar</button><button class="btn sec sm" data-a="google-desconectar"${oc}>Desconectar</button></div></div>`;
+  const g=state.gcal,ult=g&&g.fuente==='google'&&g.ultima?` Última lectura: ${cuandoTxt(g.ultima)}.`:'';
+  return `<div class="stack" style="gap:8px">${head}<div class="small muted" role="status">Conectado. Lo que cambies en tu Google Calendar aparece aquí en segundos, y lo de LIA está en tu calendario «LIA».${ult}</div>
+     <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="google-leer"${oc}>${ui.googleLeyendo?'Leyendo…':'Traer ahora'}</button><button class="btn sec sm" data-a="google-desconectar"${oc}>Desconectar</button></div></div>`;}
+// Al volver de Google (?google=ok|cancelado|permisos|error): se limpia la dirección y se lee el calendario.
+const GOOGLE_MOTIVOS={cancelado:'No conectaste Google: cancelaste el permiso.',permisos:'Google no dio los dos permisos que LIA necesita. Vuelve a conectar y deja marcadas las dos casillas.',error:'No pude conectar con Google. Inténtalo otra vez.'};
+function alVolverDeGoogle(){let m=null;try{const q=new URLSearchParams(location.search);m=q.get('google');if(!m)return;q.delete('google');
+    history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(e){return;}
+  ui.tab='perfil';render();
+  if(m!=='ok'){toast(GOOGLE_MOTIVOS[m]||GOOGLE_MOTIVOS.error);return;}
+  ui.google=undefined;cargarGoogle().then(()=>{if(googleActivo()){toast('Listo: LIA está conectada con tu Google Calendar.');escribirGoogle(true);}else if(!ui.google||!ui.google.conectado)toast(GOOGLE_MOTIVOS.error);});}
+// Leer: la primera vez (o hasta que la persona elija) abre la vista previa; después, los cambios entran solos.
+let googleUltima=0,googleLeerT=null,googleT=null;
+async function leerGoogle(manual){if(ui.googleLeyendo||!googleActivo())return;ui.googleLeyendo=true;googleUltima=Date.now();if(ui.tab==='perfil'&&calm())rerenderKeepScroll();
+  try{const d=await llamarGoogle('leer'),cand=deCalendario(leerIcs(d.ics),ymd(now())),g=state.gcal;
+    const yaEligio=!!(g&&(g.fuente==='google'||(g.traidos&&g.traidos.length)));
+    const vacio=!cand.rutinas.length&&!cand.evals.length&&!cand.eventos.length;
+    // Sin nada que elegir, queda conectado: lo que agregue después en Google entra solo.
+    if(!yaEligio&&vacio){aplicarGcal(cand,{fuente:'google'});if(manual||!ui.googleVioPrevia)toast('Tu Google Calendar no tiene nada de aquí a 60 días. Lo que agregues allá aparece aquí solo.');ui.googleVioPrevia=true;return;}
+    if(!yaEligio){if((manual||!ui.googleVioPrevia)&&!(ui.sheet&&ui.gcal&&ui.gcal.estado==='listo')){ui.googleVioPrevia=true;ui.gcal={estado:'listo',cand,fuente:'google'};ui.sheet=sheetGcal();render();}return;}
+    const {n,extra}=aplicarGcal(cand,{fuente:'google'});
+    if(n){rerenderKeepScroll();toast(`Traje ${n} ${n===1?'cambio':'cambios'} de tu Google Calendar.${extra}`);}else if(manual)toast(`Tu Google Calendar no tiene cambios.${extra}`);}
+  catch(e){const err=e&&e.error;if(err==='vencida'){ui.google={...ui.google,estado:'vencida'};soltarGoogle();toast('Tu conexión con Google venció: vuelve a conectar en Perfil.');}
+    else if(manual)toast(GCAL_ERRORES[err]||'No pude leer tu Google Calendar. Inténtalo en un momento.');}
+  finally{ui.googleLeyendo=false;if(ui.tab==='perfil'&&calm())rerenderKeepScroll();}}
+// Un aviso de Google (Realtime) o volver a la pestaña: se lee en un momento; si hay un Deshacer pendiente, se espera.
+function leerGoogleLuego(ms=1500){clearTimeout(googleLeerT);googleLeerT=setTimeout(()=>{if(deshacerVisible()){leerGoogleLuego(3000);return;}leerGoogle(false);},ms);}
+function suscribirGoogle(){if(ui.googleCanal||!googleActivo())return;const uid=state.cuenta.id;ui.googleCanal='…';
+  sb().then(c=>{if(ui.googleCanal!=='…')return;ui.googleCanal=c.channel('lia-google-'+uid)
+    .on('postgres_changes',{event:'*',schema:'public',table:'google_senal',filter:`user_id=eq.${uid}`},()=>leerGoogleLuego()).subscribe();})
+    .catch(()=>{ui.googleCanal=null;});
+  leerGoogleLuego(0);}   // lo que cambió en Google mientras LIA estaba cerrada
+function soltarGoogle(){const ch=ui.googleCanal;ui.googleCanal=null;if(ch&&ch!=='…')sb().then(c=>c.removeChannel(ch)).catch(()=>{});}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&googleActivo()&&Date.now()-googleUltima>60000)leerGoogleLuego(500);});
+// Escribir: cuando cambia el plan, en 3 segundos el calendario «LIA» queda igual a lo de LIA.
+function googleLuego(){if(!googleActivo())return;clearTimeout(googleT);googleT=setTimeout(()=>{escribirGoogle(false);},3000);}
+async function escribirGoogle(forzar){if(!googleActivo())return;
+  const ev=eventosGoogle(state,P(),now()),firma=JSON.stringify(ev);let previa=null;try{previa=localStorage.getItem(KEY_GOOGLE_FIRMA);}catch(e){}
+  if(!forzar&&firma===previa)return;
+  try{await llamarGoogle('escribir',{eventos:ev});try{localStorage.setItem(KEY_GOOGLE_FIRMA,firma);}catch(e){}}
+  catch(e){if(e&&e.error==='vencida'){ui.google={...ui.google,estado:'vencida'};soltarGoogle();if(calm())rerenderKeepScroll();}}}
+function sheetGoogleDejar(){return `<div class="grab"></div><h2>¿Desconecto tu Google Calendar?</h2>
+  <p class="muted" style="margin:0">Dejo de leer tu calendario, quito el permiso que le diste a LIA y borro el calendario «LIA» de tu Google. ¿Qué hago con lo que traje?</p>
+  <button class="btn pri" data-a="google-dejar-si" data-v="mantener">Desconectar y conservar lo traído</button>
+  <button class="btn danger" data-a="google-dejar-si" data-v="quitar">Desconectar y quitar lo traído</button>
+  <button class="btn sec" data-a="close">Cancelar</button>`;}
 // ---------- Google Calendar → LIA (docs/calendario.md) ----------
 // La «dirección secreta en formato iCal» se guarda solo en este navegador (state.gcal.url) y se borra al cerrar sesión.
 // lia-calendario la lee (Google no deja leerla desde otra página) y la app decide qué traer (leerIcs, deCalendario y
@@ -2275,14 +2351,17 @@ function aplicarGcal(cand,op){const hoy=ymd(now()),r=fusionarGcal(state,cand,hoy
   const n=r.cambios.nuevos+r.cambios.cambiados+r.cambios.quitados,fresco=!!state.frozen&&!planStale();
   if(op.elegidos)snapshot();   // la sincronización refleja Google: sin Deshacer (no pisa el de otra acción)
   Object.assign(state,{commitments:r.commitments,exceptions:r.exceptions,evals:r.evals,done:r.done});
-  state.gcal={...r.gcal,url:op.url||(state.gcal&&state.gcal.url),ultima:Date.now()};delete state.gcal.error;save();
+  const antes=state.gcal||{},fuente=op.fuente||antes.fuente,url=op.url||antes.url;
+  state.gcal={...r.gcal,ultima:Date.now()};delete state.gcal.error;delete state.gcal.url;delete state.gcal.fuente;
+  if(fuente==='google')state.gcal.fuente='google';else if(url)state.gcal.url=url;   // con Google conectado, la dirección secreta ya no hace falta
+  save();
   let extra='';if(n){if(r.nuevasEvals.length)agendarNuevas(r.nuevasEvals);const ocio=reubicarOcio();alDiaSiNoChoca(fresco);
     extra=isPro()?' Lía reorganizó tu semana.':!state.frozen?'':ocio?` ${ocio}`:' '+textoRutinaGratis().replace(/^Guardado\. /,'');}
   if(r.sinCupo)extra+=` ${r.sinCupo===1?'Una evaluación espera':`${r.sinCupo} evaluaciones esperan`} espacio en Gratis.`;
   return{n,extra};}
 let gcalT=null;
 function gcalLuego(){const g=state.gcal;if(!g||!g.url||!state.cuenta||ui.gcalLeyendo||Date.now()-(g.ultima||0)<GCAL_CADA)return;
-  clearTimeout(gcalT);gcalT=setTimeout(()=>{if(undoStack)gcalLuego();else sincronizarGcal(false);},undoStack?15000:4000);}  // espera a que pase el Deshacer de otra acción
+  clearTimeout(gcalT);gcalT=setTimeout(()=>{if(deshacerVisible())gcalLuego();else sincronizarGcal(false);},deshacerVisible()?3000:4000);}  // espera a que pase el Deshacer de otra acción
 async function sincronizarGcal(manual){const g=state.gcal;if(!g||!g.url||ui.gcalLeyendo)return;ui.gcalLeyendo=true;if(manual)rerenderKeepScroll();
   try{const cand=await leerGcal(g.url);if(!state.gcal||state.gcal.url!==g.url)return;const {n,extra}=aplicarGcal(cand,{});
     if(n){rerenderKeepScroll();toast(`Traje ${n} ${n===1?'cambio':'cambios'} de tu Google Calendar.${extra}`);}else if(manual)toast(`Tu Google Calendar no tiene cambios.${extra}`);}
@@ -2377,7 +2456,7 @@ function minutosSesion(s){return Math.floor(Math.min(s.elapsed(),s.total)/60000)
 function registrarSesion(s,min){const t=new Date(s.inicio||Date.now()-min*60000);snapshot();
   state.done.push({id:uid(),evalId:s.ev,date:ymd(t),start:fmt(t.getHours()*60+t.getMinutes()),min});save();}
 function pedirPantalla(){try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(l=>ui.wl=l).catch(()=>{});}catch(e){}}
-function cerrarSesion(){ui.session=null;ui.canales=undefined;undoStack=null;undoTras=null;quitarAvisoDeshacer();if(state.gcal&&state.gcal.url){delete state.gcal.url;save();}try{localStorage.removeItem(KEY_CANALES_FIRMA);}catch(e){}guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
+function cerrarSesion(){ui.session=null;guardarSesion();try{ui.wl&&ui.wl.release();}catch(e){}ui.wl=null;}
 // Aviso al terminar el tiempo: vibra y suena tres tonos (el sonido se habilita al tocar "Empezar").
 function avisarFin(){try{navigator.vibrate&&navigator.vibrate([300,150,300]);}catch(e){}
   try{const c=ui.audio;if(!c)return;const t=c.currentTime;[660,880,990].forEach((f,i)=>{const o=c.createOscillator(),g=c.createGain(),d=t+i*.25;
@@ -2397,7 +2476,7 @@ function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
   const d=el.dataset;if(!d.a)return null;
   return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
 let abridor=null;
-function render(){ensureState();avisosLuego();canalesLuego();gcalLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+function render(){ensureState();avisosLuego();canalesLuego();gcalLuego();googleLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
   dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
   const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
@@ -2708,6 +2787,16 @@ const A={
  'cal-activar':()=>{if(state.settings.calTodo===undefined){state.settings.calTodo=true;save();}accionCanal('activar_calendario',null,'Listo. Copia el enlace y agrégalo en Google Calendar.');},
  'cal-desactivar':()=>{accionCanal('desactivar_calendario',null,'Listo: el enlace ya no funciona.');},
  'gcal-abrir':()=>{ui.agregarPre=null;abrirGcal();},
+ 'google-conectar':async()=>{ui.googleOcupado=true;rerenderKeepScroll();
+   try{const d=await llamarGoogle('iniciar');location.assign(d.url);}
+   catch(e){ui.googleOcupado=false;rerenderKeepScroll();toast(e&&e.error==='sin_configurar'?'La conexión con Google todavía no está lista.':GCAL_ERRORES[e&&e.error]||'No pude abrir Google. Inténtalo en un momento.');}},
+ 'google-leer':()=>{if(ui.sheet){ui.sheet=null;ui.agregarPre=null;render();}leerGoogle(true);},
+ 'google-desconectar':()=>{ui.sheet=sheetGoogleDejar();render();},
+ 'google-dejar-si':async d=>{const q=d.v==='quitar';ui.sheet=null;ui.googleOcupado=true;rerenderKeepScroll();
+   try{await llamarGoogle('desconectar');}
+   catch(e){if(!(e&&e.error==='no_conectado')){ui.googleOcupado=false;rerenderKeepScroll();toast(GCAL_ERRORES[e&&e.error]||'No pude desconectar Google. Inténtalo en un momento.');return;}}
+   soltarGoogle();ui.google={...(ui.google||{}),conectado:false,estado:null};ui.googleOcupado=false;try{localStorage.removeItem(KEY_GOOGLE_FIRMA);}catch(e){}
+   dejarGcal(q);rerenderKeepScroll();toast(q?'Listo: desconecté Google y quité lo que había traído.':'Listo: desconecté Google. Lo traído se queda.',true);},
  'gcal-ahora':()=>{sincronizarGcal(true);},
  'gcal-dejar':()=>{ui.sheet=sheetGcalDejar();render();},
  'gcal-dejar-si':d=>{const q=d.v==='quitar';dejarGcal(q);ui.sheet=null;rerenderKeepScroll();toast(q?'Listo: ya no traigo tu Google Calendar y quité lo que había traído.':'Listo: ya no traigo tu Google Calendar. Lo traído se queda.',true);},
@@ -2796,7 +2885,7 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
   if(f.dataset.form==='gcal-elegir'){const g=ui.gcal;if(!g||!g.cand)return;const k=new Set(fd.getAll('k').map(String));
     if(!k.size){toast('No marcaste nada. Marca lo que quieras traer o elige «Cancelar».');return;}
     for(const l of g.cand.libres)if(k.has(l.rutina))k.add(l.gcal);   // los días sin clase van con su rutina
-    const el=[...g.cand.rutinas,...g.cand.evals,...g.cand.eventos].filter(x=>k.has(x.gcal)),r=aplicarGcal(g.cand,{elegidos:k,url:g.url});
+    const el=[...g.cand.rutinas,...g.cand.evals,...g.cand.eventos].filter(x=>k.has(x.gcal)),r=aplicarGcal(g.cand,{elegidos:k,url:g.url,fuente:g.fuente});
     const cu=(p,s1,pl)=>{const m=el.filter(x=>x.gcal[0]===p).length;return m?`${m} ${m===1?s1:pl}`:'';},ps=[cu('r','rutina','rutinas'),cu('v','evaluación','evaluaciones'),cu('e','evento','eventos')].filter(Boolean);
     ui.sheet=null;ui.gcal=null;rerenderKeepScroll();toast(`Agregué ${ps.length>1?ps.slice(0,-1).join(', ')+' y '+ps[ps.length-1]:ps[0]} de tu Google Calendar.${r.extra}`,true);return;}
   if(f.dataset.form==='consolidado'){const idx=fd.getAll('cur').map(Number);if(!idx.length){toast('Marca al menos un curso.');return;}
@@ -2883,7 +2972,11 @@ function mensajeError(e){const m=String((e&&(e.message||e.error_description||e.m
   return 'No pudimos completar la acción. Inténtalo otra vez.';}
 function setCuenta(user){const nueva={id:user.id,email:user.email||''},cambio=!state.cuenta||state.cuenta.id!==nueva.id;
   state.cuenta=nueva;if(cambio)state.sub=freeSub(state.sub&&state.sub.history);save();return cambio;}
-function quitarCuenta(){const era=isPro();state.cuenta=null;state.sub=freeSub(state.sub&&state.sub.history);if(era&&state.onboarded)armWeek(true);save();}
+function quitarCuenta(){const era=isPro();state.cuenta=null;state.sub=freeSub(state.sub&&state.sub.history);if(state.gcal&&state.gcal.url)delete state.gcal.url;  // la dirección secreta se olvida
+  if(era&&state.onboarded)armWeek(true);save();
+  // Lo de los canales es de la cuenta: se suelta, y el Deshacer pendiente ya no aplica (no devuelve la dirección secreta).
+  ui.canales=undefined;ui.google=undefined;soltarGoogle();undoStack=null;undoTras=null;quitarAvisoDeshacer();
+  try{localStorage.removeItem(KEY_CANALES_FIRMA);localStorage.removeItem(KEY_GOOGLE_FIRMA);}catch(e){}}
 function refrescarPlan(avisar){return sbRpc('mi_suscripcion').then(f=>{aplicarFila(f,avisar);if(calm())rerenderKeepScroll();return f;});}
 // Si la cuenta se creó desde el muro de pago, el pago sigue después de confirmar el correo, aunque la página se recargue.
 const KEY_PAGO='lia.alConfirmar';
@@ -3008,7 +3101,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.9.0';
+const APP_VERSION='0.10.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -3062,6 +3155,8 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
     toast(`Tu sesión terminó mientras LIA estaba cerrada. Registré ${hrs(min)} de ${e.course}.`,true);return;}
   render();tick();pedirPantalla();})();
 iniciarCuentas();
+alVolverDeGoogle();
+if(state.cuenta&&state.gcal&&state.gcal.fuente==='google')cargarGoogle();
 setInterval(()=>{if(!ui.session&&!ui.sheet&&!ui.listen&&!document.activeElement.matches('input,select'))rerenderKeepScroll();},60000);
 </script>
 </body>
