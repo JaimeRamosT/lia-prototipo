@@ -1976,7 +1976,7 @@ async function avisoDePrueba(){ui.avisosOcupado=true;rerenderKeepScroll();
 // ---------- Canales: Google Calendar (enlace iCal, sin Google Cloud) y WhatsApp (docs/canales.md) ----------
 // Para cuentas con sesión. Al activar uno, la app publica en Supabase sus próximas sesiones de estudio y evaluaciones
 // con su nombre (es lo que se ve en el calendario y en WhatsApp); al desactivar los dos, se borran.
-const WA_LIA='';  // El número de WhatsApp de LIA (el de prueba de Meta o el propio), solo dígitos con código de país: '15551234567'.
+const WA_LIA='15551404567';  // número de prueba de Meta (2-nov-2026)  // El número de WhatsApp de LIA (el de prueba de Meta o el propio), solo dígitos con código de país: '15551234567'.
 const CAL_FN=()=>`${SB_CFG.url}/functions/v1/lia-calendario?t=`;
 const KEY_CANALES_FIRMA='lia.canales.firma';
 function canalesActivos(c=ui.canales){return !!(c&&(c.calendario||(c.whatsapp&&c.whatsapp.verificado)));}
@@ -2686,7 +2686,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.8.0';
+const APP_VERSION='0.8.1';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
