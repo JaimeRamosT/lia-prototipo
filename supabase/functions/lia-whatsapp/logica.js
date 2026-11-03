@@ -3,12 +3,40 @@
 //   - POST de Meta (firmado con WHATSAPP_APP_SECRET): mensajes que llegan. «LIA 123456» vincula el número; luego
 //     responde «¿qué tengo hoy?», «mañana», «semana», «pausa» y «avisos»; lo demás, con la IA si hay GROQ_API_KEY.
 //   - POST de pg_cron (cabecera x-lia-cron): avisos 15 minutos antes de estudiar y 2 horas antes de una evaluación.
+//   - POST de la app (con la sesión de la persona, {accion:'codigo', numero}): pide el código y se lo envía por WhatsApp
+//     con la plantilla de autenticación WHATSAPP_PLANTILLA_CODIGO; la persona lo escribe en la app.
 // verify_jwt está apagado: Meta y pg_cron no tienen sesión; cada llamada se revisa aquí.
 // Solo lee la agenda que la app publicó; no cambia el horario. Los registros nunca llevan textos ni números.
 
 export const API = 'https://graph.facebook.com';
 export const VERSION_API = 'v23.0';
 export const ZONA = -5 * 60;  // Lima, sin horario de verano
+
+// Direcciones desde las que la app puede pedir el código (las mismas que lia-ia).
+export const ORIGENES = [
+  'https://lia-prototipo.jaime-ramos-93c.workers.dev',
+  /^https:\/\/[a-z0-9-]+-lia-prototipo\.jaime-ramos-93c\.workers\.dev$/,
+  /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?$/,
+];
+export function origenPermitido(origen) {
+  if (!origen) return true;
+  return ORIGENES.some(o => (typeof o === 'string' ? o === origen : o.test(origen)));
+}
+export function cabecerasCors(origen) {
+  return {
+    'Access-Control-Allow-Origin': origen && origenPermitido(origen) ? origen : ORIGENES[0],
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+// Igual que pedir_codigo_whatsapp(): solo dígitos; un celular peruano de 9 dígitos lleva el 51 delante.
+export function normalizarNumero(n) {
+  let v = String(n || '').replace(/[^0-9]/g, '');
+  if (v.length === 9 && v[0] === '9') v = '51' + v;
+  return /^[0-9]{8,15}$/.test(v) ? v : null;
+}
 
 export function claveServidor(env) {
   try {
@@ -114,6 +142,28 @@ async function respuestaIA(deps, texto, filas, ahora) {
 
 // Envía un mensaje. Fuera de la ventana de 24 horas, Meta exige una plantilla aprobada (WHATSAPP_PLANTILLA, con
 // dos variables: la hora y lo que toca); si no hay, se intenta como texto (sirve dentro de las 24 horas).
+async function postMeta(deps, cuerpo) {
+  const token = deps.env('WHATSAPP_TOKEN'), id = deps.env('WHATSAPP_PHONE_ID');
+  if (!token || !id) return { ok: false, error: 'sin_configurar' };
+  try {
+    const res = await deps.fetch(`${API}/${deps.env('WHATSAPP_API_VERSION') || VERSION_API}/${id}/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(cuerpo),
+    });
+    return res.ok ? { ok: true } : { ok: false, error: 'meta', http: res.status };
+  } catch { return { ok: false, error: 'red' }; }
+}
+// El código de vinculación, con la plantilla de autenticación (categoría «Autenticación», botón «Copiar código»).
+// Si la plantilla no tiene botón, Meta responde 400 y se reintenta solo con el cuerpo.
+export async function enviarCodigo(deps, numero, codigo) {
+  const nombre = deps.env('WHATSAPP_PLANTILLA_CODIGO');
+  if (!nombre) return { ok: false, error: 'sin_plantilla' };
+  const plantilla = botones => ({ messaging_product: 'whatsapp', to: numero, type: 'template', template: {
+    name: nombre, language: { code: deps.env('WHATSAPP_PLANTILLA_CODIGO_IDIOMA') || 'es' },
+    components: [{ type: 'body', parameters: [{ type: 'text', text: codigo }] },
+      ...(botones ? [{ type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: codigo }] }] : [])] } });
+  const r = await postMeta(deps, plantilla(true));
+  return r.ok || r.http !== 400 ? r : postMeta(deps, plantilla(false));
+}
 export async function enviar(deps, numero, texto, { plantilla = null } = {}) {
   const token = deps.env('WHATSAPP_TOKEN'), id = deps.env('WHATSAPP_PHONE_ID');
   if (!token || !id) return { ok: false, error: 'sin_configurar' };
@@ -153,10 +203,12 @@ async function atender(deps, numero, texto, ahora) {
 
 export async function manejar(req, deps) {
   const inicio = Date.now(), ahora = deps.ahora ? deps.ahora() : new Date();
+  const origen = req.headers.get('origin'), cors = cabecerasCors(origen);
   const responder = (status, cuerpo, extra = {}) => {
     deps.log({ evento: 'lia-whatsapp', estado: status, ms: Date.now() - inicio, ...extra });
-    return new Response(typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo), { status, headers: { 'Content-Type': typeof cuerpo === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8' } });
+    return new Response(typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo), { status, headers: { ...cors, 'Content-Type': typeof cuerpo === 'string' ? 'text/plain; charset=utf-8' : 'application/json; charset=utf-8' } });
   };
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   const u = new URL(req.url);
   if (req.method === 'GET') {
     const esperado = deps.env('WHATSAPP_VERIFY_TOKEN');
@@ -183,6 +235,37 @@ export async function manejar(req, deps) {
       if (r.ok) enviados++; else errores.push(r.http || r.error);
     }
     return responder(200, { ok: true, enviados }, { avisos: (filas || []).length, enviados, errores: errores.slice(0, 5) });
+  }
+
+  // ---- La app: enviar el código de vinculación por WhatsApp ----
+  const autorizacion = req.headers.get('authorization') || '';
+  if (!req.headers.get('x-hub-signature-256') && /^Bearer\s+\S+$/.test(autorizacion)) {
+    if (!origenPermitido(origen)) return responder(403, { ok: false, error: 'origen' });
+    let pedido;
+    try { pedido = JSON.parse(await req.text()); } catch { pedido = null; }
+    if (!pedido || pedido.accion !== 'codigo') return responder(400, { ok: false, error: 'pedido' });
+    const numero = normalizarNumero(pedido.numero);
+    if (!numero) return responder(400, { ok: false, error: 'numero_invalido' }, { paso: 'codigo' });
+    let res, datos;
+    try {
+      res = await deps.fetch(`${deps.env('SUPABASE_URL')}/rest/v1/rpc/pedir_codigo_whatsapp`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: req.headers.get('apikey') || deps.env('SUPABASE_ANON_KEY') || '', Authorization: autorizacion },
+        body: JSON.stringify({ p_numero: String(pedido.numero) }),
+      });
+      datos = await res.json().catch(() => null);
+    } catch { return responder(503, { ok: false, error: 'ocupado' }, { paso: 'codigo' }); }
+    if (!res.ok || typeof datos !== 'string') {
+      const m = String((datos && (datos.message || datos.code)) || '');
+      const error = /espera|numero_ocupado|numero_invalido/.exec(m)?.[0] || (res.status === 401 || /42501|sesion|JWT/.test(m) ? 'sesion' : 'ocupado');
+      return responder(error === 'ocupado' ? 503 : error === 'sesion' ? 401 : 400, { ok: false, error }, { paso: 'codigo' });
+    }
+    const env = await enviarCodigo(deps, numero, datos);
+    if (env.ok) {
+      try { await rpc(deps, 'codigo_whatsapp_enviado', { p_numero: numero }); } catch { return responder(200, { ok: true, enviado: false, motivo: 'base' }, { paso: 'codigo' }); }
+      return responder(200, { ok: true, enviado: true }, { paso: 'codigo' });
+    }
+    // Sin plantilla o si Meta no lo envió: la app muestra el código para que la persona se lo envíe a LIA.
+    return responder(200, { ok: true, enviado: false, motivo: env.error }, { paso: 'codigo', http: env.http || null });
   }
 
   // ---- Meta: mensajes que llegan ----
