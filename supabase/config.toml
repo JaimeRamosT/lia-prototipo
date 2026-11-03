@@ -400,6 +400,20 @@ verify_jwt = true
 enabled = true
 verify_jwt = false
 
+# Canales (docs/canales.md y docs/google.md): Google, Meta y pg_cron las llaman sin sesión; cada una revisa sus llamadas
+# (token del enlace, firma de Meta, secreto de cada canal de Google, sesión de la app), por eso verify_jwt está apagado.
+[functions.lia-calendario]
+enabled = true
+verify_jwt = false
+
+[functions.lia-whatsapp]
+enabled = true
+verify_jwt = false
+
+[functions.lia-google]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

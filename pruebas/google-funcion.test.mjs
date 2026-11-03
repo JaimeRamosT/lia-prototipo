@@ -16,8 +16,11 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
   const g = { primario, lia: [...lia], calLiaExiste, creados: [], borrados: [], calendariosCreados: 0, calendariosBorrados: 0, watch: [], stop: [], revocados: [], tokens: [] };
   const logs = [];
   const rpc = {
-    google_nuevo_estado: ({ p_user, p_origen }) => { const e = 'estado' + (Object.keys(db.estados).length + 1); db.estados[e] = { user_id: p_user, origen: p_origen }; return e; },
-    google_tomar_estado: ({ p_estado }) => { const e = db.estados[p_estado]; delete db.estados[p_estado]; return e || null; },
+    google_nuevo_estado: ({ p_user, p_origen, p_nonce }) => { const e = 'estado' + (Object.keys(db.estados).length + 1); db.estados[e] = { user_id: p_user, origen: p_origen, nonce: p_nonce }; return e; },
+    google_ver_estado: ({ p_estado }) => { const e = db.estados[p_estado]; return e && !e.listo ? { user_id: e.user_id, origen: e.origen } : null; },
+    google_estado_listo: ({ p_estado, p_refresh }) => { const e = db.estados[p_estado]; if (!e || e.listo) return false; e.listo = true; e.refresh = p_refresh; return true; },
+    google_confirmar_estado: ({ p_estado, p_user, p_nonce }) => { const e = db.estados[p_estado]; if (!e || !e.listo || e.user_id !== p_user || e.nonce !== p_nonce) return null; delete db.estados[p_estado]; return { refresh: e.refresh }; },
+    google_limpiar_estados: () => null,
     google_guardar: a => { const v = db.cuentas[a.p_user] || {}; db.cuentas[a.p_user] = { ...v, refresh: a.p_refresh || v.refresh, cal_lia: a.p_cal, canal_id: a.p_canal_id, canal_recurso: a.p_canal_recurso, canal_token: a.p_canal_token, canal_vence: a.p_canal_vence, estado: 'activa' }; return null; },
     google_cuenta: ({ p_user }) => db.cuentas[p_user] || null,
     google_por_canal: ({ p_canal }) => { const [id, c] = Object.entries(db.cuentas).find(([, c]) => c.canal_id === p_canal) || []; return id ? { user_id: id, canal_token: c.canal_token } : null; },
@@ -31,11 +34,11 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
   };
   const json = (cuerpo, status = 200) => new Response(cuerpo == null ? null : JSON.stringify(cuerpo), { status, headers: { 'Content-Type': 'application/json' } });
   const deps = {
-    env: k => env[k], log: d => logs.push(d), ahora: () => AHORA, id: (() => { let n = 0; return () => 'id' + (++n); })(),
+    env: k => env[k], log: d => logs.push(d), ahora: () => AHORA, id: (() => { let n = 0; return () => 'id' + (++n); })(), esperar: async () => { g.esperas = (g.esperas || 0) + 1; },
     fetch: async (url, op = {}) => {
       url = String(url); const metodo = op.method || 'GET', cuerpo = op.body ? (typeof op.body === 'string' ? op.body : op.body.toString()) : '';
       db.llamadas.push({ url, metodo });
-      if (url === `${SB}/auth/v1/user`) return op.headers.Authorization === 'Bearer bueno' ? json({ id: 'u1', email: 'ana@gmail.com' }) : json({}, 401);
+      if (url === `${SB}/auth/v1/user`) return op.headers.Authorization === 'Bearer bueno' ? json({ id: 'u1', email: 'ana@gmail.com' }) : op.headers.Authorization === 'Bearer otro' ? json({ id: 'u2' }) : json({}, 401);
       if (url.startsWith(`${SB}/rest/v1/rpc/`)) {
         assert.equal(op.headers.apikey, 'srv', 'las funciones de la base se llaman con la clave del servidor');
         const fn = url.split('/').pop(); const r = rpc[fn](JSON.parse(cuerpo || '{}')); return json(r === undefined ? null : r);
@@ -49,6 +52,7 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
       assert.ok(url.startsWith(CAL), url);
       assert.match(op.headers.Authorization, /^Bearer at[12]$/);
       const ruta = url.slice(CAL.length).split('?')[0], q = new URL(url).searchParams;
+      if (g.limite && g.limite-- > 0) return json({ error: { code: 403, errors: [{ reason: 'rateLimitExceeded' }] } }, 403);
       if (ruta === '/calendars' && metodo === 'POST') { g.calendariosCreados++; g.calLiaExiste = true; g.nuevoCal = JSON.parse(cuerpo); return json({ id: 'lia-nuevo@group.calendar.google.com' }); }
       if (ruta === '/calendars/primary/events/watch') { const b = JSON.parse(cuerpo); g.watch.push(b); return json({ id: b.id, resourceId: 'recurso-' + b.id, expiration: String(AHORA.getTime() + 7 * 864e5) }); }
       if (ruta === '/channels/stop') { g.stop.push(JSON.parse(cuerpo)); return new Response(null, { status: 204 }); }
@@ -75,13 +79,16 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
 const app = (cuerpo, { token = 'bueno', origen = ORIGEN } = {}) => new Request(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: 'anon', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(origen ? { Origin: origen } : {}) }, body: JSON.stringify(cuerpo) });
 const leerJson = async r => [r.status, await r.json()];
 const CUENTA = { refresh: 'rt1', cal_lia: 'lia@group.calendar.google.com', canal_id: 'canal1', canal_recurso: 'recurso1', canal_token: 'secreto-canal', canal_vence: '2026-10-27T15:00:00Z', estado: 'activa' };  // vence mañana
-const sinSecretos = s => { const t = JSON.stringify(s); for (const x of ['rt1', 'at1', 'at2', 'secreto-del-cliente', 'secreto-canal', 'ana@gmail.com', 'Cálculo', 'Parcial', '"c1"', 'bueno']) assert.ok(!t.includes(x), `el registro lleva ${x}`); };
+const NONCE = 'a'.repeat(32) + 'b'.repeat(32);
+const iniciar = (deps, op) => G.manejar(app({ accion: 'iniciar', nonce: NONCE }, op), deps);
+const sinSecretos = s => { const t = JSON.stringify(s); for (const x of ['rt1', 'at1', 'at2', 'secreto-del-cliente', 'secreto-canal', 'ana@gmail.com', 'Cálculo', 'Parcial', '"c1"', 'bueno', 'aaaaaaaa']) assert.ok(!t.includes(x), `el registro lleva ${x}`); };
 
 test('iniciar: sin las claves de Google, lo dice; con ellas, la dirección de permiso con un estado de un solo uso', async () => {
   let s = simular({ env: { ...ENV, GOOGLE_CLIENT_ID: '' } });
-  assert.deepEqual(await leerJson(await G.manejar(app({ accion: 'iniciar' }), s.deps)), [503, { ok: false, error: 'sin_configurar' }]);
+  assert.deepEqual(await leerJson(await iniciar(s.deps)), [503, { ok: false, error: 'sin_configurar' }]);
   s = simular();
-  const [st, r] = await leerJson(await G.manejar(app({ accion: 'iniciar' }), s.deps));
+  assert.equal((await iniciar(s.deps, undefined).then(() => G.manejar(app({ accion: 'iniciar' }), s.deps))).status, 400, 'sin el nonce del navegador, no');
+  const [st, r] = await leerJson(await iniciar(s.deps));
   assert.equal(st, 200);
   const u = new URL(r.url);
   assert.equal(u.origin + u.pathname, 'https://accounts.google.com/o/oauth2/v2/auth');
@@ -89,26 +96,31 @@ test('iniciar: sin las claves de Google, lo dice; con ellas, la dirección de pe
   assert.equal(u.searchParams.get('redirect_uri'), FN);
   assert.deepEqual([u.searchParams.get('response_type'), u.searchParams.get('access_type'), u.searchParams.get('prompt')], ['code', 'offline', 'consent']);
   assert.deepEqual(u.searchParams.get('scope').split(' '), G.ALCANCES);
-  assert.equal(u.searchParams.get('state'), 'estado1');
-  assert.deepEqual(s.db.estados.estado1, { user_id: 'u1', origen: ORIGEN });
+  assert.equal(u.searchParams.get('state'), 'estado2');
+  assert.deepEqual(Object.keys(s.db.estados.estado2), ['user_id', 'origen', 'nonce']);
+  assert.match(s.db.estados.estado2.nonce, /^[a-f0-9]{64}$/, 'en la base, solo el hash del nonce');
+  assert.notEqual(s.db.estados.estado2.nonce, NONCE);
   sinSecretos(s.logs);
 });
 
 test('estado: configurado y conectado, sin datos de la cuenta', async () => {
   const s = simular({ cuenta: CUENTA });
-  assert.deepEqual(await leerJson(await G.manejar(app({ accion: 'estado' }), s.deps)), [200, { ok: true, configurado: true, conectado: true, estado: 'activa' }]);
+  assert.deepEqual(await leerJson(await G.manejar(app({ accion: 'estado' }), s.deps)), [200, { ok: true, configurado: true, conectado: true, estado: 'activa', avisos: true }]);
   const n = simular({ env: { ...ENV, GOOGLE_CLIENT_SECRET: '' } });
-  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'estado' }), n.deps)))[1], { ok: true, configurado: false, conectado: false, estado: null });
+  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'estado' }), n.deps)))[1], { ok: true, configurado: false, conectado: false, estado: null, avisos: false });
 });
 
-test('regreso de Google: canjea el código, crea el calendario «LIA», pide avisos y vuelve a la app', async () => {
+test('regreso de Google: canjea el código y deja el permiso pendiente; la app de esa cuenta lo confirma', async () => {
   const s = simular();
-  await G.manejar(app({ accion: 'iniciar' }), s.deps);
+  await iniciar(s.deps);
   const r = await G.manejar(new Request(`${FN}?code=c1&state=estado1&scope=x`), s.deps);
   assert.equal(r.status, 302);
-  assert.equal(r.headers.get('Location'), `${ORIGEN}/?google=ok`);
+  assert.equal(r.headers.get('Location'), `${ORIGEN}/?google=ok&e=estado1`);
   assert.equal(s.g.tokens[0].redirect_uri, FN);
   assert.equal(s.g.tokens[0].client_secret, ENV.GOOGLE_CLIENT_SECRET);
+  assert.deepEqual(s.db.cuentas, {}, 'todavía no se conecta nada');
+  assert.equal(s.g.calendariosCreados, 0);
+  assert.deepEqual(await leerJson(await G.manejar(app({ accion: 'confirmar', estado: 'estado1', nonce: NONCE }), s.deps)), [200, { ok: true, avisos: true }]);
   assert.deepEqual([s.g.nuevoCal.summary, s.g.nuevoCal.timeZone], ['LIA', 'America/Lima']);
   assert.equal(s.g.watch[0].address, FN);
   assert.equal(s.g.watch[0].type, 'web_hook');
@@ -116,7 +128,21 @@ test('regreso de Google: canjea el código, crea el calendario «LIA», pide avi
   const c = s.db.cuentas.u1;
   assert.deepEqual([c.refresh, c.cal_lia, c.canal_recurso], ['rt1', 'lia-nuevo@group.calendar.google.com', 'recurso-' + s.g.watch[0].id]);
   assert.equal(s.db.estados.estado1, undefined, 'el estado se usa una sola vez');
+  assert.equal((await leerJson(await G.manejar(app({ accion: 'confirmar', estado: 'estado1', nonce: NONCE }), s.deps)))[0], 403);
   sinSecretos(s.logs);
+});
+
+test('nadie ata su Google a la cuenta de otro: confirmar exige la misma cuenta y el nonce de ese navegador', async () => {
+  // La atacante (u1) inicia y manda la dirección de Google a la víctima, que da permiso.
+  const s = simular();
+  await iniciar(s.deps);
+  await G.manejar(new Request(`${FN}?code=c1&state=estado1`), s.deps);
+  // La víctima vuelve a LIA con su propia sesión (u2): no se conecta nada.
+  assert.equal((await leerJson(await G.manejar(app({ accion: 'confirmar', estado: 'estado1', nonce: NONCE }, { token: 'otro' }), s.deps)))[0], 403);
+  // Sin el nonce de quien inició, tampoco.
+  assert.equal((await leerJson(await G.manejar(app({ accion: 'confirmar', estado: 'estado1', nonce: 'c'.repeat(64) }), s.deps)))[0], 403);
+  assert.deepEqual(s.db.cuentas, {});
+  assert.equal(s.g.calendariosCreados, 0);
 });
 
 test('regreso de Google: errores vuelven a la app sin guardar nada', async () => {
@@ -127,22 +153,22 @@ test('regreso de Google: errores vuelven a la app sin guardar nada', async () =>
   ];
   for (const [q, motivo] of casos) {
     const s = simular();
-    await G.manejar(app({ accion: 'iniciar' }), s.deps);
+    await iniciar(s.deps);
     const r = await G.manejar(new Request(FN + q), s.deps);
     assert.equal(r.headers.get('Location'), `${ORIGEN}/?google=${motivo}`, q);
     assert.deepEqual(s.db.cuentas, {}, q);
   }
   // Sin el permiso de leer los eventos, no sirve.
   const s = simular({ alcances: [G.ALCANCES[0]] });
-  await G.manejar(app({ accion: 'iniciar' }), s.deps);
+  await iniciar(s.deps);
   assert.equal((await G.manejar(new Request(`${FN}?code=c1&state=estado1`), s.deps)).headers.get('Location'), `${ORIGEN}/?google=permisos`);
   assert.deepEqual(s.db.cuentas, {});
   // Solo se vuelve a direcciones de LIA; una vista previa también vale.
   const p = simular(), previa = 'https://feat-x-lia-prototipo.jaime-ramos-93c.workers.dev';
-  await G.manejar(app({ accion: 'iniciar' }, { origen: previa }), p.deps);
-  assert.equal((await G.manejar(new Request(`${FN}?code=c1&state=estado1`), p.deps)).headers.get('Location'), `${previa}/?google=ok`);
+  await iniciar(p.deps, { origen: previa });
+  assert.equal((await G.manejar(new Request(`${FN}?code=c1&state=estado1`), p.deps)).headers.get('Location'), `${previa}/?google=ok&e=estado1`);
   const o = simular();
-  assert.equal((await leerJson(await G.manejar(app({ accion: 'iniciar' }, { origen: 'https://otra.pe' }), o.deps)))[0], 403);
+  assert.equal((await leerJson(await iniciar(o.deps, { origen: 'https://otra.pe' })))[0], 403);
 });
 
 test('aviso de Google: con el secreto del canal suma una señal; sin él, nada', async () => {
@@ -227,7 +253,7 @@ test('escribir: el calendario «LIA» queda igual a lo de LIA, por diferencia y 
   assert.match(c.id, /^[a-v0-9]{5,1024}$/, 'formato de id de Google');
   assert.deepEqual([c.summary, c.start.dateTime, c.end.dateTime, c.start.timeZone], ['Parcial de Física', '2026-11-05T09:00:00-05:00', '2026-11-05T10:00:00-05:00', 'America/Lima']);
   assert.match(c.description, /Evaluación anotada en LIA/);
-  assert.equal(s.g.consultaLia.timeMin, '2026-10-25T05:00:00.000Z', 'lo de antes de ayer no se toca');
+  assert.equal(s.g.consultaLia.timeMin, '2026-10-26T05:00:00.000Z', 'desde hoy: lo que ya pasó se queda en el calendario');
   // Una segunda escritura igual no cambia nada.
   assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps)))[1], { ok: true, creados: 0, borrados: 0 });
   sinSecretos(s.logs);
@@ -241,6 +267,31 @@ test('escribir: si la persona borró el calendario «LIA», se vuelve a crear; l
   assert.equal(s.db.cuentas.u1.cal_lia, 'lia-nuevo@group.calendar.google.com');
   for (const malo of [{ eventos: 'x' }, { eventos: Array(301).fill(evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'E')) }, { eventos: [{ inicio: 'ayer', fin: 'hoy', titulo: 'x' }] }])
     assert.deepEqual(await leerJson(await G.manejar(app({ accion: 'escribir', ...malo }), simular({ cuenta: CUENTA }).deps)), [400, { ok: false, error: 'pedido' }]);
+});
+
+test('escribir: ante el límite de Google, espera y reintenta', async () => {
+  const s = simular({ cuenta: CUENTA });
+  s.g.limite = 2;
+  const [st, r] = await leerJson(await G.manejar(app({ accion: 'escribir', eventos: [evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'Estudiar')] }), s.deps));
+  assert.deepEqual([st, r.creados], [200, 1]);
+  assert.equal(s.g.esperas, 2);
+});
+
+test('desconectar: si Google falla (no es un permiso quitado), no borra nada y se puede reintentar', async () => {
+  const s = simular({ cuenta: CUENTA });
+  const orig = s.deps.fetch;
+  s.deps.fetch = (url, op) => String(url) === 'https://oauth2.googleapis.com/token' ? Promise.resolve(new Response('{}', { status: 500 })) : orig(url, op);
+  assert.equal((await leerJson(await G.manejar(app({ accion: 'desconectar' }), s.deps)))[0], 502);
+  assert.ok(s.db.cuentas.u1, 'la cuenta sigue');
+  // Con el permiso ya quitado en Google, igual se borra lo de LIA.
+  const v = simular({ cuenta: CUENTA, refreshVencido: true });
+  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'desconectar' }), v.deps)))[1], { ok: true });
+  assert.deepEqual(v.db.cuentas, {});
+});
+
+test('iguales: compara secretos completos', () => {
+  assert.ok(G.iguales('abc', 'abc'));
+  assert.ok(!G.iguales('abc', 'abd') && !G.iguales('abc', 'ab') && !G.iguales('', '') && !G.iguales('abc', null));
 });
 
 test('desconectar: deja de avisar, revoca el permiso, borra el calendario «LIA» y la cuenta', async () => {

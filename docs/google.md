@@ -32,14 +32,16 @@ Con el enlace iCal, Google tarda hasta 24 horas en mostrar lo de LIA, y LIA solo
 Piezas:
 
 - **`lia-google`** (Edge Function, `verify_jwt` apagado porque la llaman Google y `pg_cron`; la app manda su sesión y se revisa aquí):
-  - `iniciar`: crea un estado de un solo uso (10 minutos) y devuelve la dirección de Google para dar permiso: `calendar.app.created` (crear y escribir el calendario «LIA») y `calendar.events.readonly` (leer los eventos).
-  - `GET ?code&state` (regreso de Google): canjea el código, guarda el *refresh token* en Vault, crea el calendario «LIA», pide a Google que avise de cada cambio del calendario principal (`events.watch`) y vuelve a la app con `?google=ok`.
+  - `iniciar`: crea un estado de un solo uso (10 minutos) atado a la cuenta de LIA y al hash de un nonce que guarda ese navegador, y devuelve la dirección de Google para dar permiso: `calendar.app.created` (crear y escribir el calendario «LIA») y `calendar.events.readonly` (leer los eventos).
+  - `GET ?code&state` (regreso de Google): canjea el código, deja el *refresh token* pendiente en Vault y vuelve a la app con `?google=ok&e=<estado>`.
+  - `confirmar`: la app, con su sesión y su nonce, cierra la conexión: crea (o reusa) el calendario «LIA», pide a Google que avise de cada cambio del calendario principal (`events.watch`) y guarda la cuenta. Así nadie puede atar su Google a la cuenta de otro ni el de otro a la suya (hallazgo del revisor: CSRF de vinculación).
   - `POST` de Google (aviso de cambio, con `X-Goog-Channel-Token`): suma 1 a `google_senal` de esa persona. No lee ni guarda eventos.
   - `leer`: pide a Google los eventos del calendario principal (desde ayer hasta 120 días) y los devuelve como iCal. La app usa la misma lógica de la 0.9.0 (`leerIcs`, `deCalendario`, `fusionarGcal`).
-  - `escribir`: recibe lo de LIA de los próximos 14 días y deja el calendario «LIA» igual: borra lo que sobra y crea lo que falta, con ids estables.
+  - `escribir`: recibe lo de LIA de los próximos 14 días y deja el calendario «LIA» igual desde hoy: borra lo que sobra y crea lo que falta, con ids estables, de a 3 y reintentando ante los límites de Google. Si falla, la app espera 1, 2, 4… hasta 15 minutos.
   - `desconectar`: deja de recibir avisos, revoca el permiso, borra el calendario «LIA» y la cuenta.
   - `pg_cron` (cada hora): renueva los avisos que vencen en menos de dos días (Google los da por 7 días).
-- **Base** (`supabase/migrations/…_google.sql`): `google_cuentas` (calendario «LIA», canal de avisos y referencia al secreto de Vault; solo `service_role`), `google_estados` (los estados del permiso) y `google_senal` (un contador por persona, que la app lee con Realtime; cada uno ve solo el suyo).
+- **Base** (`supabase/migrations/…_google.sql`): `google_cuentas` (calendario «LIA», canal de avisos y referencia al secreto de Vault; solo `service_role`), `google_estados` (los estados del permiso y el permiso pendiente) y `google_senal` (un contador por persona, que la app lee con Realtime; cada uno ve solo el suyo). Al borrar una cuenta (también si se borra el usuario), su secreto sale de Vault.
+- Si Google no acepta el aviso (`events.watch`), la conexión igual funciona: la app lee al abrirse y al volver a la pestaña, y la tarjeta lo dice.
 - **App**: Perfil → «Google Calendar» → «Conectar con Google». Al volver, abre la vista previa de la 0.9.0 para elegir qué entra. Después, cada aviso de Realtime (o volver a la pestaña) trae los cambios solos, y cada cambio del plan escribe en Google.
 
 Privacidad: el servidor no guarda eventos ni títulos; solo el permiso (en Vault), el id del calendario «LIA» y el canal de avisos. Los eventos pasan por `lia-google` en cada lectura o escritura y no se registran. El permiso de Google se puede quitar desde LIA («Desconectar») o desde la cuenta de Google.

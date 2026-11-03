@@ -24,14 +24,15 @@ async function preparar(dispositivo, { configurado = true } = {}) {
     const b = r.request().postDataJSON(), resp = d => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, ...d }) });
     g.pedidos.push(b.accion);
     if (r.request().headers().authorization !== 'Bearer sesion-de-prueba') return r.fulfill({ status: 401, contentType: 'application/json', body: '{"ok":false,"error":"sesion"}' });
-    if (b.accion === 'estado') return resp({ configurado, conectado: g.conectado, estado: g.conectado ? 'activa' : null });
-    if (b.accion === 'iniciar') return resp({ url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=e1' });
+    if (b.accion === 'estado') return resp({ configurado, conectado: g.conectado, estado: g.conectado ? 'activa' : null, avisos: true });
+    if (b.accion === 'iniciar') { assert.match(b.nonce, /^[a-f0-9]{64}$/); g.nonce = b.nonce; return resp({ url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x&state=e1' }); }
+    if (b.accion === 'confirmar') { if (b.estado !== 'e1' || b.nonce !== g.nonce) return r.fulfill({ status: 403, contentType: 'application/json', body: '{"ok":false,"error":"estado"}' }); g.conectado = true; return resp({ avisos: true }); }
     if (b.accion === 'leer') return resp({ ics: g.ics });
     if (b.accion === 'escribir') { g.escritos.push(b.eventos); return resp({ creados: b.eventos.length, borrados: 0 }); }
     if (b.accion === 'desconectar') { g.conectado = false; return resp({}); }
   });
-  // Google da el permiso y vuelve a LIA.
-  await ctx.route('https://accounts.google.com/**', r => { g.conectado = true; return r.fulfill({ status: 302, headers: { Location: srv.url + '?google=ok' } }); });
+  // Google da el permiso y vuelve a LIA; la conexión se cierra cuando la app confirma con su nonce.
+  await ctx.route('https://accounts.google.com/**', r => r.fulfill({ status: 302, headers: { Location: srv.url + '?google=ok&e=e1' } }));
   // La sesión que supabase-js guarda y recupera (también al volver de Google).
   const sesion = () => localStorage.setItem('lia.auth', JSON.stringify({ access_token: 'sesion-de-prueba', token_type: 'bearer', expires_in: 3600,
     expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'r', user: { id: 'u1', email: 'ana@correo.pe', aud: 'authenticated', role: 'authenticated' } }));
@@ -51,7 +52,8 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     // Vuelve de Google: la vista previa se abre sola.
     const hoja = pg.locator('.sheet');
     await hoja.getByRole('button', { name: 'Agregar a LIA' }).waitFor({ timeout: 15000 });
-    assert.ok(!(await pg.evaluate(() => location.search)).includes('google='), 'la dirección queda limpia');
+    assert.ok(!/google=|e=/.test(await pg.evaluate(() => location.search)), 'la dirección queda limpia');
+    assert.ok(g.pedidos.includes('confirmar'), 'la app confirma con su nonce');
     assert.match(await hoja.innerText(), /Inglés[\s\S]*Parcial de Física/);
     await hoja.getByRole('button', { name: 'Agregar a LIA' }).click();
     await pg.getByText(/Agregué 1 rutina y 1 evaluación de tu Google Calendar/).waitFor();
@@ -90,6 +92,16 @@ test('sin las claves de Google en el servidor, la tarjeta sigue con el enlace iC
   const { ctx, pg, errores } = await preparar('iPhone', { configurado: false });
   await pg.getByRole('button', { name: 'Traer mi Google Calendar' }).waitFor();
   assert.equal(await pg.getByRole('button', { name: 'Conectar con Google' }).count(), 0);
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
+
+test('volver de Google en otro navegador (sin el nonce) no conecta nada', async () => {
+  const { ctx, pg, errores, g } = await preparar('iPhone');
+  await pg.goto(srv.url + '?google=ok&e=e1');
+  await pg.getByText('No pude conectar con Google. Inténtalo otra vez.').waitFor();
+  assert.ok(!g.pedidos.includes('confirmar'));
+  assert.equal(g.conectado, false);
   assert.deepEqual(errores, []);
   await ctx.close();
 });
