@@ -2121,7 +2121,7 @@ function iaPosible(){return isPro()&&cuentasActivas();}
 function iaActiva(){return iaPosible()&&iaEleccion()==='si';}
 function iaCard(){if(!iaPosible())return '';const on=iaActiva(),r=ui.iaRestantes;
   return `<div class="card stack"><span class="eyebrow">Lía con IA</span>
-   <div class="small muted">${on?`Lía entiende tus mensajes con Gemini.${typeof r==='number'?` Hoy te quedan ${r} ${r===1?'mensaje':'mensajes'} con IA.`:''}`:'Lía entiende solo frases simples. Con la IA entiende tus mensajes como los escribes.'}</div>
+   <div class="small muted">${on?`Lía usa la IA cuando no entiende una frase por sí sola: Groq y, si no responde, Gemini.${typeof r==='number'?` Hoy te quedan ${r} ${r===1?'mensaje':'mensajes'} con IA.`:''}`:'Lía entiende solo frases simples. Con la IA entiende tus mensajes como los escribes.'}</div>
    ${on?'<button class="btn sec sm" data-a="ia-apagar">Apagar la IA</button>':'<button class="btn sec sm" data-a="ia-prender">Usar Lía con IA</button>'}</div>`;}
 // ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
 // Cada teléfono se registra para recibir avisos (Web Push) y programa los suyos en Supabase: solo hora, tipo y una
@@ -2668,7 +2668,7 @@ function responder(q,from,r,n,{eco=true}={}){
 // ---------- Lía con IA: envío a la función lia-ia ----------
 const IA_TIEMPO=15000;  // ms; la función corta a los 12 s, esto cubre la red del teléfono
 const IA_NIVEL_GRATUITO=true;  // el respaldo es el nivel gratuito de Gemini: el aviso dice que Google puede usar los mensajes
-// Desde el 2-nov-2026 la función pide primero a Groq (IA_PROVEEDOR) y, si no responde, a Gemini (IA_RESPALDO). Si cambia, cambia este aviso.
+// Desde el 2-nov-2026 la función pide primero a Groq (IA_PROVEEDOR) y, si no responde, a Gemini (IA_RESPALDO). Si cambia, cambia este aviso y el texto de iaCard().
 // Los topes (25 al día y 300 al mes) los pone usar_ia() en Supabase (migración cupo_ia); si cambian, cambia también estos textos y el aviso.
 const IA_AVISOS={
   cupo_dia:'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te respondo con lo básico.',
@@ -3133,7 +3133,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.10.0';
+const APP_VERSION='0.10.1';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
