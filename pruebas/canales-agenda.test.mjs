@@ -17,8 +17,7 @@ test('sesiones de estudio y evaluaciones con hora de Lima y su nombre', () => {
   assert.ok(ev.every((e, i) => i === 0 || ev[i - 1].inicio <= e.inicio), 'en orden');
 });
 
-test('nada de las rutinas ni del pasado', () => {
-  const s = estado({ compromisos: [{ id: 'c1', name: 'Trabajo', type: 'trabajo', days: [1, 2, 3, 4, 5], start: '15:00', end: '19:00' }],
-    evaluaciones: [{ id: 'e1', type: 'parcial', course: 'Física', date: '2026-10-20', time: '09:00', hours: 3 }] });
+test('nada del pasado (las rutinas se prueban en calendario-exportar)', () => {
+  const s = estado({ evaluaciones: [{ id: 'e1', type: 'parcial', course: 'Física', date: '2026-10-20', time: '09:00', hours: 3 }] });
   assert.deepEqual(L.eventosCanales(s, { blocks: [{ date: '2026-10-20', s: 600, e: 660, evalId: 'e1' }] }, ahora()), []);
 });

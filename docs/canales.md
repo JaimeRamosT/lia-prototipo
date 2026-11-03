@@ -7,17 +7,17 @@
 | Opción | A favor | En contra | Decisión |
 | --- | --- | --- | --- |
 | Google Calendar con OAuth (API de Google) | Cambios al instante; leer el calendario | Exige un proyecto de Google Cloud; todos los permisos de Calendar son sensibles: sin verificación, 100 usuarios y autorizaciones de 7 días | No por ahora (Coconut no quiere Google Cloud) |
-| **Enlace iCal secreto** | Sin Google Cloud ni permisos; funciona en Google, Apple y Outlook | Google lo actualiza cada cierto tiempo (no instantáneo); solo de LIA hacia el calendario | **Sí** |
+| **Enlace iCal secreto** | Sin Google Cloud ni permisos; funciona en Google, Apple y Outlook | Google lo actualiza cada cierto tiempo (no instantáneo) | **Sí**. Desde el 3-nov, también de Google hacia LIA (ADR-004 en `docs/calendario.md`) |
 | WhatsApp por la Cloud API de Meta | Donde ya está la gente; avisos y consultas sin instalar nada | Número de prueba: 5 destinatarios; fuera de 24 h hace falta una plantilla aprobada; costo por mensaje con número real | **Sí**, empezando con el número de prueba |
 
-Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase las sesiones de estudio y evaluaciones de los próximos 14 días **con su nombre** («Estudiar Cálculo II»). Sin eso, el calendario y WhatsApp no podrían mostrarlas. La persona lo lee en la tarjeta antes de activar; al desactivar los dos canales, se borra. No se publican rutinas, mensajes del chat, nombre ni correo.
+Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase lo de los próximos 14 días **con su nombre** («Estudiar Cálculo II»): sesiones de estudio y evaluaciones y, si la persona lo elige, sus eventos de un día y rutinas (desde el 3-nov). Sin eso, el calendario y WhatsApp no podrían mostrarlos. La persona lo lee en la tarjeta antes de activar; al desactivar los dos canales, se borra. No se publican mensajes del chat, nombre, correo ni lo que vino de su Google Calendar.
 
 ## Piezas
 
 - **Base** (`supabase/migrations/…_canales.sql`): `canales` (token del calendario y número de WhatsApp de cada cuenta) y `agenda_canales` (lo publicado). Sin permisos directos: solo funciones. Para la app: `canales_estado`, `activar_calendario`, `desactivar_calendario`, `pedir_codigo_whatsapp`, `quitar_whatsapp`, `avisos_whatsapp`, `publicar_agenda`. Para las funciones (solo `service_role`): `agenda_por_token`, `vincular_whatsapp`, `agenda_whatsapp`, `whatsapp_vinculado`, `avisos_whatsapp_numero`, `tomar_avisos_whatsapp`. `pg_cron` llama a `lia-whatsapp` cada minuto con el secreto de Vault de `lia-avisos`.
-- **`lia-calendario`** (Edge Function, `verify_jwt` apagado): `GET ?t=<token>` devuelve el calendario iCal. El token de 64 caracteres es la llave; «Dejar de compartir» lo borra.
+- **`lia-calendario`** (Edge Function, `verify_jwt` apagado): `GET ?t=<token>` devuelve el calendario iCal «LIA». El token de 64 caracteres es la llave; «Dejar de compartir» lo borra. `POST {accion:'importar', url}`, con la sesión de la persona, lee la dirección secreta de su Google Calendar y se la devuelve a la app (ver `docs/calendario.md`).
 - **`lia-whatsapp`** (Edge Function, `verify_jwt` apagado): webhook de Meta firmado con `X-Hub-Signature-256`; vincula con «LIA 123456»; responde «hoy», «mañana», «semana», «pausa» y «avisos»; las preguntas libres, con Groq (solo lectura de la agenda). Avisos: 15 minutos antes de estudiar y 2 horas antes de una evaluación.
-- **App** (`index.html`): Perfil → «Google Calendar y WhatsApp». La agenda se publica sola cuando cambia el plan (`publicarCanales`).
+- **App** (`index.html`): Perfil → «Google Calendar y WhatsApp» (De LIA a Google Calendar, De Google Calendar a LIA y WhatsApp). La agenda se publica sola cuando cambia el plan (`publicarCanales`); el Google Calendar de la persona se lee al abrir la app, cada 6 horas (`sincronizarGcal`).
 
 ## Configurar WhatsApp (Coconut, con su cuenta de Meta)
 
@@ -48,9 +48,14 @@ La función registra cada mensaje que llega (sin textos ni números). Si en Supa
 2. Si la prueba llega pero tus mensajes reales no, la app no está suscrita a tu cuenta de WhatsApp Business: en el Graph API Explorer, con tu token, haz `POST /<WABA_ID>/subscribed_apps` (el WABA ID está en API Setup).
 3. Si sigue sin llegar, pasa la app a modo **Live** (pide una URL de política de privacidad).
 
+## Estado de WhatsApp (en pausa desde el 3-nov, a pedido de Coconut)
+
+- La plantilla `lia_codigo` (Autenticación, Español, «Copiar código») está en revisión de Meta.
+- Para retomar: cuando esté aprobada, agregar el secreto `WHATSAPP_PLANTILLA_CODIGO` = `lia_codigo` y volver a vincular en Perfil (paso 8). Si LIA no recibe los mensajes que le escriben, seguir «Si LIA no recibe los mensajes que le escribes».
+
 ## Pendiente
 
-- Leer Google Calendar hacia LIA (importar clases y pendientes) sin Google Cloud: con la «dirección secreta en formato iCal» que da Google.
+- ~~Leer Google Calendar hacia LIA sin Google Cloud~~: hecho el 3-nov (`docs/calendario.md`).
 - Que WhatsApp también cambie el horario (hoy solo lee): requiere llevar las reglas de `interpret()` al servidor.
 - Número propio de WhatsApp, verificación del negocio y precio por mensaje en Perú.
-- Versión para escritorio de la app web.
+- ~~Versión para escritorio de la app web~~: hecho el 3-nov (barra lateral desde 900 px).
