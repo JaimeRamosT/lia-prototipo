@@ -1641,11 +1641,12 @@ const METHODS={
  plin:{name:'Plin u otra billetera',how:'Escaneas un código QR desde Plin o la app de tu banco.',fail:'Revisa tu saldo e inténtalo otra vez.'},
  card:{name:'Tarjeta de débito o crédito',how:'Pagas en el formulario seguro de la pasarela. LIA no ve ni guarda tu tarjeta.',fail:'Revisa los datos de tu tarjeta o elige otro medio de pago.'}};
 const soles=v=>'S/ '+(Math.round(v*100+1e-6)/100).toFixed(2);
-// Preventa con Yape (docs/preventa.md): mientras no hay cobro en línea, la persona yapea y envía el número de operación
-// por WhatsApp; el equipo activa su Pro con registrar_preventa(). Sin número, el checkout sigue en modo demo.
-// yape: el número de Yape (9 dígitos); titular: el nombre que verá en Yape; whatsapp: con código de país, solo dígitos.
-const PREVENTA={yape:'',titular:'',whatsapp:''};
-const preventaConfigurada=()=>/^9\d{8}$/.test(PREVENTA.yape)&&/^\d{10,15}$/.test(PREVENTA.whatsapp)&&!!PREVENTA.titular;
+// Preventa con Yape o Plin (docs/preventa.md): mientras no hay cobro en línea, la persona paga y envía el número de
+// operación por WhatsApp; el equipo activa su Pro con registrar_preventa(). Sin número, el checkout sigue en modo demo.
+// numero: el que recibe (9 dígitos); titular: el nombre que muestra la app al pagar; whatsapp: con código de país.
+const PREVENTA={numero:'956387807',titular:'',whatsapp:'51956387807'};
+// El número recibe por Yape o Plin (se pueden enviar entre sí). titular es opcional: el nombre que muestra la app al pagar.
+const preventaConfigurada=()=>/^9\d{8}$/.test(PREVENTA.numero)&&/^\d{10,15}$/.test(PREVENTA.whatsapp);
 const preventaActiva=()=>preventaConfigurada()&&!modoPruebas();
 const SAVE_CICLO=PRICES.mes.amount*PRICES.ciclo.months-PRICES.ciclo.amount;
 const SAVE_PCT=Math.round(SAVE_CICLO/(PRICES.mes.amount*PRICES.ciclo.months)*100);
@@ -2287,21 +2288,23 @@ function sheetCheckout(){const per=ui.pay.period,p=PRICES[per],m=ui.pay.method;
   <button class="btn pri" data-a="pay-sim" data-ok="1">Simular pago aprobado</button>
   <button class="btn sec" data-a="pay-sim" data-ok="0">Simular pago rechazado</button>
   ${per==='mes'?'<p class="small muted" style="margin:0;text-align:center">Si pagas con tarjeta, puedes cancelar la renovación cuando quieras desde Perfil.</p>':''}`;}
-// La preventa: cuánto yapear, a quién, y el mensaje de WhatsApp ya escrito (plan, monto y correo de la cuenta).
+// La preventa: cuánto pagar, a qué número, y el mensaje de WhatsApp ya escrito (plan, monto y correo de la cuenta).
 const usarPreventa=()=>preventaActiva()||!!(ui.pay&&ui.pay.preventa&&preventaConfigurada());
 const hojaPago=()=>usarPreventa()?sheetPreventa():sheetCheckout();
-const numYape=()=>PREVENTA.yape.replace(/(\d{3})(\d{3})(\d{3})/,'$1 $2 $3');
+const numPago=()=>PREVENTA.numero.replace(/(\d{3})(\d{3})(\d{3})/,'$1 $2 $3');
 function sheetPreventa(){const per=ui.pay.period,p=PRICES[per];
   const sigue=isPro()&&state.sub.until>ymd(now());
   const dura=`${p.months} ${p.months===1?'mes':'meses'}`;
   const cuando=sigue?`${p.months===1?'Se suma':'Se suman'} ${dura} al final de tu Pro actual (hasta el ${fechaSub(state.sub.until)}).`:`Tienes Pro por ${dura} desde que lo activemos.`;
-  const msg=`Hola, quiero LIA Pro ${p.name.toLowerCase()} (${soles(p.amount)}). Ya yapeé. Mi correo en LIA es ${(state.cuenta&&state.cuenta.email)||''}. Número de operación: `;
+  const msg=`Hola, quiero LIA Pro ${p.name.toLowerCase()} (${soles(p.amount)}). Ya pagué. Mi correo en LIA es ${(state.cuenta&&state.cuenta.email)||''}. Número de operación: `;
+  const confia=`Si pagas con Yape, elige «Plin» como destino. `+(PREVENTA.titular?`Antes de confirmar, tu app te mostrará el nombre <b>${esc(PREVENTA.titular)}</b>. Si no coincide, no envíes el pago.`
+    :`Antes de confirmar, revisa que el número sea <b class="tnum">${esc(numPago())}</b>.`);
   return `<div class="grab"></div><span class="eyebrow">Preventa · ${esc(p.name)} · ${soles(p.amount)}</span>
   <div class="between"><h2>Pagar LIA Pro</h2><button class="linkbtn" data-a="pay-back">Cambiar plan</button></div>
   <p class="small muted" style="margin:0">${cuando} Pago único: no se renueva solo. Al terminar vuelves a Gratis y tus datos se quedan.</p>
   <ol class="stack" style="margin:0;padding-left:20px;gap:8px">
-   <li>Yapea <b class="tnum">${soles(p.amount)}</b> al <b class="tnum">${esc(numYape())}</b>. <button class="linkbtn" data-a="pre-copiar">Copiar número</button><br><span class="small muted">Antes de confirmar, Yape te mostrará el nombre <b>${esc(PREVENTA.titular)}</b>. Si no coincide, no yapees.</span></li>
-   <li>Toca «Enviar por WhatsApp». El mensaje ya lleva tu correo; solo agrega el <b>número de operación</b> que te muestra Yape.</li>
+   <li>Envía <b class="tnum">${soles(p.amount)}</b> por Yape o Plin al <b class="tnum">${esc(numPago())}</b>. <button class="linkbtn" data-a="pre-copiar">Copiar número</button><br><span class="small muted">${confia}</span></li>
+   <li>Toca «Enviar por WhatsApp». El mensaje ya lleva tu correo; solo agrega el <b>número de operación</b> que te muestra tu app.</li>
    <li>Activamos tu Pro en menos de 24 horas y te avisamos por WhatsApp. Luego toca «Ya me activaron».</li></ol>
   <a class="btn pri" href="https://wa.me/${PREVENTA.whatsapp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar por WhatsApp<span class="sr-only"> (se abre en una pestaña nueva)</span></a>
   <button class="btn sec" data-a="pay-revisar">Ya me activaron: revisar mi plan</button>
@@ -3190,7 +3193,7 @@ Object.assign(A,{
    ui.sheet=hojaPago();render();},
  // Preventa: la persona ya yapeó y el equipo activó su Pro; se lee el plan de la cuenta. Solo celebra si el Pro es
  // nuevo o se alargó (quien ya era Pro y renueva no ve «Listo» antes de que se registre su pago).
- 'pre-copiar':()=>{(navigator.clipboard?navigator.clipboard.writeText(PREVENTA.yape):Promise.reject()).then(()=>toast('Número copiado.'),()=>toast(`Copia el número: ${numYape()}.`));},
+ 'pre-copiar':()=>{(navigator.clipboard?navigator.clipboard.writeText(PREVENTA.numero):Promise.reject()).then(()=>toast('Número copiado.'),()=>toast(`Copia el número: ${numPago()}.`));},
  'pay-revisar':(d,el)=>{const pay=ui.pay,antes=isPro()?state.sub.until:null,txt=el.textContent;
    const estado=t=>{const e=document.getElementById('pre-estado');if(e)e.textContent=t;};
    el.setAttribute('aria-disabled','true');el.textContent='Revisando tu plan…';estado('');
@@ -3321,8 +3324,8 @@ function sb(){if(!cuentasActivas())return Promise.reject(new Error('sin-config')
 function sbRpc(fn,args){return sb().then(c=>c.rpc(fn,args||{})).then(({data,error})=>{if(error)throw error;return data;});}
 function mensajeError(e){const m=String((e&&(e.message||e.error_description||e.msg))||''),code=String((e&&(e.code||e.error_code))||'');
   if(m==='sin-config')return 'Las cuentas todavía no están activadas en esta versión de LIA.';
-  if(/pago_de_prueba_cerrado/.test(m))return preventaConfigurada()?'Ese pago de prueba ya no está disponible. Ahora LIA Pro se paga con Yape: toca «Intentar de nuevo» y sigue los pasos.'
-    :'Ese pago de prueba ya no está disponible. Pronto podrás pasarte a Pro con Yape.';
+  if(/pago_de_prueba_cerrado/.test(m))return preventaConfigurada()?'Ese pago de prueba ya no está disponible. Ahora LIA Pro se paga con Yape o Plin: toca «Intentar de nuevo» y sigue los pasos.'
+    :'Ese pago de prueba ya no está disponible. Pronto podrás pasarte a Pro con Yape o Plin.';
   if(m==='sin-cliente'||/Failed to fetch|NetworkError|Load failed|network/i.test(m)||navigator.onLine===false)return 'Sin conexión. Revisa tu internet e inténtalo otra vez.';
   if(code==='invalid_credentials'||/Invalid login credentials/i.test(m))return 'El correo o la contraseña no coinciden.';
   if(code==='user_already_exists'||/already registered/i.test(m))return 'Ya hay una cuenta con ese correo. Inicia sesión.';

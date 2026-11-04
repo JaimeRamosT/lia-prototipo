@@ -1,5 +1,5 @@
--- Preventa de LIA Pro con Yape (docs/preventa.md, 4-nov-2026). Se puede aplicar dos veces sin error.
--- La persona yapea el precio, el equipo revisa en su app de Yape que llegó y activa Pro desde el SQL Editor con
+-- Preventa de LIA Pro con Yape o Plin (docs/preventa.md, 4-nov-2026). Se puede aplicar dos veces sin error.
+-- La persona envía el precio por Yape o Plin, el equipo revisa en su app que llegó y activa Pro desde el SQL Editor con
 -- registrar_preventa(). Es un pago real (demo = false) y queda en `pagos` con el número de operación de Yape, que no
 -- se puede registrar dos veces. quitar_pro() deshace un Pro (por ejemplo, tras devolver un pago).
 -- Solo para el SQL Editor: ni anon ni authenticated ni service_role pueden llamarlas.
@@ -118,7 +118,9 @@ alter table public.pagos add column if not exists referencia text;
 comment on column public.pagos.referencia is 'Número de operación del pago real (Yape en la preventa). Único: el mismo pago no se registra dos veces.';
 create unique index if not exists pagos_referencia_unica on public.pagos (referencia) where referencia is not null;
 
-create or replace function public.registrar_preventa(p_correo text, p_periodo text, p_monto numeric, p_operacion text)
+-- p_medio: 'yape' o 'plin', según con qué pagó la persona (el número del equipo recibe por los dos).
+drop function if exists public.registrar_preventa(text, text, numeric, text);
+create or replace function public.registrar_preventa(p_correo text, p_periodo text, p_monto numeric, p_operacion text, p_medio text default 'yape')
 returns public.suscripciones
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -134,8 +136,11 @@ begin
   if p_monto is null or p_monto <> public.precio(p_periodo) then
     raise exception 'El monto (S/ %) no coincide con el precio del plan % (S/ %).', p_monto, p_periodo, public.precio(p_periodo) using errcode = '22023';
   end if;
+  if p_medio is null or p_medio not in ('yape', 'plin') then
+    raise exception 'Medio no válido: %. Usa ''yape'' o ''plin''.', p_medio using errcode = '22023';
+  end if;
   if v_op is null or v_op !~ '^[0-9A-Z-]{4,40}$' then
-    raise exception 'Falta el número de operación de Yape (lo ves en el detalle del yapeo).' using errcode = '22023';
+    raise exception 'Falta el número de operación (lo ves en el detalle del pago, en Yape o Plin).' using errcode = '22023';
   end if;
   if exists (select 1 from public.pagos where referencia = v_op) then
     raise exception 'La operación % ya se registró: no se activa dos veces.', v_op using errcode = '23505';
@@ -151,7 +156,7 @@ begin
   update public.suscripciones
      set plan = 'pro',
          periodo = p_periodo,
-         medio = 'yape',
+         medio = p_medio,
          desde = case when v_activo then coalesce(s.desde, v_hoy) else v_hoy end,
          hasta = ((case when v_activo then s.hasta else v_hoy end) + make_interval(months => public.meses(p_periodo)))::date,
          renovacion_automatica = false,
@@ -160,7 +165,7 @@ begin
    where user_id = v_uid
    returning * into s;
   insert into public.pagos (user_id, periodo, medio, monto, demo, referencia)
-  values (v_uid, p_periodo, 'yape', p_monto, false, v_op);
+  values (v_uid, p_periodo, p_medio, p_monto, false, v_op);
   return s;
 exception when unique_violation then
   -- Dos registros de la misma operación a la vez: el segundo se deshace entero.
@@ -189,5 +194,5 @@ begin
 end
 $$;
 
-revoke all on function public.registrar_preventa(text, text, numeric, text) from public, anon, authenticated, service_role;
+revoke all on function public.registrar_preventa(text, text, numeric, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.quitar_pro(text) from public, anon, authenticated, service_role;

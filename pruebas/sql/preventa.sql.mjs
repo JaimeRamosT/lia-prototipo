@@ -66,10 +66,12 @@ test('la misma operación no se registra dos veces, aunque se escriba distinto',
   assert.equal(await pagos(), 2);
 });
 
-test('otra operación siendo Pro suma el periodo al final', async () => {
+test('otra operación siendo Pro suma el periodo al final; el medio puede ser Plin', async () => {
   const antes = (await plan(A)).hasta;
-  const s = await una(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '87654321')`);
+  const s = await una(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '87654321', 'plin')`);
   assert.equal(iso(s.hasta), mas(antes, 1));
+  assert.equal(s.medio, 'plin');
+  assert.equal((await una(`select medio from public.pagos where referencia = '87654321'`)).medio, 'plin');
 });
 
 test('monto, plan, operación o correo que no cuadran: error y nada anotado', async () => {
@@ -80,6 +82,7 @@ test('monto, plan, operación o correo que no cuadran: error y nada anotado', as
     [`'ana@correo.pe', 'mes', 9.90, '12'`, /número de operación/],
     [`'ana@correo.pe', 'mes', 9.90, '1234;--'`, /número de operación/],
     [`'nadie@correo.pe', 'mes', 9.90, '1113'`, /No hay ninguna cuenta/],
+    [`'ana@correo.pe', 'mes', 9.90, '1114', 'tarjeta'`, /Medio no válido/],
   ]) assert.match((await falla(`select * from public.registrar_preventa(${q})`) || {}).message || '', msj);
   assert.equal(await pagos(), 3);
 });
@@ -89,6 +92,7 @@ test('la app ni el servidor pueden llamar registrar_preventa, quitar_pro ni prue
     await db.exec(`set role ${rol}`);
     const e = [
       await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '2222')`),
+      await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '2223', 'plin')`),
       await falla(`select public.quitar_pro('ana@correo.pe')`),
       await falla(`select public.prueba_permitida('${A}')`),
       await falla(`select * from public.cuentas_prueba`),

@@ -1,5 +1,6 @@
-// Preventa con Yape (docs/preventa.md): con el número configurado, el checkout dice cuánto yapear, a quién, y abre
-// WhatsApp con el mensaje escrito; el pago de prueba queda solo en modo pruebas. Sin número, todo sigue como antes.
+// Preventa con Yape o Plin (docs/preventa.md): con el número configurado (ya viene en PREVENTA), el checkout dice cuánto
+// enviar y a qué número, y abre WhatsApp con el mensaje escrito; el pago de prueba queda solo en modo pruebas.
+// Sin número, todo sigue como antes.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { servir, lanzar, abrir, registrar } from './ayuda.mjs';
@@ -26,12 +27,13 @@ async function preparar(dispositivo, { pruebas = false, sub = null, simular = nu
   if (sub) await pg.evaluate(() => refrescarPlan(false));
   return { ctx, pg, errores, activar: f => { fila = f; } };
 }
-const configurar = pg => pg.evaluate(() => Object.assign(PREVENTA, { yape: '987654321', titular: 'Coco Pérez', whatsapp: '51987654321' }));
+const configurar = (pg, titular = '') => pg.evaluate(t => Object.assign(PREVENTA, { numero: '987654321', titular: t, whatsapp: '51987654321' }), titular);
+const vaciar = pg => pg.evaluate(() => Object.assign(PREVENTA, { numero: '', titular: '', whatsapp: '' }));
 const abrirPago = async pg => { await pg.evaluate(() => openPaywall('plans')); await pg.locator('.sheet').getByRole('button', { name: 'Continuar' }).click(); };
 const revisar = hoja => hoja.getByRole('button', { name: 'Ya me activaron: revisar mi plan' }).click();
 
 for (const dispositivo of ['iPhone', 'Computadora']) {
-  test(`${dispositivo}: con el número configurado, el checkout es la preventa con Yape y abre WhatsApp con el mensaje`, async () => {
+  test(`${dispositivo}: con el número configurado, el checkout es la preventa con Yape o Plin y abre WhatsApp con el mensaje`, async () => {
     const { ctx, pg, errores, activar } = await preparar(dispositivo);
     await configurar(pg);
     await abrirPago(pg);
@@ -40,13 +42,13 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     const texto = await hoja.innerText();
     assert.match(texto, /Preventa · Por ciclo · S\/ 34\.90/i);
     assert.match(texto, /Tienes Pro por 4 meses desde que lo activemos\./);
-    assert.match(texto, /Yapea S\/ 34\.90 al 987 654 321\./);
-    assert.match(texto, /Yape te mostrará el nombre Coco Pérez\. Si no coincide, no yapees\./);
+    assert.match(texto, /Envía S\/ 34\.90 por Yape o Plin al 987 654 321\./);
+    assert.match(texto, /Si pagas con Yape, elige «Plin» como destino\. Antes de confirmar, revisa que el número sea 987 654 321\./);
     assert.equal(await hoja.getByRole('button', { name: 'Simular pago aprobado' }).count(), 0, 'sin pago gratis');
     const wa = hoja.getByRole('link', { name: 'Enviar por WhatsApp (se abre en una pestaña nueva)' });
     const href = await wa.getAttribute('href');
     assert.ok(href.startsWith('https://wa.me/51987654321?text='));
-    assert.match(decodeURIComponent(href.split('text=')[1]), /quiero LIA Pro por ciclo \(S\/ 34\.90\)\. Ya yapeé\. Mi correo en LIA es ana@correo\.pe\. Número de operación: $/);
+    assert.match(decodeURIComponent(href.split('text=')[1]), /quiero LIA Pro por ciclo \(S\/ 34\.90\)\. Ya pagué\. Mi correo en LIA es ana@correo\.pe\. Número de operación: $/);
     // Todavía no activado: el aviso queda dentro de la hoja (role="status"), y después sí.
     await revisar(hoja);
     await hoja.getByRole('status').getByText('Tu Pro aún no está activo. Si ya nos enviaste el número de operación, lo activamos en menos de 24 horas.').waitFor();
@@ -77,7 +79,7 @@ test('quien ya es Pro y renueva no ve «Listo» hasta que su Pro se alarga', asy
   await ctx.close();
 });
 
-test('«Copiar número» copia el número de Yape', async () => {
+test('«Copiar número» copia el número para pagar', async () => {
   const { ctx, pg, errores } = await preparar('Computadora');
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: srv.url });
   await configurar(pg);
@@ -89,7 +91,7 @@ test('«Copiar número» copia el número de Yape', async () => {
   await ctx.close();
 });
 
-test('en modo pruebas, si el servidor cerró el pago de prueba a esta cuenta, «Intentar de nuevo» lleva a Yape', async () => {
+test('en modo pruebas, si el servidor cerró el pago de prueba a esta cuenta, «Intentar de nuevo» lleva a la preventa', async () => {
   const { ctx, pg, errores } = await preparar('iPhone', { pruebas: true,
     simular: { status: 403, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'pago_de_prueba_cerrado', details: null, hint: null }) } });
   await configurar(pg);
@@ -104,8 +106,28 @@ test('en modo pruebas, si el servidor cerró el pago de prueba a esta cuenta, «
   await ctx.close();
 });
 
+test('con el nombre del titular, avisa qué nombre mostrará la app al pagar', async () => {
+  const { ctx, pg, errores } = await preparar('Android');
+  await configurar(pg, 'Coco Pérez');
+  await abrirPago(pg);
+  await pg.locator('.sheet').getByText(/Si pagas con Yape, elige «Plin» como destino\. Antes de confirmar, tu app te mostrará el nombre Coco Pérez\. Si no coincide, no envíes el pago\./).waitFor();
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
+
+test('el número de Coconut ya viene configurado', async () => {
+  const { ctx, pg, errores } = await preparar('Computadora');
+  await abrirPago(pg);
+  const texto = await pg.locator('.sheet').innerText();
+  assert.match(texto, /Envía S\/ 34\.90 por Yape o Plin al 956 387 807\./);
+  assert.ok((await pg.locator('.sheet').getByRole('link', { name: /Enviar por WhatsApp/ }).getAttribute('href')).startsWith('https://wa.me/51956387807?text='));
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
+
 test('sin el número configurado, o en modo pruebas, sigue el checkout de prueba', async () => {
   let { ctx, pg, errores } = await preparar('iPhone');
+  await vaciar(pg);
   await abrirPago(pg);
   await pg.locator('.sheet').getByRole('button', { name: 'Simular pago aprobado' }).waitFor();
   assert.deepEqual(errores, []);
