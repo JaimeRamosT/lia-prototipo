@@ -1208,7 +1208,114 @@ function fusionarGcal(st,cand,hoy,op={}){const g=st.gcal||{},nuevoId=op.nuevoId|
     const e={id:nuevoId(),...campoV(v),hours:(EVAL_TYPES[v.type]||EVAL_TYPES.parcial).h,gcal:v.gcal};e.gh=huellaGcal(e);es.push(e);nuevasEvals.push(e.id);cambios.nuevos++;}
   const ignorar=[...ign].filter(k=>{const m=/:(\d{4}-\d{2}-\d{2})$/.exec(k);return !m||m[1]>=hoy;}).slice(-2000);
   return{commitments:cs,exceptions:xs,evals:es,done,gcal:{...g,ignorar,traidos:[...cs,...xs,...es].filter(o=>o.gcal).map(o=>o.gcal)},cambios,nuevasEvals,sinCupo};}
+// ---- Iteración 3: cruces y duplicados ----
+// Cruces lado a lado (docs/iteracion-3.md, §5), con el algoritmo de columnas de Google Calendar: lo que se toca, aunque sea
+// en cadena, forma un grupo; dentro del grupo, cada actividad va en la primera columna donde lo anterior ya terminó (a la
+// misma hora, la más larga primero) y todas comparten el número de columnas (cols), así ninguna caja pisa a otra.
+// span: cuántas columnas ocupa hacia la derecha sin pisar a nadie. items: [{s,e,…}] en minutos.
+// Devuelve copias en orden de inicio, con {col, cols, span, grupo}.
+function columnasCruces(items){
+  const xs=(Array.isArray(items)?items:[]).map((x,i)=>({x,i})).filter(({x})=>x&&Number.isFinite(x.s)&&Number.isFinite(x.e))
+    .sort((a,b)=>a.x.s-b.x.s||(b.x.e-b.x.s)-(a.x.e-a.x.s)||a.i-b.i);
+  const out=[];let grupo=[],fines=[],hasta=-Infinity,g=0;
+  const cerrar=()=>{for(const o of grupo){let k=o.col+1;while(k<fines.length&&!grupo.some(q=>q.col===k&&q.s<o.e&&o.s<q.e))k++;o.cols=fines.length;o.span=k-o.col;}
+    grupo=[];fines=[];g++;};
+  for(const {x} of xs){const e=Math.max(x.s,x.e);if(grupo.length&&x.s>=hasta)cerrar();
+    let c=fines.findIndex(f=>f<=x.s);if(c<0){c=fines.length;fines.push(e);}else fines[c]=e;
+    const o={...x,col:c,grupo:g};grupo.push(o);out.push(o);hasta=grupo.length===1?e:Math.max(hasta,e);}
+  if(grupo.length)cerrar();
+  return out;}
+// Los grupos, para las listas: {s, e, cols, items}. Con cols de 2 o más, hay actividades a la vez.
+function gruposCruce(items){const out=[];
+  for(const o of columnasCruces(items)){const g=out[o.grupo]||(out[o.grupo]={s:o.s,e:o.e,cols:o.cols,items:[]});g.items.push(o);if(o.e>g.e)g.e=o.e;}
+  return out;}
+// Lo de un día del calendario (de 0:00 a 24:00), para la cuadrícula de Semana: lo que pasa la medianoche se corta y sigue
+// al día siguiente. Las rutinas y lo de un día ya llegan así desde busyFor; el estudio y las evaluaciones se pasan aquí.
+const SIGUE_DE_NOCHE=new Set(['estudio','hecho','examen']);
+function itemsCalendario(state,P,date){const ayer=ymd(addDays(fromYmd(date),-1));
+  const deAnoche=agendaFor(state,P,ayer).filter(x=>SIGUE_DE_NOCHE.has(x.kind)&&x.e>1440).map(x=>({...x,s:Math.max(0,x.s-1440),e:x.e-1440,deAnoche:true}));
+  const hoy=agendaFor(state,P,date).filter(x=>x.s<1440).map(x=>x.e>1440?{...x,e:1440,sigue:true}:x);
+  return [...deAnoche,...hoy].sort((a,b)=>a.s-b.s);}
+// Duplicados y cruces antes de guardar (docs/iteracion-3.md, §5). item, lo que se va a guardar:
+//   {kind:'commit', name, days, start, end}  un horario de una rutina (con varios horarios, choquesTramos)
+//   {kind:'evento', label, date, start, end}  algo de un solo día
+//   {kind:'eval', type, course, date, time}   una evaluación: ocupa 2 horas, como se ve en «Tu día»
+// excluir: ids que no cuentan (lo que se está editando). Duplicado: lo mismo con el mismo nombre (sin tildes ni mayúsculas),
+// el mismo día y las mismas horas. Cruces: rutinas, eventos de un día y evaluaciones que se pisan con él; el estudio no
+// cuenta, ni lo liberado ese día, ni lo que ya pasó. Una evaluación y una clase tampoco: los exámenes suelen ser en horas
+// de clase (type o cat 'clase'). Devuelve {duplicado, cruces}, cada uno {ref, kind, nombre, s, e} con dias (una rutina:
+// los días en que empieza lo que se cruza) o date (algo de un día o una evaluación).
+const DUR_EVAL=120;
+const nombreN=s=>norm(String(s||'')).replace(/\s+/g,' ').trim();
+function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},fuera=new Set(excluir||[]),hoy=ymd(now),ok=v=>typeof v==='string'&&HHMM.test(v);
+  if(!item||typeof item!=='object')return nada;
+  const semanal=item.kind==='commit',esEval=item.kind==='eval',esClase=tipoRutina(semanal?item.type:item.kind==='evento'?item.cat:'')==='clase';
+  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',cuenta=o=>esEval?!deClase(o):true,cuentaEval=!esClase;
+  if(semanal&&!(Array.isArray(item.days)&&item.days.length&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
+  if(item.kind==='evento'&&!(fechaIA(item.date)&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
+  if(esEval&&!(fechaIA(item.date)&&ok(item.time)&&EVAL_TYPES[item.type]))return nada;
+  if(!semanal&&!esEval&&item.kind!=='evento')return nada;
+  const N=esEval?{s:toMin(item.time),e:toMin(item.time)+DUR_EVAL}:intervalo(item.start,item.end),nombre=nombreN(esEval?item.course:semanal?item.name:item.label);
+  const pisa=(a,b,o)=>a.s<b.e+o&&b.s+o<a.e;
+  const rut=state.commitments.filter(c=>!fuera.has(c.id)&&(!c.hasta||c.hasta>=hoy)&&Array.isArray(c.days));
+  const evs=state.exceptions.filter(x=>!x.libre&&!fuera.has(x.id)&&fechaIA(x.date));
+  const evals=state.evals.filter(e=>!fuera.has(e.id)&&fechaIA(e.date)&&HHMM.test(e.time||''));
+  const deRut=(c,dias)=>({ref:c.id,kind:'commit',nombre:c.name,dias,...intervalo(c.start,c.end)});
+  const deEv=x=>({ref:x.id,kind:'evento',nombre:x.label,date:x.date,...intervalo(x.start,x.end)});
+  const deEval=e=>({ref:e.id,kind:'eval',nombre:`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label} de ${e.course}`,date:e.date,s:toMin(e.time),e:toMin(e.time)+DUR_EVAL});
+  let duplicado=null;const cruces=[];
+  if(semanal){const dias=[...new Set(item.days)];
+    // Desfase de un día cd respecto de un día nd de lo nuevo: el mismo día, el siguiente (+1440) o el anterior (-1440).
+    const desfase=(nd,cd)=>cd===nd?0:cd===(nd+1)%7?1440:cd===(nd+6)%7?-1440:null;
+    for(const c of rut){const C=intervalo(c.start,c.end),comunes=dias.filter(d=>c.days.includes(d));
+      if(!duplicado&&!esEval&&comunes.length&&nombreN(c.name)===nombre&&C.s===N.s&&C.e===N.e){duplicado=deRut(c,comunes);continue;}
+      const en=new Set();for(const nd of dias)for(const cd of c.days){const o=desfase(nd,cd);if(o!==null&&pisa(N,C,o))en.add(cd);}
+      if(en.size)cruces.push(deRut(c,[...en]));}
+    for(const D of [...evs.filter(x=>x.date>=hoy).map(deEv),...(cuentaEval?evals.filter(e=>e.date>=hoy).map(deEval):[])]){const wd=fromYmd(D.date).getDay();
+      if(!duplicado&&D.kind==='evento'&&dias.includes(wd)&&nombreN(D.nombre)===nombre&&D.s===N.s&&D.e===N.e){duplicado=D;continue;}
+      if(dias.some(nd=>{const o=desfase(nd,wd);return o!==null&&pisa(N,D,o);}))cruces.push(D);}}
+  else{const f=item.date,wd=fromYmd(f).getDay(),sig=ymd(addDays(fromYmd(f),1));
+    if(!esEval){for(const c of rut)if(!duplicado&&c.days.includes(wd)&&vigente(c,f)&&nombreN(c.name)===nombre&&c.start===item.start&&c.end===item.end)duplicado=deRut(c,[wd]);
+      for(const x of evs)if(!duplicado&&x.date===f&&nombreN(x.label)===nombre&&x.start===item.start&&x.end===item.end)duplicado=deEv(x);}
+    else for(const e of evals)if(!duplicado&&e.date===f&&e.time===item.time&&nombreN(e.course)===nombre)duplicado=deEval(e);
+    // Lo ocupado ese día (sin lo liberado), y lo de temprano al día siguiente si pasa la medianoche.
+    const ocup=[...busyFor(state,f).map(b=>({b,o:0,dia:b.cola?(wd+6)%7:wd})),...(N.e>1440?busyFor(state,sig).filter(b=>!b.cola).map(b=>({b,o:1440,dia:(wd+1)%7})):[])];
+    const vistos=new Set(duplicado?[duplicado.ref]:[]);
+    for(const {b,o,dia} of ocup){if(fuera.has(b.ref)||vistos.has(b.ref)||!pisa(N,b,o))continue;vistos.add(b.ref);
+      const c=state.commitments.find(y=>y.id===b.ref),x=!c&&state.exceptions.find(y=>y.id===b.ref);
+      if(c&&cuenta(c))cruces.push(deRut(c,[dia]));else if(x&&cuenta(x))cruces.push(deEv(x));}
+    for(const e of cuentaEval?evals:[]){const k=dayDiff(f,e.date);if(Math.abs(k)>1||vistos.has(e.id))continue;const E=deEval(e);if(pisa(N,E,k*1440)){vistos.add(e.id);cruces.push(E);}}}
+  const clave=c=>(c.date?'1'+c.date:'0')+String(c.s+10000);
+  return{duplicado,cruces:cruces.filter(c=>!duplicado||c.ref!==duplicado.ref).sort((a,b)=>clave(a).localeCompare(clave(b)))};}
+// Una rutina con varios horarios: se revisa cada uno y un mismo cruce se nombra una vez, con todos sus días.
+function choquesTramos(state,r,now,excluir){let duplicado=null;const cruces=[];
+  for(const t of (r&&Array.isArray(r.tramos)?r.tramos:[])){const x=choques(state,{kind:'commit',name:r.name,type:r.type,days:t.days,start:t.start,end:t.end},now,excluir);
+    if(!duplicado&&x.duplicado)duplicado=x.duplicado;
+    for(const c of x.cruces){const y=cruces.find(z=>z.ref===c.ref);if(!y)cruces.push(c.dias?{...c,dias:[...c.dias]}:c);else if(y.dias&&c.dias)y.dias=[...new Set([...y.dias,...c.dias])];}}
+  return{duplicado,cruces:cruces.filter(c=>!duplicado||c.ref!==duplicado.ref)};}
+// «9:00», «13:30»: como se dice la hora en el aviso.
+const horaC=m=>{m=((Math.round(m)%1440)+1440)%1440;return `${Math.floor(m/60)}:${pad(m%60)}`;};
+function diasFrase(ds,art){const s=[...new Set(ds)].sort((a,b)=>((a+6)%7)-((b+6)%7)),k=s.join();
+  if(k==='1,2,3,4,5')return 'de lunes a viernes';if(k==='1,2,3,4,5,6')return 'de lunes a sábado';if(s.length===7)return 'todos los días';
+  const n=s.map(d=>(art?'el ':'')+DIAS[d]);return n.length>1?n.slice(0,-1).join(', ')+' y '+n[n.length-1]:n[0]||'';}
+function cuandoChoque(c,dup){const h=dup?(c.kind==='eval'?`a las ${horaC(c.s)}`:`de ${horaC(c.s)} a ${horaC(c.e)}`):`${horaC(c.s)}–${horaC(c.e)}`;
+  if(c.date)return dup?`el ${fechaLarga(c.date)} ${h}`:`${fechaLarga(c.date)}, ${h}`;
+  return dup?`${diasFrase(c.dias,true)} ${h}`:`${diasFrase(c.dias)}, ${h}`;}
+// «Ya tienes «Almuerzo» el lunes de 13:00 a 14:30.» o «Se cruza con «Trabajo» (lunes, 9:00–18:00).» Vacío si no hay nada.
+function textoChoques(r){if(!r)return '';
+  if(r.duplicado)return `Ya tienes «${r.duplicado.nombre}» ${cuandoChoque(r.duplicado,true)}.`;
+  const cs=r.cruces||[],q=c=>`«${c.nombre}» (${cuandoChoque(c,false)})`;
+  if(!cs.length)return '';if(cs.length===1)return `Se cruza con ${q(cs[0])}.`;if(cs.length===2)return `Se cruza con ${q(cs[0])} y con ${q(cs[1])}.`;
+  return `Se cruza con ${q(cs[0])}, ${q(cs[1])} y ${cs.length-2} más.`;}
+// Evaluación ligada a un curso (§5): los cursos son las rutinas de clases, sin repetir y sin el nombre genérico «Clases».
+// Una evaluación queda ligada a la clase que tiene su mismo nombre (sin tildes ni mayúsculas).
+const esGenerico=n=>/^clases?$/.test(nombreN(n));
+function cursosClase(state){const out=[],vistos=new Set();
+  for(const c of state.commitments||[]){const k=nombreN(c.name);if(tipoRutina(c.type)!=='clase'||!k||esGenerico(k)||vistos.has(k))continue;vistos.add(k);out.push(c.name);}
+  return out;}
+function claseDeEval(state,e){const k=nombreN(e&&e.course);if(!k||esGenerico(k))return null;
+  return (state.commitments||[]).find(c=>tipoRutina(c.type)==='clase'&&nombreN(c.name)===k)||null;}
 
-return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, parseClause, EVENTO, nombreEvento, NO_VA, ESTUDIE, QUITAR_RUT, ENTRO, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, AVISOS_DEF, avisosDe, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal };
+return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, parseClause, EVENTO, nombreEvento, NO_VA, ESTUDIE, QUITAR_RUT, ENTRO, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, AVISOS_DEF, avisosDe, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal, columnasCruces, gruposCruce, SIGUE_DE_NOCHE, itemsCalendario, DUR_EVAL, nombreN, choques, choquesTramos, horaC, diasFrase, cuandoChoque, textoChoques, esGenerico, cursosClase, claseDeEval };
 }
 export const L = crear();
