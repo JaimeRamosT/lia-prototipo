@@ -1647,6 +1647,9 @@ const soles=v=>'S/ '+(Math.round(v*100+1e-6)/100).toFixed(2);
 const PREVENTA={yape:'',titular:'',whatsapp:''};
 const preventaConfigurada=()=>/^9\d{8}$/.test(PREVENTA.yape)&&/^\d{10,15}$/.test(PREVENTA.whatsapp)&&!!PREVENTA.titular;
 const preventaActiva=()=>preventaConfigurada()&&!modoPruebas();
+// Cobro con Mercado Pago (docs/pagos.md, borrador): apagado. Con activo:false la app no llama a lia-pagos para empezar
+// un pago. Con true, decide el servidor (PAGOS_MODO y PAGOS_CORREOS): las demás cuentas siguen con el checkout de siempre.
+const PAGOS_MP={activo:false};
 const SAVE_CICLO=PRICES.mes.amount*PRICES.ciclo.months-PRICES.ciclo.amount;
 const SAVE_PCT=Math.round(SAVE_CICLO/(PRICES.mes.amount*PRICES.ciclo.months)*100);
 const fechaSub=s=>{const d=fromYmd(s);return fechaLarga(s)+(d.getFullYear()!==now().getFullYear()?` de ${d.getFullYear()}`:'');};
@@ -1691,8 +1694,8 @@ function ensureState(){const s=state.sub;
   if(!isPro()&&state.onboarded&&g){if(g.initial&&!g.blocks.length&&planStale())armWeek(true);
     else{const t=ymd(now()),ids=state.evals.filter(e=>e.date>=t&&!g.evalIds.includes(e.id)).map(e=>e.id);if(ids.length)agendarNuevas(ids);}}}
 // Plan desde Supabase: la base de datos decide (vencimientos y renovaciones incluidos); aquí solo se refleja.
-const MEDIO_APP={yape:'yape',plin:'plin',tarjeta:'card',cortesia:'cortesia'},MEDIO_DB={yape:'yape',plin:'plin',card:'tarjeta'};
-const medioNombre=k=>METHODS[k]?METHODS[k].name:k==='cortesia'?'Cortesía del equipo':'';
+const MEDIO_APP={yape:'yape',plin:'plin',tarjeta:'card',cortesia:'cortesia',mercadopago:'mercadopago'},MEDIO_DB={yape:'yape',plin:'plin',card:'tarjeta'};
+const medioNombre=k=>METHODS[k]?METHODS[k].name:k==='cortesia'?'Cortesía del equipo':k==='mercadopago'?'Mercado Pago':'';
 function subDesdeFila(f){const h=(state.sub&&state.sub.history)||[];
   if(!f||f.plan!=='pro'||!PRICES[f.periodo]||!f.hasta)return freeSub(h);
   return{tier:'pro',period:f.periodo,method:MEDIO_APP[f.medio]||f.medio,since:f.desde,until:f.hasta,autoRenew:!!f.renovacion_automatica,demo:f.demo!==false,history:h};}
@@ -2289,7 +2292,68 @@ function sheetCheckout(){const per=ui.pay.period,p=PRICES[per],m=ui.pay.method;
   ${per==='mes'?'<p class="small muted" style="margin:0;text-align:center">Si pagas con tarjeta, puedes cancelar la renovación cuando quieras desde Perfil.</p>':''}`;}
 // La preventa: cuánto yapear, a quién, y el mensaje de WhatsApp ya escrito (plan, monto y correo de la cuenta).
 const usarPreventa=()=>preventaActiva()||!!(ui.pay&&ui.pay.preventa&&preventaConfigurada());
-const hojaPago=()=>usarPreventa()?sheetPreventa():sheetCheckout();
+const usarMP=()=>!!(PAGOS_MP.activo&&state.cuenta&&ui.mpModo&&ui.mpModo.id===state.cuenta.id&&/^(prueba|real)$/.test(ui.mpModo.modo));
+const hojaPago=()=>usarMP()?sheetMercadoPago():usarPreventa()?sheetPreventa():sheetCheckout();
+// Con Mercado Pago activo, primero se pregunta al servidor qué ve esta cuenta (una vez por sesión de la app).
+function abrirHojaPago(){
+  if(PAGOS_MP.activo&&state.cuenta&&!(ui.mpModo&&ui.mpModo.id===state.cuenta.id)){const pay=ui.pay,id=state.cuenta.id;
+    ui.sheet=sheetPreparandoPago();render();
+    llamarPagos('estado').then(d=>d.modo,()=>'demo').then(modo=>{ui.mpModo={id,modo};if(ui.pay!==pay||!ui.sheet)return;ui.sheet=hojaPago();render();});return;}
+  ui.sheet=hojaPago();render();}
+function sheetPreparandoPago(){return `<div class="grab"></div><div class="spin" role="status" aria-label="Preparando el pago"></div><h2 style="text-align:center">Preparando el pago</h2>`;}
+async function llamarPagos(accion,extra){const t=await tokenSesion();if(!t)throw{error:'sesion'};
+  const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),15000);
+  try{const res=await fetch(`${SB_CFG.url}/functions/v1/lia-pagos`,{method:'POST',signal:ctl.signal,headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:`Bearer ${t}`},body:JSON.stringify({accion,...(extra||{})})});
+    const d=await res.json().catch(()=>null);if(!d||!d.ok)throw d||{error:'mercadopago'};return d;}
+  catch(e){if(e&&e.error)throw e;throw{error:navigator.onLine===false?'red':'mercadopago'};}finally{clearTimeout(tm);}}
+const MP_ERRORES={apagado:'El pago con Mercado Pago no está disponible por ahora. Inténtalo más tarde.',sesion:'Tu sesión venció. Entra de nuevo desde Perfil y vuelve a intentarlo.',
+  red:'No hay conexión. Revisa tu internet y vuelve a tocar «Pagar con Mercado Pago».',mercadopago:'Mercado Pago no respondió. No se te cobró nada: inténtalo otra vez en un momento.',
+  base:'No pudimos preparar tu pago. No se te cobró nada: inténtalo otra vez en un momento.'};
+function sheetMercadoPago(){const per=ui.pay.period,p=PRICES[per];
+  const base=isPro()&&state.sub.until>ymd(now())?fromYmd(state.sub.until):now(),until=fechaSub(ymd(addMonths(base,p.months)));
+  return `<div class="grab"></div><span class="eyebrow">Pagar LIA Pro</span>
+  <div class="between"><h2>${p.name} · ${soles(p.amount)}</h2><button class="linkbtn" data-a="pay-back">Cambiar plan</button></div>
+  <p class="small muted" style="margin:0">Pro hasta el ${until}. Pago único: no se renueva solo. Al terminar vuelves a Gratis y tus datos se quedan.</p>
+  <p style="margin:0">Te llevamos a Mercado Pago para que pagues con Yape o tarjeta, y luego vuelves aquí. LIA no ve ni guarda tus datos de pago.</p>
+  ${ui.mpModo&&ui.mpModo.modo==='prueba'?'<div class="demo-note"><b>Modo prueba.</b> No se cobra nada. En Mercado Pago, entra con la cuenta de prueba que te dio el equipo.</div>':''}
+  <div class="between"><span class="muted">Total hoy</span><b class="tnum" style="font-size:18px">${soles(p.amount)}</b></div>
+  <button class="btn pri" data-a="mp-pagar">Pagar con Mercado Pago</button>
+  <p class="small" id="mp-estado" role="status" style="margin:0;text-align:center"></p>`;}
+// Al volver de Mercado Pago (?pago=<id>): se confirma con lia-pagos, por si el aviso todavía no llegó.
+const KEY_PAGO_MP='lia.pagoMp';
+function sheetConfirmandoPago(largo){return `<div class="grab"></div>${largo?'':'<div class="spin" role="status" aria-label="Confirmando tu pago"></div>'}<h2 style="text-align:center">Confirmando tu pago</h2>
+  ${largo?'<p class="muted" role="status" style="margin:0;text-align:center">Sigue en marcha. Puedes cerrar: si pagaste, tu Pro se activa solo.</p><button class="btn sec" data-a="close">Cerrar</button>'
+    :'<p class="small muted" style="margin:0;text-align:center">Esto toma unos segundos.</p>'}`;}
+// Cuando el pago no termina en «Ya tienes LIA Pro» ni en un rechazo. monto_distinto ofrece escribir al equipo.
+function sheetPagoEnRevision(eyebrow,titulo,texto,escribir){
+  const wa=escribir&&preventaConfigurada()?`<a class="btn sec" href="https://wa.me/${PREVENTA.whatsapp}?text=${encodeURIComponent(`Hola, pagué LIA Pro con Mercado Pago y no se activó. Mi correo en LIA es ${(state.cuenta&&state.cuenta.email)||''}.`)}" target="_blank" rel="noopener">Escribir por WhatsApp<span class="sr-only"> (se abre en una pestaña nueva)</span></a>`:'';
+  return `<div class="grab"></div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(titulo)}</h2><p class="muted" style="margin:0">${esc(texto)}</p>${wa}<button class="btn pri" data-a="close">Entendido</button>`;}
+function alVolverDePago(){let ref=null;
+  try{const q=new URLSearchParams(location.search);ref=q.get('pago');if(!ref)return;
+    for(const k of ['pago','collection_id','collection_status','payment_id','status','external_reference','payment_type','merchant_order_id','preference_id','site_id','processing_mode','merchant_account_id'])q.delete(k);
+    history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(e){return;}
+  if(!/^[0-9a-f-]{36}$/i.test(ref))return;
+  let guardado=null;try{guardado=JSON.parse(localStorage.getItem(KEY_PAGO_MP));}catch(e){}
+  // Apagado: solo se confirma un pago que empezó en este navegador (por si se apagó a mitad de un pago).
+  if(!PAGOS_MP.activo&&!(guardado&&guardado.ref===ref))return;
+  if(!state.cuenta){toast('Entra a tu cuenta de LIA para ver tu pago.');return;}
+  const p=guardado&&guardado.ref===ref&&PRICES[guardado.period]?{why:guardado.why||'plans',ctx:guardado.ctx||null,period:guardado.period,method:'yape'}:{why:'plans',ctx:null,period:'ciclo',method:'yape'};
+  ui.pay=p;ui.sheet=sheetConfirmandoPago();render();
+  let vueltas=0;
+  // Si la persona cierra la hoja, se deja de preguntar: su Pro aparece igual al abrir LIA.
+  const revisar=()=>llamarPagos('revisar',{ref}).then(d=>d.estado,e=>e&&e.error==='ref'?'ajeno':e&&e.error==='sesion'?'sesion':'sin_respuesta').then(estado=>{if(ui.pay!==p||!ui.sheet)return;vueltas++;
+    if(estado==='sesion'){ui.sheet=sheetPagoEnRevision('Pago','Entra de nuevo a tu cuenta','Tu sesión venció, así que no pudimos revisar tu pago. Entra desde Perfil: si pagaste, ahí verás tu Pro.');render();return;}
+    if(estado==='aprobado'){refrescarPlan(false).then(()=>{if(ui.pay!==p)return;try{localStorage.removeItem(KEY_PAGO_MP);}catch(e){}ui.blockedItems=null;ui.sheet=sheetSuccess();render();},
+      ()=>{if(ui.pay!==p)return;ui.sheet=sheetPagoEnRevision('Pago aprobado','Tu pago se aprobó','Tu Pro tarda un poco en aparecer. Cierra y vuelve a abrir LIA en un minuto.');render();});return;}
+    if(estado==='rechazado'){try{localStorage.removeItem(KEY_PAGO_MP);}catch(e){}p.error='Mercado Pago no aprobó el pago. Prueba con otro medio o inténtalo otra vez.';ui.sheet=sheetFail();render();return;}
+    if(estado==='monto_distinto'){ui.sheet=sheetPagoEnRevision('Pago en revisión','No pudimos activar tu Pro',`El monto que pagaste no es el precio de LIA Pro, así que no activamos tu plan. ${preventaConfigurada()?'Escríbenos por WhatsApp y lo revisamos.':'Escríbele al equipo de LIA y lo revisamos.'}`,true);render();return;}
+    if(estado==='ajeno'){ui.pay=null;ui.sheet=null;render();return;}
+    if(vueltas===3){ui.sheet=sheetConfirmandoPago(true);render();}
+    if(vueltas<10){setTimeout(revisar,3000);return;}
+    ui.sheet=estado==='en_proceso'?sheetPagoEnRevision('Pago en revisión','Mercado Pago está revisando tu pago','Cuando lo apruebe, tu Pro se activa solo. Puedes cerrar esto.')
+      :estado==='sin_respuesta'?sheetPagoEnRevision('Pago en revisión','No pudimos revisar tu pago','Revisa tu conexión. Si pagaste, tu Pro se activa solo: abre LIA otra vez en un momento.')
+      :sheetPagoEnRevision('Pago en revisión','Aún no vemos tu pago','Si pagaste, tu Pro se activa solo cuando Mercado Pago lo confirme. Si no llegaste a pagar, no se te cobró nada.');render();});
+  revisar();}
 const numYape=()=>PREVENTA.yape.replace(/(\d{3})(\d{3})(\d{3})/,'$1 $2 $3');
 function sheetPreventa(){const per=ui.pay.period,p=PRICES[per];
   const sigue=isPro()&&state.sub.until>ymd(now());
@@ -2334,8 +2398,8 @@ function planCard(){const s=state.sub;
   if(!isPro())return `<div class="card stack"><div class="between"><span class="eyebrow">Tu plan</span><button class="linkbtn" data-a="plans">Comparar planes</button></div>
    <div><b>LIA Gratis</b><div class="small muted">Hasta ${FREE_EVALS} evaluaciones próximas · armas tu semana una vez por semana · sin voz</div></div>
    <button class="btn pri" data-a="paywall" data-why="plans">Pasarme a Pro</button></div>`;
-  const m=medioNombre(s.method);const card=s.period==='mes'&&s.method==='card';
-  const st=s.autoRenew?`Se renueva el ${fechaSub(s.until)} · ${m}`:card?`Renovación cancelada · Pro hasta el ${fechaSub(s.until)}`:`Pro hasta el ${fechaSub(s.until)} · ${m} · sin renovación automática`;
+  const m=medioNombre(s.method);const card=s.demo&&s.period==='mes'&&s.method==='card';   // un pago real no se renueva solo
+  const st=s.autoRenew?`Se renueva el ${fechaSub(s.until)} · ${m}`:card?`Renovación cancelada · Pro hasta el ${fechaSub(s.until)}`:`Pro hasta el ${fechaSub(s.until)} · ${m} · ${s.demo?'sin renovación automática':'pago único'}`;
   const act=card?(s.autoRenew?'<button class="btn sec sm" data-a="sub-cancel">Cancelar renovación</button>':'<button class="btn sec sm" data-a="sub-resume">Reactivar renovación</button>'):'<button class="btn sec sm" data-a="sub-renew">Renovar ahora</button>';
   return `<div class="card stack"><div class="between"><span class="eyebrow">Tu plan</span><span class="pro" aria-hidden="true">PRO</span></div>
    <div><b>LIA Pro · ${PRICES[s.period].name.toLowerCase()}</b><div class="small muted">${st}</div></div>
@@ -3187,9 +3251,17 @@ Object.assign(A,{
  plans:()=>{ui.sheet=sheetPlans();render();},
  'pay-continue':()=>{if(!ui.pay)ui.pay={why:'plans',ctx:null,period:'ciclo',method:'yape'};rememberChoice('period','period');
    if(!state.cuenta){abrirCuenta(cuentasActivas()?'registro':'sin-config',true);return;}
-   ui.sheet=hojaPago();render();},
+   abrirHojaPago();},
  // Preventa: la persona ya yapeó y el equipo activó su Pro; se lee el plan de la cuenta. Solo celebra si el Pro es
  // nuevo o se alargó (quien ya era Pro y renueva no ve «Listo» antes de que se registre su pago).
+ 'mp-pagar':(d,el)=>{const pay=ui.pay;if(!pay)return;const txt=el.textContent,estado=document.getElementById('mp-estado');
+   el.setAttribute('aria-disabled','true');el.textContent='Abriendo Mercado Pago…';if(estado){estado.style.color='';estado.textContent='Abriendo Mercado Pago…';}
+   llamarPagos('crear',{periodo:pay.period}).then(r=>{
+       try{localStorage.setItem(KEY_PAGO_MP,JSON.stringify({ref:r.ref,why:pay.why,ctx:pay.ctx||null,period:pay.period,t:Date.now()}));}catch(e){}
+       location.assign(r.url);},
+     e=>{if(el.isConnected){el.removeAttribute('aria-disabled');el.textContent=txt;}
+       if(e&&e.error==='apagado')ui.mpModo={id:state.cuenta&&state.cuenta.id,modo:'demo'};
+       const t=document.getElementById('mp-estado');if(t){t.style.color='var(--exam-ink)';t.textContent=MP_ERRORES[e&&e.error]||MP_ERRORES.mercadopago;}});},
  'pre-copiar':()=>{(navigator.clipboard?navigator.clipboard.writeText(PREVENTA.yape):Promise.reject()).then(()=>toast('Número copiado.'),()=>toast(`Copia el número: ${numYape()}.`));},
  'pay-revisar':(d,el)=>{const pay=ui.pay,antes=isPro()?state.sub.until:null,txt=el.textContent;
    const estado=t=>{const e=document.getElementById('pre-estado');if(e)e.textContent=t;};
@@ -3211,7 +3283,7 @@ Object.assign(A,{
        // El servidor cerró el pago de prueba para esta cuenta (preventa abierta): «Intentar de nuevo» lleva a Yape.
        if(/pago_de_prueba_cerrado/.test(String(e&&e.message||'')))pay.preventa=true;
        ui.sheet=sheetFail();render();});},
- 'pay-retry':()=>{if(ui.pay)ui.pay.error=null;ui.sheet=hojaPago();render();},
+ 'pay-retry':()=>{if(ui.pay)ui.pay.error=null;abrirHojaPago();},
  'pay-done':()=>{const p=ui.pay;ui.pay=null;ui.sheet=null;render();resumeAfterPay(p);},
  arm:()=>{if(isPro()){toast('Con Pro, Lía reorganiza tu semana sola.');return;}
    if(!canArm()){openPaywall('rearm');return;}
@@ -3219,7 +3291,7 @@ Object.assign(A,{
  'sub-cancel':()=>{ui.sheet=sheetCancel();render();},
  'sub-cancel-ok':()=>{ui.sheet=null;render();sbRpc('cambiar_renovacion',{p_activa:false}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast(`Listo. Tienes Pro hasta el ${fechaCorta(state.sub.until)}.`);}).catch(e=>toast(mensajeError(e)));},
  'sub-resume':()=>{sbRpc('cambiar_renovacion',{p_activa:true}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast('Renovación automática activada.');}).catch(e=>toast(mensajeError(e)));},
- 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};ui.sheet=hojaPago();render();},
+ 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};abrirHojaPago();},
  'sub-expire':()=>{if(!isPro()||!modoPruebas())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
    toast(sigue?'LIA Pro se renovó por un mes más (demo: sin cobro real).':'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');}).catch(e=>toast(mensajeError(e)));},
 });
@@ -3445,14 +3517,14 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
         const pend=tomarPagoPendiente(),p=ui.pay||pend,paraPro=f.paraPro||!!pend;
         if(paraPro&&p&&isPro()){ui.cuentaForm=null;ui.pay=null;ui.sheet=null;rerenderKeepScroll();toast('Tu cuenta ya tiene LIA Pro.');resumeAfterPay(p);return;}
         toast(reg?'Listo, creaste tu cuenta.':'Listo, iniciaste sesión.');
-        if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;ui.sheet=hojaPago();render();}
+        if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;abrirHojaPago();}
         else{ui.cuentaForm=null;ui.sheet=null;rerenderKeepScroll();}});})
     .catch(fallo);}
 function cuentaCard(){if(!cuentasActivas())return '';
   if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este navegador. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
   return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este navegador</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
- 'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=hojaPago();render();}else A.close();},
+ 'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;abrirHojaPago();}else A.close();},
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
  'cuenta-ingresar':d=>abrirCuenta('ingreso',d.pro==='1'),
  'cuenta-recuperar':()=>{const f=ui.cuentaForm;abrirCuenta('recuperar',!!(f&&f.paraPro));},
@@ -3469,7 +3541,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.11.1';
+const APP_VERSION='0.11.2';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -3527,6 +3599,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
   render();tick();pedirPantalla();})();
 iniciarCuentas();
 alVolverDeGoogle();
+alVolverDePago();
 if(state.cuenta&&state.gcal&&state.gcal.fuente==='google')cargarGoogle();
 if(state.cuenta)cargarCanales();   // lo que se confirmó por WhatsApp mientras LIA estaba cerrada, y la agenda al día
 setInterval(()=>{if(!ui.session&&!ui.sheet&&!ui.listen&&!document.activeElement.matches('input,select'))rerenderKeepScroll();},60000);

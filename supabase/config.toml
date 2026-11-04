@@ -414,6 +414,12 @@ verify_jwt = false
 enabled = true
 verify_jwt = false
 
+# Cobro con Mercado Pago (docs/pagos.md, borrador y apagado): Mercado Pago avisa sin sesión (firma x-signature) y la app
+# manda su sesión, que la función revisa con Auth; por eso verify_jwt está apagado. Sin esto, los avisos darían 401.
+[functions.lia-pagos]
+enabled = true
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
