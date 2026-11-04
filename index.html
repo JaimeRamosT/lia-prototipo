@@ -423,6 +423,25 @@ function busyFor(state,date){const wd=fromYmd(date).getDay(),ayer=(wd+6)%7,prev=
     if(x.date===date)poner(x,r.s,r.e,base,libres(x,date,0));
     else if(x.date===prev&&r.e>1440)poner(x,0,r.e-1440,{...base,cola:true},libres(x,prev,-1440));}
   return b;}
+// Gratis: lo que no se pudo estudiar vuelve a entrar en los huecos libres del horario armado, sin mover lo demás
+// y antes de su evaluación. falta: {evalId: minutos}. Devuelve los bloques nuevos (vacío si no hay huecos).
+function reacomodar(state,f,falta,now){const t=ymd(now);let nuevos=[];
+  for(const [id,min] of Object.entries(falta)){const e=state.evals.find(x=>x.id===id);if(!e||e.date<t||!(min>=10))continue;
+    const hecho=state.done.filter(x=>x.evalId===id).reduce((a,x)=>a+x.min,0);
+    const armado=[...f.blocks,...nuevos].filter(b=>finBloque(b).date>=t).map(b=>{const sig=b.s>=1440;return{date:sig?ymd(addDays(fromYmd(b.date),1)):b.date,s:sig?b.s-1440:b.s,len:b.e-b.s};});
+    const p=plan({...state,evals:[{...e,hours:(hecho+min)/60}],done:[...state.done,...armado.map(x=>({evalId:'',date:x.date,start:fmt(x.s),min:x.len}))],
+      exceptions:[...state.exceptions,...armado.map(x=>({date:x.date,start:fmt(x.s),end:fmt(x.s+x.len+10),label:''}))]},now,[id]);
+    nuevos=[...nuevos,...p.blocks];}
+  return nuevos;}
+// «Tu semana»: lo de esta semana (evaluaciones y estudio agendado desde hoy) y cómo fue la anterior (estudio hecho).
+function resumenSemana(state,p,now){const t=ymd(now),lun=fromYmd(mondayDe(now)),dias=k=>[...Array(7)].map((_,i)=>ymd(addDays(lun,i+7*k)));
+  const esta=dias(0),pasada=dias(-1);
+  return{lunes:esta[0],evals:state.evals.filter(e=>esta.includes(e.date)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)),
+    agendado:p.blocks.filter(b=>esta.includes(b.date)&&b.date>=t).reduce((a,b)=>a+b.e-b.s,0),
+    sinHueco:state.evals.filter(e=>esta.includes(e.date)&&(p.unmet||{})[e.id]>0),
+    hechoPasada:state.done.filter(x=>pasada.includes(x.date)).reduce((a,x)=>a+x.min,0),
+    evalsPasada:state.evals.filter(e=>pasada.includes(e.date)).length};}
+const mondayDe=d=>ymd(addDays(d,-((d.getDay()+6)%7)));
 // Rutinas con varios horarios (decisión del 28-oct): cada horario es un compromiso y los de una misma rutina
 // comparten grupo. Así el formato de los datos guardados no cambia (v:1).
 function agruparRutinas(cs){const out=[],ix={};
@@ -1850,10 +1869,10 @@ function vHoy(){const n=now(),t=ymd(n),p=P(),nm=n.getHours()*60+n.getMinutes(),c
     cfH=`<div class="${cfPend?'warn':'note'}"><span class="ico" style="color:var(${cfPend?'--exam-ink':'--pri'})">${cfPend?I.alert:I.cal}</span><div class="small"><b>${mismo?`Tienes dos evaluaciones el ${fechaCorta(cf[0].date)}`:`Se te juntan ${fechaCorta(cf[0].date)} y ${fechaCorta(cf[1].date)}`}</b><br>${esc(cf[0].course)} y ${esc(cf[1].course)} van ${mismo?'el mismo día':'seguidos'}. ${cfPend?'Aún les falta tiempo de estudio.':'Ya repartí sus horas de estudio en tu horario.'}</div></div>`;}
   return `<div class="between" style="align-items:flex-end"><div><div class="kicker">${cap(fechaLarga(t))}</div><h1>${state.settings.name?`Hola, ${esc(state.settings.name)}`:'Hoy'}</h1></div>${botonAgregar()}</div>${evHoy?evalHoyHTML(evHoy,nm):''}${avisoIOS()}${sugerenciaHTML()}${freeBanner()}${semanaPesadaHTML(p)}${perdidosHTML(p)}${hero}${compl}${faltaH}${cfH}${pc}<h2>Tu día</h2>${agendaHTML(t,p)}${night}`;}
 // Gratis: los bloques que pasaron sin marcarse. Lía pregunta si se estudiaron; lo que no, ya cuenta como pendiente.
-function perdidosHTML(p){const l=p.perdidos||[];if(!l.length)return '';
+function perdidosHTML(p){const l=p.perdidos||[],ts=tuSemanaHTML(p);if(!l.length)return ts;  // «Tu semana» va primero
   if(l.length===1){const b=l[0],e=evById(b.evalId),cuando=b.date===ymd(now())?'de hoy':`del ${fechaCorta(b.date)}`;
-    return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>¿Estudiaste ${esc(e?e.course:'')}?</b><br>Tu bloque ${cuando} de ${fmt(b.s)} a ${fmt(b.e)} ya pasó y no lo marcaste.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="done-block" data-ev="${b.evalId}" data-d="${b.date}" data-s="${b.s}" data-e="${b.e}" aria-label="Sí, estudié ${esc(e?e.course:'')}">Sí, lo estudié</button><button class="pill ghost" data-a="perdido-no" data-ev="${b.evalId}" data-k="${esc(claveBloque(b))}" aria-label="No pude estudiar ${esc(e?e.course:'')}">No pude</button></div></div></div>`;}
-  return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Tienes ${l.length} bloques sin marcar</b><br>Suman ${hrs(l.reduce((a,b)=>a+b.e-b.s,0))}. ¿Los estudiaste? Márcalos para que Lía cuente tu avance; lo que no estudiaste queda pendiente.<div style="margin-top:8px"><button class="pill solid" data-a="perdidos">Revisar mis bloques</button></div></div></div>`;}
+    return ts+`<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>¿Estudiaste ${esc(e?e.course:'')}?</b><br>Tu bloque ${cuando} de ${fmt(b.s)} a ${fmt(b.e)} ya pasó y no lo marcaste.<div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="done-block" data-ev="${b.evalId}" data-d="${b.date}" data-s="${b.s}" data-e="${b.e}" aria-label="Sí, estudié ${esc(e?e.course:'')}">Sí, lo estudié</button><button class="pill ghost" data-a="perdido-no" data-ev="${b.evalId}" data-k="${esc(claveBloque(b))}" aria-label="No pude estudiar ${esc(e?e.course:'')}">No pude</button></div></div></div>`;}
+  return ts+`<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Tienes ${l.length} bloques sin marcar</b><br>Suman ${hrs(l.reduce((a,b)=>a+b.e-b.s,0))}. ¿Los estudiaste? Márcalos para que Lía cuente tu avance; lo que no estudiaste queda pendiente.<div style="margin-top:8px"><button class="pill solid" data-a="perdidos">Revisar mis bloques</button></div></div></div>`;}
 // Rutinas que quedaron en «Otro» pero cuyo nombre sugiere una categoría («Almuerzo» → Comidas): Lía pregunta una vez.
 function sugerenciaTipo(){if(state.mode!=='own')return null;
   for(const c of state.commitments){if(tipoRutina(c.type)!=='otro'||c.sugerido)continue;const t=tipoPorNombre(c.name);if(t&&t!=='otro')return{c,t};}return null;}
@@ -2155,6 +2174,23 @@ function sheetBlock(d){const e=evById(d.ev),n=now(),t=ymd(n),f=finBloque({date:d
   <button class="btn sec" data-a="done-block" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Ya lo estudié</button>
   <button class="btn sec" data-a="move" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">No puedo a esa hora · que Lía lo mueva${isPro()?'':PRO_TAG}</button>
   <button class="btn sec" data-a="close">Cerrar</button>`;}
+// «Tu semana»: los lunes y martes, hasta que la cierras. Lo clave de esta semana y cómo te fue la anterior.
+const TU_SEMANA_KEY='lia.tuSemana';
+function tuSemanaHTML(p){const n=now();if(!state.onboarded||![1,2].includes(n.getDay()))return '';const r=resumenSemana(state,p,n);
+  try{if(localStorage.getItem(TU_SEMANA_KEY)===r.lunes)return '';}catch(e){}
+  const ev=r.evals.length?`${r.evals.length} ${r.evals.length===1?'evaluación':'evaluaciones'}: ${r.evals.map(e=>`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label.toLowerCase()} de ${esc(e.course)} (${DIAS[fromYmd(e.date).getDay()]})`).join(', ')}`:'Sin evaluaciones';
+  const est=r.agendado?` · ${hrs(r.agendado)} de estudio agendadas desde hoy`:'';
+  const falta=r.sinHueco.length?`<br><b style="color:var(--exam-ink)">Ojo:</b> a ${r.sinHueco.map(e=>esc(e.course)).join(' y ')} no le alcanzan las horas.`:'';
+  const rindio=r.evalsPasada?`rendiste ${r.evalsPasada} ${r.evalsPasada===1?'evaluación':'evaluaciones'}`:'';
+  const antes=r.hechoPasada?`<br>La semana pasada estudiaste ${hrs(r.hechoPasada)}${rindio?' y '+rindio:''}.`:rindio?`<br>La semana pasada ${rindio}.`:'';
+  return `<div class="note"><span class="ico" style="color:var(--pri)">${I.cal}</span><div class="grow small"><b>Tu semana</b><br>${ev}${est}.${falta}${antes}
+    <div class="row-h" style="margin-top:8px;flex-wrap:wrap"><button class="pill solid" data-a="tab" data-t="semana">Ver mi semana</button><button class="pill ghost" data-a="tu-semana-ok" data-v="${r.lunes}">Entendido</button></div></div></div>`;}
+// Lo que dice Lía al reacomodar lo que no se pudo estudiar.
+function textoReacomodo(nuevos,min,e){const puesto=nuevos.reduce((a,b)=>a+b.e-b.s,0),de=e?` de ${e.course}`:'';
+  if(!puesto)return `No hay huecos libres antes de tu evaluación, así que ${hrs(min)}${de} quedan pendientes. Libera un rato o rearma tu semana.`;
+  const ord=[...nuevos].sort((a,b)=>(a.date+String(a.s).padStart(4,'0')).localeCompare(b.date+String(b.s).padStart(4,'0'))),d=x=>`${fechaCorta(x.date)} de ${fmt(x.s)} a ${fmt(x.e)}`;
+  const donde=ord.length===1?`al ${d(ord[0])}`:`a ${ord.length} bloques: ${ord.slice(0,3).map(d).join(', ')}${ord.length>3?'…':''}`;
+  return `Listo. Pasé ${hrs(puesto)}${de} ${donde}.${puesto<min-5?` ${hrs(min-puesto)} quedan pendientes: no hay más huecos libres antes.`:''}`;}
 function sheetPerdidos(){const l=P().perdidos||[];
   return `<div class="grab"></div><h2>¿Qué bloques estudiaste?</h2><p class="muted" style="margin:0">Marca los que sí hiciste. Lo demás queda pendiente en tus evaluaciones.</p>
   <form data-form="perdidos" class="stack">${l.map(b=>{const e=evById(b.evalId);return `<label class="opt"><input type="checkbox" name="b" value="${esc(claveBloque(b))}"><span class="grow"><b>${esc(e?e.course:'')}</b><br><span class="small muted tnum">${cap(fechaCorta(b.date))} · ${fmt(b.s)} – ${fmt(b.e)}</span></span></label>`;}).join('')}
@@ -2211,7 +2247,7 @@ function sheetFail(){return `<div class="grab"></div><span class="eyebrow" style
 function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
   const rows=[['Precio','S/ 0',`${soles(PRICES.mes.amount)} al mes o ${soles(PRICES.ciclo.amount)} por ciclo (4 meses, ${SAVE_PCT}% menos)`],
    ['Rutinas y evaluaciones',`Hasta ${FREE_EVALS} evaluaciones`,'Ilimitadas'],
-   ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas entran solas en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
+   ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas y lo que no pudiste estudiar entran solos en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
    ['Voz','—',`Dictado ilimitado. Notas de voz ${soon}`],
    ['Sílabos y aula virtual','—',`Lía los lee y agrega las evaluaciones ${soon}`],
    ['Recordatorios','Dentro de la app','Con notificaciones, aunque LIA esté cerrada: exámenes, cada sesión de estudio y un resumen cada mañana. Modo sesión']];
@@ -2915,8 +2951,11 @@ const A={
  'move-ok':d=>moveBlock(blockOf(d)),
  'done-block':d=>{const e=evById(d.ev);ui.sheet=null;if(!e){rerenderKeepScroll();return;}snapshot();state.done.push(hechoDeBloque(d.ev,d.d,+d.s,+d.e));save();rerenderKeepScroll();toast(`Bien. Sumé ${hrs(+d.e-+d.s)} a ${e.course}.`,true);},
  // Gratis: un bloque que pasó y no se estudió deja de preguntarse; su tiempo ya cuenta como pendiente.
- 'perdido-no':d=>{const f=state.frozen,e=evById(d.ev);ui.sheet=null;if(!f){rerenderKeepScroll();return;}snapshot();f.vistos=[...(Array.isArray(f.vistos)?f.vistos:[]),d.k];save();rerenderKeepScroll();
-   toast(e?`Listo. Ese tiempo vuelve a lo que te falta de ${e.course}.`:'Listo.',true);},
+ 'tu-semana-ok':d=>{try{localStorage.setItem(TU_SEMANA_KEY,d.v);}catch(e){}rerenderKeepScroll();},
+ 'perdido-no':d=>{const f=state.frozen,e=evById(d.ev);ui.sheet=null;if(!f){rerenderKeepScroll();return;}
+   const b=(P().perdidos||[]).find(x=>claveBloque(x)===d.k);snapshot();f.vistos=[...(Array.isArray(f.vistos)?f.vistos:[]),d.k];
+   const nuevos=b?reacomodar(state,f,{[b.evalId]:b.e-b.s},now()):[];f.blocks=[...f.blocks,...nuevos];save();rerenderKeepScroll();
+   toast(textoReacomodo(nuevos,b?b.e-b.s:0,e),true);},
  perdidos:()=>{ui.sheet=sheetPerdidos();render();},
  anotar:()=>{const x=sinHorario(P())[0],curso=x?x.e.course:((state.evals[0]||{}).course||'Cálculo');ui.tab='lia';
    const txt=`¿Cuánto estudiaste y de qué? Escríbeme, por ejemplo: “hoy estudié 1 hora de ${curso}”.`,u=state.chat[state.chat.length-1];if(!u||u.text!==txt)liaSay(txt);
@@ -2994,7 +3033,7 @@ const A={
  close:()=>{ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();},  // al cerrar no se guarda la contraseña escrita
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
- reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(INSTALACION_KEY);localStorage.removeItem(METRICAS_ENV);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
+ reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(TU_SEMANA_KEY);localStorage.removeItem(INSTALACION_KEY);localStorage.removeItem(METRICAS_ENV);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
  'aviso-ios-ok':()=>{try{localStorage.setItem('lia.avisoIOS','1');}catch(e){}rerenderKeepScroll();},
  'listen-stop':()=>{stopMic(true);},
@@ -3040,8 +3079,10 @@ document.addEventListener('submit',ev=>{const f=ev.target;ev.preventDefault();co
     toast(`Listo: duermes de ${s} a ${w}. Lía no te pone a estudiar en esas horas.`,true);return;}
   if(f.dataset.form==='perdidos'){const l=P().perdidos||[],sel=new Set(fd.getAll('b')),fz=state.frozen;ui.sheet=null;if(!l.length||!fz){rerenderKeepScroll();return;}
     snapshot();fz.vistos=Array.isArray(fz.vistos)?fz.vistos:[];let min=0;
-    for(const b of l){const k=claveBloque(b);if(sel.has(k)){state.done.push(hechoDeBloque(b.evalId,b.date,b.s,b.e));min+=b.e-b.s;}else fz.vistos.push(k);}
-    save();rerenderKeepScroll();toast(min?`Sumé ${hrs(min)} a tu avance.${sel.size<l.length?' Lo demás queda pendiente.':''}`:'Listo. Ese tiempo queda pendiente en tus evaluaciones.',true);return;}
+    const falta={};
+    for(const b of l){const k=claveBloque(b);if(sel.has(k)){state.done.push(hechoDeBloque(b.evalId,b.date,b.s,b.e));min+=b.e-b.s;}else{fz.vistos.push(k);falta[b.evalId]=(falta[b.evalId]||0)+b.e-b.s;}}
+    const nuevos=reacomodar(state,fz,falta,now()),total=Object.values(falta).reduce((a,x)=>a+x,0);fz.blocks=[...fz.blocks,...nuevos];
+    save();rerenderKeepScroll();toast([min?`Sumé ${hrs(min)} a tu avance.`:'',total?textoReacomodo(nuevos,total,null):''].filter(Boolean).join(' '),true);return;}
   if(f.dataset.form==='wa'){const n=String(fd.get('numero')||'');ui.waErr=n.replace(/[^0-9]/g,'').length<8?'Escribe tu número de WhatsApp, por ejemplo 987 654 321.':null;
     if(ui.waErr){rerenderKeepScroll();return;}pedirCodigoWa(n);return;}
   if(f.dataset.form==='wa-codigo'){const c=String(fd.get('codigo')||'').replace(/[^0-9]/g,'');if(c.length!==6){ui.waErr='Escribe los 6 dígitos del código.';rerenderKeepScroll();return;}confirmarCodigoWa(c);return;}
@@ -3270,7 +3311,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.10.4';
+const APP_VERSION='0.10.5';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
