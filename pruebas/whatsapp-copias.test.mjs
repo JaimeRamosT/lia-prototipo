@@ -19,7 +19,7 @@ test('las copias de lia-whatsapp están al día (si falla: node supabase/functio
   }
 });
 
-test('las reglas del servidor (módulo estricto) entienden las 105 frases igual que la app', () => {
+test('las reglas del servidor (módulo estricto) entienden todas las frases de pruebas/ia/frases.json igual que la app', () => {
   const s = estadoEval(), n = ahoraLocal();
   for (const f of cargarFrases()) {
     assert.deepEqual(JSON.parse(JSON.stringify(Lserv.interpret(f.frase, s, n))), JSON.parse(JSON.stringify(Lapp.interpret(f.frase, s, n))), f.id);

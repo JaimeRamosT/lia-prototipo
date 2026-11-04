@@ -10,14 +10,16 @@ const n = ahoraLocal();
 const dias = f => Math.round((L.fromYmd(f) - L.fromYmd(L.ymd(n))) / 864e5);
 const alternativas = e => (Array.isArray(e) ? e : [e]);
 
-test('el set tiene entre 60 y 120 frases, con identificadores únicos', () => {
-  assert.ok(frases.length >= 60 && frases.length <= 120, `${frases.length} frases`);
+// Iteración 3: las 105 de antes más el test nuevo (i3-*, al menos 30). Con Groq son unos 22 s por frase.
+test('el set tiene entre 135 y 160 frases, con identificadores únicos', () => {
+  assert.ok(frases.length >= 135 && frases.length <= 160, `${frases.length} frases`);
+  assert.ok(frases.filter(f => f.id.startsWith('i3-')).length >= 30, 'el test de la iteración 3');
   assert.equal(new Set(frases.map(f => f.id)).size, frases.length);
   for (const f of frases) assert.ok(typeof f.frase === 'string' && f.frase.trim() && f.frase.length <= 500, f.id);
 });
 
 test('lo esperado es algo que la app puede aceptar: fechas, horas, ids y rangos de validarIA()', () => {
-  const s = estadoEval(), evals = new Set(s.evals.map(e => e.id)), fijos = new Set(s.commitments.map(c => c.id));
+  const s = estadoEval(), evals = new Set(s.evals.map(e => e.id)), fijos = new Set(s.commitments.map(c => c.id)), eventos = new Set(s.exceptions.map(x => x.id));
   const hora = h => h === undefined || /^([01]\d|2[0-3]):[0-5]\d$/.test(h);
   const fecha = (f, a, b) => L.fechaIA(f) === f && dias(f) >= a && dias(f) <= b;
   for (const f of frases) for (const e of alternativas(f.espera)) {
@@ -35,6 +37,10 @@ test('lo esperado es algo que la app puede aceptar: fechas, horas, ids y rangos 
         break;
       case 'log': assert.ok(evals.has(e.evalId) && fecha(e.date, -14, 0) && Number.isInteger(e.min), donde); break;
       case 'agenda': assert.ok(fecha(e.date, -7, 60), donde); break;
+      case 'cambiaEval': assert.ok(evals.has(e.evalId) && (e.date === undefined || fecha(e.date, 0, 400)) && hora(e.time), donde); break;
+      case 'quitaEval': assert.ok(evals.has(e.evalId), donde); break;
+      case 'quitaEvento': assert.ok(eventos.has(e.exId), donde); break;
+      case 'quitaRutina': assert.ok(e.ids.length && e.ids.every(id => fijos.has(id)), donde); break;
       default: assert.ok(['progress', 'next', 'replan', 'pregunta', 'aviso', 'fuera', 'sin_cambios'].includes(e.intent), donde);
     }
   }
@@ -82,6 +88,20 @@ test('revisar(): preguntar, avisar y no cambiar nada se cuentan según quién re
   assert.equal(revisar({ intent: 'sin_cambios' }, ia('fuera')), true);
   assert.equal(revisar({ intent: 'sin_cambios' }, ia('add', { intent: 'add', items: [{ kind: 'eval' }] })), false);
   assert.equal(revisar([{ intent: 'pregunta' }, { intent: 'aviso' }], ia('aviso')), true);
+});
+
+test('revisar(): cambiar o quitar lo que ya está, y «sin cambios» no acepta quitar', () => {
+  const reglas = r => ({ r, origen: 'reglas', ia: null });
+  assert.equal(revisar({ intent: 'quitaEvento', exId: 'x1' }, reglas({ intent: 'quitaEvento', exId: 'x1', date: '2026-10-29' })), true);
+  assert.equal(revisar({ intent: 'quitaEvento', exId: 'x1' }, reglas({ intent: 'quitaEvento', exId: 'x2' })), false);
+  assert.equal(revisar({ intent: 'quitaEval', evalId: 'e1' }, reglas({ intent: 'quitaEval', evalId: 'e1' })), true);
+  assert.equal(revisar({ intent: 'quitaRutina', ids: ['c1'] }, reglas({ intent: 'quitaRutina', ids: ['c1'], name: 'Trabajo' })), true);
+  assert.equal(revisar({ intent: 'cambiaEval', evalId: 'e2', date: '2026-11-02' }, reglas({ intent: 'cambiaEval', evalId: 'e2', date: '2026-11-02', time: '' })), true);
+  assert.equal(revisar({ intent: 'cambiaEval', evalId: 'e2', date: '2026-11-02' }, reglas({ intent: 'cambiaEval', evalId: 'e2', date: '2026-11-03', time: '' })), false);
+  for (const intent of ['quitaEval', 'quitaEvento', 'quitaRutina', 'cambiaEval']) assert.equal(revisar({ intent: 'sin_cambios' }, reglas({ intent })), false, intent);
+  // Una pregunta de quitar: «¿solo ese día o toda la rutina?» y «¿cuál quito?».
+  const alcance = { intent: 'pregunta', texto: '…', borrador: { intent: 'quitar', i: 0, items: [{ kind: 'quitar', date: '2026-10-27', hora: 900, cands: [{ t: 'rutina', id: 'c1', d: '2026-10-27' }], t: 'rutina', id: 'c1', d: '2026-10-27', alcance: '' }] } };
+  assert.equal(revisar({ intent: 'pregunta', falta: 'alcance' }, reglas(alcance)), true);
 });
 
 // Gemini simulado: responde lo que se le pase y guarda lo que recibió.
