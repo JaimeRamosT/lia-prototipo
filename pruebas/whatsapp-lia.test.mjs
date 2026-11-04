@@ -142,10 +142,15 @@ test('si la base ya no tiene la propuesta (venció), «sí» lo dice', async () 
   assert.equal(cuerpo(e), W.VENCIDA);
 });
 
-test('un audio o una foto reciben que por ahora solo lee texto', async () => {
-  const m = lia();
-  const e = await llega(m, { from: NUM, type: 'audio', audio: { id: 'x' } });
-  assert.match(cuerpo(e), /^Por ahora solo leo mensajes de texto\./);
+// Los audios (solo Pro) están en pruebas/whatsapp-audio.test.mjs.
+test('una foto o un sticker reciben que por ahora solo lee texto (y audios en Pro)', async () => {
+  for (const msj of [{ from: NUM, type: 'image', image: { id: 'x' } }, { from: NUM, type: 'sticker', sticker: { id: 'y' } }]) {
+    const m = lia();
+    const e = await llega(m, msj);
+    assert.equal(cuerpo(e), 'Por ahora solo leo mensajes de texto (y audios, en LIA Pro). Cuéntame qué anoto o pregúntame «¿qué tengo hoy?».');
+  }
+  const m = lia({ estado: estadoWa({ pro: false }) });
+  assert.match(cuerpo(await llega(m, { from: NUM, type: 'audio', audio: { id: 'x' } })), /^Los audios son de LIA Pro\./);
 });
 
 // ---------- Lo que falta ----------
