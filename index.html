@@ -469,6 +469,16 @@ function ocupadoMarco(state,date,fin){const o=busyFor(state,date).map(b=>[b.s,b.
 function evalDeadline(ev,S){const t=EVAL_TYPES[ev.type]||EVAL_TYPES.parcial;
   if(t.exam)return{date:ymd(addDays(fromYmd(ev.date),-1)),end:finDelDia(S)};
   return{date:ev.date,end:Math.min(toMin(ev.time)-60,finDelDia(S))};}
+// Amanecidas: estudio anotado de 00:00 a 04:59 cuenta como «después de medianoche» de la noche anterior.
+// Devuelve las noches con estudio y cuántas pasaron la medianoche entre dos fechas (inclusive), y si el plan de esas
+// fechas tiene bloques que terminan después de medianoche.
+const MADRUGADA=300;
+function nochesDeEstudio(state,p,desde,hasta){const noches=new Set(),tarde=new Set(),corte=Math.min(MADRUGADA,toMin((state.settings&&state.settings.wake)||'05:00'));
+  for(const x of state.done){const ini=toMin(x.start),fin=ini+x.min;
+    const noche=ini<corte?ymd(addDays(fromYmd(x.date),-1)):x.date;if(noche<desde||noche>hasta)continue;
+    noches.add(noche);if(ini<corte||fin>1440)tarde.add(noche);}
+  const riesgo=p.blocks.filter(b=>b.date>=desde&&b.date<=hasta&&b.e>1440).length;
+  return{noches:noches.size,tarde:tarde.size,salvadas:noches.size-tarde.size,riesgo,dias:[...noches].sort(),diasTarde:[...tarde].sort()};}
 function doneFor(state,id){return state.done.filter(x=>x.evalId===id).reduce((a,x)=>a+x.min,0);}
 
 // Motor de horarios: reparte las horas que pide cada evaluación en los huecos libres reales.
@@ -1944,10 +1954,17 @@ function vSemana(){if(ui.vista==='mes')return vMes();if(ui.vista==='ciclo')retur
   ${selectorVista()}${freeWeekLine()}<div class="days">${days.map(d=>{const dt=fromYmd(d);const hasS=p.blocks.some(b=>b.date===d);const hasE=state.evals.some(e=>e.date===d);
     const que=hasE&&hasS?', con evaluación y estudio':hasE?', con evaluación':hasS?', con estudio':'';
     return `<button class="day ${d<t?'past':''}" data-a="sel" data-d="${d}" aria-pressed="${d===ui.sel}" aria-label="${cap(DIAS[dt.getDay()])} ${dt.getDate()}${d===t?', hoy':''}${que}"><span>${DIAS_C[dt.getDay()]}</span><b class="tnum">${dt.getDate()}</b><i class="dot ${hasE?'x':''}" style="${hasS||hasE?'':'visibility:hidden'}"></i></button>`;}).join('')}</div>
+  ${amanecidasHTML(days,p)}
   <div class="stats"><div class="card stat"><b class="tnum">${hrs(study)}</b><span>de estudio en esta semana</span></div><div class="card stat"><b class="tnum">${exams}</b><span>${exams===1?'evaluación':'evaluaciones'} esta semana</span></div></div>
   <div class="between"><div><h2>${cap(fechaLarga(ui.sel))}</h2>${selStudy?`<span class="small" style="color:var(--pri);font-weight:600">${hrs(selStudy)} de estudio</span>`:''}</div>${ui.sel>=t?botonAgregar(ui.sel):''}</div>
   ${agendaHTML(ui.sel,p)}`;}
 
+// Contador de amanecidas de la semana: noches con estudio, cuántas sin pasar la medianoche y si el plan corre riesgo.
+function amanecidasHTML(days,p){const t=ymd(now()),a=nochesDeEstudio(state,p,days[0],days[6]>t?t:days[6]),r=nochesDeEstudio(state,p,days[0]>t?days[0]:t,days[6]).riesgo;
+  if(!a.noches&&!r)return '';
+  const txt=a.noches?(a.tarde?`${a.salvadas} de ${a.noches} ${a.noches===1?'noche':'noches'} de estudio terminaron antes de medianoche.`:`${a.noches} ${a.noches===1?'noche':'noches'} de estudio esta semana, ninguna después de medianoche.`):'';
+  const ri=r?` ${r===1?'Un bloque de esta semana termina':`${r} bloques de esta semana terminan`} después de medianoche: adelanta tu hora de dormir o libera un rato antes.`:'';
+  return `<div class="${a.tarde||r?'warn':'note'}"><span class="ico" style="color:var(${a.tarde||r?'--exam-ink':'--pri'})">${I.moon||I.cal}</span><div class="grow small"><b>${a.tarde?'Te amaneciste':r?'Ojo con la medianoche':'Sin amanecidas'}</b><br>${txt}${ri}</div></div>`;}
 function vEvals(){const t=ymd(now());const up=state.evals.filter(e=>e.date>=t).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));const past=state.evals.filter(e=>e.date<t);
   return `<div><div class="kicker">Exámenes y entregas</div><h1>Evaluaciones</h1></div>
   ${dictar('eval','“entrego el informe el viernes”')}
@@ -3311,7 +3328,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.10.5';
+const APP_VERSION='0.10.6';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -3329,16 +3346,19 @@ function idInstalacion(){try{let id=localStorage.getItem(INSTALACION_KEY);
     id=`${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;localStorage.setItem(INSTALACION_KEY,id);}
   return id;}catch(e){return null;}}
 // Cada evento sale una vez (instalacion, registro) o una vez por día (abre).
-function evento(nombre){if(!metricasActivas())return;const id=idInstalacion();if(!id)return;
-  const dia=ymd(now());let env={};try{env=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};}catch(e){}
-  const clave=nombre==='abre'?'abre:'+dia:nombre;if(env[clave])return;
+function evento(nombre,diaDe){if(!metricasActivas())return;const id=idInstalacion();if(!id)return;
+  const dia=diaDe||ymd(now());let env={};try{env=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};}catch(e){}
+  const porDia=nombre==='abre'||nombre==='estudio'||nombre==='madrugada',clave=porDia?nombre+':'+dia:nombre;if(env[clave])return;
   const plataforma=isIOS()?'ios':/android/i.test(navigator.userAgent)?'android':'otro';
   fetch(SB_CFG.url+'/rest/v1/rpc/registrar_evento',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',apikey:SB_CFG.key,Authorization:'Bearer '+SB_CFG.key},
     body:JSON.stringify({p_instalacion:id,p_evento:nombre,p_dia:dia,p_plataforma:plataforma,p_instalada:isStandalone(),p_pro:isPro()})})
-    .then(r=>{if(!r.ok)return;try{const e2=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};for(const k of Object.keys(e2))if(k.startsWith('abre:')&&k!=='abre:'+dia)delete e2[k];e2[clave]=1;localStorage.setItem(METRICAS_ENV,JSON.stringify(e2));}catch(e){}})
+    .then(r=>{if(!r.ok)return;try{const e2=JSON.parse(localStorage.getItem(METRICAS_ENV)||'{}')||{};const viejo=ymd(addDays(now(),-3));for(const k of Object.keys(e2))if(/^(abre|estudio|madrugada):/.test(k)&&k.split(':')[1]<viejo)delete e2[k];e2[clave]=1;localStorage.setItem(METRICAS_ENV,JSON.stringify(e2));}catch(e){}})
     .catch(()=>{});}
+// Noches con estudio de ayer y hoy, y si pasaron la medianoche (sin cursos ni horas: solo el día y el evento).
+function eventosEstudio(){const n=now(),hoy=ymd(n),ayer=ymd(addDays(n,-1)),a=nochesDeEstudio(state,{blocks:[]},ayer,hoy);
+  for(const d of a.dias)evento('estudio',d);for(const d of a.diasTarde)evento('madrugada',d);}
 function metricasCard(){if(!SB_CFG.url)return '';let on=true;try{on=localStorage.getItem(METRICAS_KEY)!=='no';}catch(e){}
-  return `<label class="opt"><input type="checkbox" data-metricas ${on?'checked':''}><span><b>Ayudar a mejorar LIA</b><br><span class="small muted">Contamos de forma anónima cuántas personas abren la app y terminan el registro. No enviamos tus horarios, cursos, mensajes ni tu nombre.</span></span></label>`;}
+  return `<label class="opt"><input type="checkbox" data-metricas ${on?'checked':''}><span><b>Ayudar a mejorar LIA</b><br><span class="small muted">Contamos de forma anónima cuántas personas abren la app, terminan el registro y en qué noches estudian (y si fue después de medianoche). No enviamos tus horarios, cursos, mensajes ni tu nombre.</span></span></label>`;}
 function installCard(){const base='Todo se guarda solo en este navegador.';
   if(isStandalone())return `<div class="card small muted">Todo se guarda solo en este dispositivo, dentro de la app. Si la desinstalas o borras los datos del navegador, se pierde.</div>`;
   if(installEvt)return `<div class="card stack"><span class="small muted">${base} Instálala para abrirla como app, incluso sin internet.</span><button class="btn pri" data-a="install">Instalar LIA</button></div>`;
@@ -3354,8 +3374,8 @@ window.addEventListener('storage',e=>{if(e.key!==KEY||!e.newValue)return;let nue
   if(!nuevo||nuevo.v!==1)return;state=nuevo;undoStack=null;ensureState();if(calm())rerenderKeepScroll();});
 
 render();
-evento('instalacion');evento('abre');
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')evento('abre');});
+evento('instalacion');evento('abre');eventosEstudio();
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){evento('abre');eventosEstudio();}});
 // Retoma una sesión de estudio que seguía abierta; si el tiempo se acabó con la app cerrada, la registra.
 (function(){let g=null;try{g=JSON.parse(localStorage.getItem(KEY_SES));}catch(e){}if(!g)return;
   if(!evById(g.ev)||![g.total,g.acc,g.since].every(Number.isFinite)||!(g.total>0)){ui.session=null;guardarSesion();return;}
