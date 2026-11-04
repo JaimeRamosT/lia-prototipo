@@ -1645,7 +1645,8 @@ const soles=v=>'S/ '+(Math.round(v*100+1e-6)/100).toFixed(2);
 // por WhatsApp; el equipo activa su Pro con registrar_preventa(). Sin número, el checkout sigue en modo demo.
 // yape: el número de Yape (9 dígitos); titular: el nombre que verá en Yape; whatsapp: con código de país, solo dígitos.
 const PREVENTA={yape:'',titular:'',whatsapp:''};
-const preventaActiva=()=>/^9\d{8}$/.test(PREVENTA.yape)&&/^\d{10,15}$/.test(PREVENTA.whatsapp)&&!!PREVENTA.titular&&!modoPruebas();
+const preventaConfigurada=()=>/^9\d{8}$/.test(PREVENTA.yape)&&/^\d{10,15}$/.test(PREVENTA.whatsapp)&&!!PREVENTA.titular;
+const preventaActiva=()=>preventaConfigurada()&&!modoPruebas();
 const SAVE_CICLO=PRICES.mes.amount*PRICES.ciclo.months-PRICES.ciclo.amount;
 const SAVE_PCT=Math.round(SAVE_CICLO/(PRICES.mes.amount*PRICES.ciclo.months)*100);
 const fechaSub=s=>{const d=fromYmd(s);return fechaLarga(s)+(d.getFullYear()!==now().getFullYear()?` de ${d.getFullYear()}`:'');};
@@ -2287,20 +2288,25 @@ function sheetCheckout(){const per=ui.pay.period,p=PRICES[per],m=ui.pay.method;
   <button class="btn sec" data-a="pay-sim" data-ok="0">Simular pago rechazado</button>
   ${per==='mes'?'<p class="small muted" style="margin:0;text-align:center">Si pagas con tarjeta, puedes cancelar la renovación cuando quieras desde Perfil.</p>':''}`;}
 // La preventa: cuánto yapear, a quién, y el mensaje de WhatsApp ya escrito (plan, monto y correo de la cuenta).
+const usarPreventa=()=>preventaActiva()||!!(ui.pay&&ui.pay.preventa&&preventaConfigurada());
+const hojaPago=()=>usarPreventa()?sheetPreventa():sheetCheckout();
+const numYape=()=>PREVENTA.yape.replace(/(\d{3})(\d{3})(\d{3})/,'$1 $2 $3');
 function sheetPreventa(){const per=ui.pay.period,p=PRICES[per];
-  const base=isPro()&&state.sub.until>ymd(now())?fromYmd(state.sub.until):now(),until=fechaSub(ymd(addMonths(base,p.months)));
-  const num=PREVENTA.yape.replace(/(\d{3})(\d{3})(\d{3})/,'$1 $2 $3');
-  const msg=`Hola, quiero LIA Pro ${p.name.toLowerCase()} (${soles(p.amount)}). Ya yapeé. Mi correo de LIA es ${(state.cuenta&&state.cuenta.email)||''}. Número de operación: `;
-  return `<div class="grab"></div><span class="eyebrow">Pagar LIA Pro · preventa</span>
-  <div class="between"><h2>${p.name} · ${soles(p.amount)}</h2><button class="linkbtn" data-a="pay-back">Cambiar plan</button></div>
-  <p class="small muted" style="margin:0">Pro hasta el ${until}. Pago único: no se renueva solo. Al terminar vuelves a Gratis y tus datos se quedan.</p>
+  const sigue=isPro()&&state.sub.until>ymd(now());
+  const dura=`${p.months} ${p.months===1?'mes':'meses'}`;
+  const cuando=sigue?`${p.months===1?'Se suma':'Se suman'} ${dura} al final de tu Pro actual (hasta el ${fechaSub(state.sub.until)}).`:`Tienes Pro por ${dura} desde que lo activemos.`;
+  const msg=`Hola, quiero LIA Pro ${p.name.toLowerCase()} (${soles(p.amount)}). Ya yapeé. Mi correo en LIA es ${(state.cuenta&&state.cuenta.email)||''}. Número de operación: `;
+  return `<div class="grab"></div><span class="eyebrow">Preventa · ${esc(p.name)} · ${soles(p.amount)}</span>
+  <div class="between"><h2>Pagar LIA Pro</h2><button class="linkbtn" data-a="pay-back">Cambiar plan</button></div>
+  <p class="small muted" style="margin:0">${cuando} Pago único: no se renueva solo. Al terminar vuelves a Gratis y tus datos se quedan.</p>
   <ol class="stack" style="margin:0;padding-left:20px;gap:8px">
-   <li>Yapea <b class="tnum">${soles(p.amount)}</b> al <b class="tnum">${esc(num)}</b> (${esc(PREVENTA.titular)}).</li>
-   <li>Envíanos por WhatsApp el <b>número de operación</b> que te muestra Yape y el correo de tu cuenta de LIA.</li>
-   <li>Activamos tu Pro en menos de 24 horas y te avisamos por ahí.</li></ol>
-  <a class="btn pri" href="https://wa.me/${PREVENTA.whatsapp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+   <li>Yapea <b class="tnum">${soles(p.amount)}</b> al <b class="tnum">${esc(numYape())}</b>. <button class="linkbtn" data-a="pre-copiar">Copiar número</button><br><span class="small muted">Antes de confirmar, Yape te mostrará el nombre <b>${esc(PREVENTA.titular)}</b>. Si no coincide, no yapees.</span></li>
+   <li>Toca «Enviar por WhatsApp». El mensaje ya lleva tu correo; solo agrega el <b>número de operación</b> que te muestra Yape.</li>
+   <li>Activamos tu Pro en menos de 24 horas y te avisamos por WhatsApp. Luego toca «Ya me activaron».</li></ol>
+  <a class="btn pri" href="https://wa.me/${PREVENTA.whatsapp}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Enviar por WhatsApp<span class="sr-only"> (se abre en una pestaña nueva)</span></a>
   <button class="btn sec" data-a="pay-revisar">Ya me activaron: revisar mi plan</button>
-  <p class="small muted" style="margin:0;text-align:center">Pronto podrás pagar con tarjeta o Yape aquí mismo.</p>`;}
+  <p class="small" id="pre-estado" role="status" style="margin:0;text-align:center"></p>
+  <p class="small muted" style="margin:0;text-align:center">Más adelante podrás pagar con tarjeta aquí mismo. ¿Algún problema con tu pago? Escríbenos al mismo WhatsApp.</p>`;}
 function sheetProcessing(){return `<div class="grab"></div><div class="spin" role="status" aria-label="Procesando el pago"></div><h2 style="text-align:center">Procesando tu pago</h2><p class="small muted" style="margin:0;text-align:center">${esc((METHODS[ui.pay.method]||METHODS.yape).name)} · ${soles(PRICES[ui.pay.period].amount)} · modo demo</p>`;}
 function sheetSuccess(){const s=state.sub;
   const line=s.autoRenew?`Se renueva el ${fechaSub(s.until)} con tu tarjeta.`:`Tienes Pro hasta el ${fechaSub(s.until)}.`;
@@ -3181,10 +3187,19 @@ Object.assign(A,{
  plans:()=>{ui.sheet=sheetPlans();render();},
  'pay-continue':()=>{if(!ui.pay)ui.pay={why:'plans',ctx:null,period:'ciclo',method:'yape'};rememberChoice('period','period');
    if(!state.cuenta){abrirCuenta(cuentasActivas()?'registro':'sin-config',true);return;}
-   ui.sheet=preventaActiva()?sheetPreventa():sheetCheckout();render();},
- // Preventa: la persona ya yapeó y el equipo activó su Pro; se lee el plan de la cuenta.
- 'pay-revisar':()=>{refrescarPlan(false).then(()=>{if(isPro()){const p=ui.pay;ui.pay=null;ui.sheet=null;render();toast(`Listo: tienes LIA Pro hasta el ${fechaCorta(state.sub.until)}.`);resumeAfterPay(p);}
-     else toast('Todavía no está activo. Si ya nos escribiste, lo activamos en menos de 24 horas.');}).catch(e=>toast(mensajeError(e)));},
+   ui.sheet=hojaPago();render();},
+ // Preventa: la persona ya yapeó y el equipo activó su Pro; se lee el plan de la cuenta. Solo celebra si el Pro es
+ // nuevo o se alargó (quien ya era Pro y renueva no ve «Listo» antes de que se registre su pago).
+ 'pre-copiar':()=>{(navigator.clipboard?navigator.clipboard.writeText(PREVENTA.yape):Promise.reject()).then(()=>toast('Número copiado.'),()=>toast(`Copia el número: ${numYape()}.`));},
+ 'pay-revisar':(d,el)=>{const pay=ui.pay,antes=isPro()?state.sub.until:null,txt=el.textContent;
+   const estado=t=>{const e=document.getElementById('pre-estado');if(e)e.textContent=t;};
+   el.setAttribute('aria-disabled','true');el.textContent='Revisando tu plan…';estado('');
+   const fin=()=>{if(el.isConnected){el.removeAttribute('aria-disabled');el.textContent=txt;}};
+   refrescarPlan(false).then(()=>{fin();if(ui.pay!==pay)return;
+       if(isPro()&&(!antes||state.sub.until>antes)){ui.pay=null;ui.sheet=null;render();toast(`Listo: tienes LIA Pro hasta el ${fechaSub(state.sub.until)}.`);resumeAfterPay(pay);}
+       else estado(antes?'Todavía no vemos tu nuevo pago. Si ya nos enviaste el número de operación, lo registramos en menos de 24 horas.'
+         :'Tu Pro aún no está activo. Si ya nos enviaste el número de operación, lo activamos en menos de 24 horas.');})
+     .catch(e=>{fin();estado(mensajeError(e));});},
  'pay-back':()=>{rememberChoice('method','method');ui.sheet=sheetPaywall();render();},
  'pay-sim':d=>{rememberChoice('method','method');const ok=d.ok==='1',pay=ui.pay;
    if(ok&&!state.cuenta){abrirCuenta(cuentasActivas()?'registro':'sin-config',true);return;}
@@ -3192,8 +3207,11 @@ Object.assign(A,{
    const tarea=ok?sbRpc('simular_pago',{p_periodo:pay.period,p_medio:MEDIO_DB[pay.method]}):Promise.resolve(null);
    Promise.all([tarea,new Promise(r=>setTimeout(r,900))]).then(([fila])=>{if(ui.pay!==pay)return;
        if(ok){aplicarFila(fila);ui.blockedItems=null;ui.sheet=sheetSuccess();try{localStorage.removeItem(KEY_PAGO);}catch(e){}}else ui.sheet=sheetFail();render();})
-     .catch(e=>{if(ui.pay!==pay)return;pay.error=mensajeError(e);ui.sheet=sheetFail();render();});},
- 'pay-retry':()=>{if(ui.pay)ui.pay.error=null;ui.sheet=preventaActiva()?sheetPreventa():sheetCheckout();render();},
+     .catch(e=>{if(ui.pay!==pay)return;pay.error=mensajeError(e);
+       // El servidor cerró el pago de prueba para esta cuenta (preventa abierta): «Intentar de nuevo» lleva a Yape.
+       if(/pago_de_prueba_cerrado/.test(String(e&&e.message||'')))pay.preventa=true;
+       ui.sheet=sheetFail();render();});},
+ 'pay-retry':()=>{if(ui.pay)ui.pay.error=null;ui.sheet=hojaPago();render();},
  'pay-done':()=>{const p=ui.pay;ui.pay=null;ui.sheet=null;render();resumeAfterPay(p);},
  arm:()=>{if(isPro()){toast('Con Pro, Lía reorganiza tu semana sola.');return;}
    if(!canArm()){openPaywall('rearm');return;}
@@ -3201,7 +3219,7 @@ Object.assign(A,{
  'sub-cancel':()=>{ui.sheet=sheetCancel();render();},
  'sub-cancel-ok':()=>{ui.sheet=null;render();sbRpc('cambiar_renovacion',{p_activa:false}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast(`Listo. Tienes Pro hasta el ${fechaCorta(state.sub.until)}.`);}).catch(e=>toast(mensajeError(e)));},
  'sub-resume':()=>{sbRpc('cambiar_renovacion',{p_activa:true}).then(f=>{aplicarFila(f);rerenderKeepScroll();toast('Renovación automática activada.');}).catch(e=>toast(mensajeError(e)));},
- 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};ui.sheet=preventaActiva()?sheetPreventa():sheetCheckout();render();},
+ 'sub-renew':()=>{ui.pay={why:'plans',ctx:null,period:PRICES[state.sub.period]?state.sub.period:'ciclo',method:METHODS[state.sub.method]?state.sub.method:'yape'};ui.sheet=hojaPago();render();},
  'sub-expire':()=>{if(!isPro()||!modoPruebas())return;sbRpc('simular_fin_periodo').then(f=>{const sigue=aplicarFila(f);rerenderKeepScroll();
    toast(sigue?'LIA Pro se renovó por un mes más (demo: sin cobro real).':'Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');}).catch(e=>toast(mensajeError(e)));},
 });
@@ -3303,7 +3321,8 @@ function sb(){if(!cuentasActivas())return Promise.reject(new Error('sin-config')
 function sbRpc(fn,args){return sb().then(c=>c.rpc(fn,args||{})).then(({data,error})=>{if(error)throw error;return data;});}
 function mensajeError(e){const m=String((e&&(e.message||e.error_description||e.msg))||''),code=String((e&&(e.code||e.error_code))||'');
   if(m==='sin-config')return 'Las cuentas todavía no están activadas en esta versión de LIA.';
-  if(/pago_de_prueba_cerrado/.test(m))return 'El pago de prueba ya no está disponible: LIA Pro se paga con Yape. Cierra y vuelve a tocar «Pasarme a Pro».';
+  if(/pago_de_prueba_cerrado/.test(m))return preventaConfigurada()?'Ese pago de prueba ya no está disponible. Ahora LIA Pro se paga con Yape: toca «Intentar de nuevo» y sigue los pasos.'
+    :'Ese pago de prueba ya no está disponible. Pronto podrás pasarte a Pro con Yape.';
   if(m==='sin-cliente'||/Failed to fetch|NetworkError|Load failed|network/i.test(m)||navigator.onLine===false)return 'Sin conexión. Revisa tu internet e inténtalo otra vez.';
   if(code==='invalid_credentials'||/Invalid login credentials/i.test(m))return 'El correo o la contraseña no coinciden.';
   if(code==='user_already_exists'||/already registered/i.test(m))return 'Ya hay una cuenta con ese correo. Inicia sesión.';
@@ -3426,14 +3445,14 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
         const pend=tomarPagoPendiente(),p=ui.pay||pend,paraPro=f.paraPro||!!pend;
         if(paraPro&&p&&isPro()){ui.cuentaForm=null;ui.pay=null;ui.sheet=null;rerenderKeepScroll();toast('Tu cuenta ya tiene LIA Pro.');resumeAfterPay(p);return;}
         toast(reg?'Listo, creaste tu cuenta.':'Listo, iniciaste sesión.');
-        if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;ui.sheet=preventaActiva()?sheetPreventa():sheetCheckout();render();}
+        if(paraPro&&p&&seguia){ui.cuentaForm=null;ui.pay=p;ui.sheet=hojaPago();render();}
         else{ui.cuentaForm=null;ui.sheet=null;rerenderKeepScroll();}});})
     .catch(fallo);}
 function cuentaCard(){if(!cuentasActivas())return '';
   if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este navegador. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
   return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este navegador</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
- 'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=preventaActiva()?sheetPreventa():sheetCheckout();render();}else A.close();},
+ 'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=hojaPago();render();}else A.close();},
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
  'cuenta-ingresar':d=>abrirCuenta('ingreso',d.pro==='1'),
  'cuenta-recuperar':()=>{const f=ui.cuentaForm;abrirCuenta('recuperar',!!(f&&f.paraPro));},

@@ -3,6 +3,7 @@
 -- registrar_preventa(). Es un pago real (demo = false) y queda en `pagos` con el número de operación de Yape, que no
 -- se puede registrar dos veces. quitar_pro() deshace un Pro (por ejemplo, tras devolver un pago).
 -- Solo para el SQL Editor: ni anon ni authenticated ni service_role pueden llamarlas.
+-- Si devuelves un pago, quita Pro con quitar_pro() y anota la devolución fuera de la base: pagos no admite montos negativos.
 -- cuentas_prueba: mientras esté vacía, el pago de prueba (simular_pago) sigue abierto para todos, como hasta hoy. Al
 -- abrir la preventa, se agregan ahí los correos de quienes prueban, y para las demás cuentas el pago de prueba se cierra
 -- también en el servidor (no solo en la app).
@@ -12,7 +13,64 @@ create table if not exists public.cuentas_prueba (
   creado timestamptz not null default now()
 );
 alter table public.cuentas_prueba enable row level security;
-revoke all on public.cuentas_prueba from anon, authenticated;
+revoke all on public.cuentas_prueba from anon, authenticated, service_role;
+
+-- ¿Puede esta cuenta usar los pagos de prueba? Sí mientras la lista esté vacía (como hasta hoy) o si su correo,
+-- ya confirmado, está en la lista.
+create or replace function public.prueba_permitida(p_uid uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select not exists (select 1 from public.cuentas_prueba)
+      or exists (select 1 from public.cuentas_prueba c join auth.users u on lower(u.email) = lower(trim(c.correo))
+                 where u.id = p_uid and u.email_confirmed_at is not null)
+$$;
+revoke all on function public.prueba_permitida(uuid) from public, anon, authenticated, service_role;
+
+-- mi_suscripcion como en 20261026005847_cuentas_y_suscripciones.sql: un Pro de prueba con renovación automática ya no
+-- se renueva gratis para siempre cuando la preventa está abierta (hallazgo del revisor).
+create or replace function public.mi_suscripcion() returns public.suscripciones
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  v_hoy date := public.hoy_lima();
+  s public.suscripciones;
+  v_vueltas integer := 0;
+begin
+  if v_uid is null then
+    raise exception 'Necesitas iniciar sesión' using errcode = '42501';
+  end if;
+  insert into public.suscripciones (user_id) values (v_uid) on conflict (user_id) do nothing;
+  select * into s from public.suscripciones where user_id = v_uid for update;
+
+  -- La mensual con tarjeta se renueva sola (en modo demo, sin cobro); lo demás vuelve a Gratis.
+  while s.plan = 'pro' and s.hasta <= v_hoy and v_vueltas < 60 loop
+    v_vueltas := v_vueltas + 1;
+    -- Con la preventa abierta, un Pro de prueba (demo) solo se renueva solo en las cuentas de prueba.
+    if s.renovacion_automatica and (not s.demo or public.prueba_permitida(v_uid)) then
+      insert into public.pagos (user_id, periodo, medio, monto, renovacion, demo)
+      values (v_uid, s.periodo, s.medio, public.precio(s.periodo), true, s.demo);
+      s.hasta := (s.hasta + make_interval(months => public.meses(s.periodo)))::date;
+    else
+      s.plan := 'gratis';
+      s.periodo := null;
+      s.medio := null;
+      s.desde := null;
+      s.hasta := null;
+      s.renovacion_automatica := false;
+    end if;
+  end loop;
+
+  if v_vueltas > 0 then
+    update public.suscripciones
+       set plan = s.plan, periodo = s.periodo, medio = s.medio, desde = s.desde, hasta = s.hasta,
+           renovacion_automatica = s.renovacion_automatica, actualizado = now()
+     where user_id = v_uid
+     returning * into s;
+  end if;
+  return s;
+end
+$$;
+revoke all on function public.mi_suscripcion() from public, anon;
+grant execute on function public.mi_suscripcion() to authenticated;
 
 -- simular_pago como en 20261026005847_cuentas_y_suscripciones.sql, con el cierre de la preventa.
 create or replace function public.simular_pago(p_periodo text, p_medio text) returns public.suscripciones
@@ -30,8 +88,7 @@ begin
   end if;
   s := public.mi_suscripcion();  -- también exige sesión iniciada
   -- Con la preventa abierta (hay cuentas en cuentas_prueba), solo esas cuentas simulan pagos.
-  if exists (select 1 from public.cuentas_prueba)
-     and not exists (select 1 from public.cuentas_prueba c join auth.users u on lower(u.email) = lower(c.correo) where u.id = s.user_id) then
+  if not public.prueba_permitida(s.user_id) then
     raise exception 'pago_de_prueba_cerrado' using errcode = '42501',
       hint = 'LIA Pro se paga con Yape (preventa): ver docs/preventa.md.';
   end if;
@@ -67,7 +124,7 @@ language plpgsql security definer set search_path = '' as $$
 declare
   v_uid uuid;
   v_hoy date := public.hoy_lima();
-  v_op text := nullif(regexp_replace(coalesce(p_operacion, ''), '\s', '', 'g'), '');
+  v_op text := nullif(upper(regexp_replace(coalesce(p_operacion, ''), '\s', '', 'g')), '');
   v_activo boolean;
   s public.suscripciones;
 begin
@@ -77,7 +134,7 @@ begin
   if p_monto is null or p_monto <> public.precio(p_periodo) then
     raise exception 'El monto (S/ %) no coincide con el precio del plan % (S/ %).', p_monto, p_periodo, public.precio(p_periodo) using errcode = '22023';
   end if;
-  if v_op is null or length(v_op) < 4 or length(v_op) > 40 then
+  if v_op is null or v_op !~ '^[0-9A-Z-]{4,40}$' then
     raise exception 'Falta el número de operación de Yape (lo ves en el detalle del yapeo).' using errcode = '22023';
   end if;
   if exists (select 1 from public.pagos where referencia = v_op) then
@@ -105,6 +162,9 @@ begin
   insert into public.pagos (user_id, periodo, medio, monto, demo, referencia)
   values (v_uid, p_periodo, 'yape', p_monto, false, v_op);
   return s;
+exception when unique_violation then
+  -- Dos registros de la misma operación a la vez: el segundo se deshace entero.
+  raise exception 'La operación % ya se registró: no se activa dos veces.', v_op using errcode = '23505';
 end
 $$;
 
@@ -119,6 +179,7 @@ begin
   if v_uid is null then
     raise exception 'No hay ninguna cuenta de LIA con el correo %.', p_correo using errcode = 'P0002';
   end if;
+  insert into public.suscripciones (user_id) values (v_uid) on conflict (user_id) do nothing;
   update public.suscripciones
      set plan = 'gratis', periodo = null, medio = null, desde = null, hasta = null,
          renovacion_automatica = false, actualizado = now()
