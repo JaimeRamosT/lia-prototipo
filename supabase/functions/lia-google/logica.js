@@ -6,7 +6,8 @@
 //     de LIA y el nonce que guardó ese navegador al iniciar: así nadie puede atar su Google a la cuenta de otro, ni el de
 //     otro a la suya (CSRF de vinculación, hallazgo del revisor).
 //   - POST de Google (X-Goog-Channel-ID): aviso de que cambió el calendario principal. Solo suma una señal (google_senal);
-//     la app la recibe por Realtime y pide los eventos con 'leer'.
+//     la app la recibe por Realtime y pide los eventos con 'leer'. Un canal que aún no está guardado (el «sync» llega
+//     antes) o que ya no existe responde 200 sin hacer nada: con un error, Google deja de avisar.
 //   - POST de pg_cron (x-lia-cron): renueva los avisos que vencen pronto.
 // verify_jwt está apagado porque Google y pg_cron no tienen sesión; cada llamada se revisa aquí. El permiso de Google
 // (refresh token) vive en Vault. No se guardan eventos ni títulos, y los registros nunca llevan tokens, códigos, correos,
@@ -70,10 +71,19 @@ export function idEvento(e) {
   const hash = semilla => { let h = semilla; for (const ch of `${e.inicio}|${e.fin}|${e.titulo}`) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; } return h.toString(32); };
   return `lia${new Date(e.inicio).getTime().toString(32)}${hash(2166136261)}${hash(374761393)}`;
 }
+// La alerta de Google (aviso emergente) de cada evento de LIA: 2 horas antes de una evaluación y 15 minutos antes de lo
+// demás, igual que los recordatorios por WhatsApp (iteración 3). Avisa aunque LIA esté cerrada.
+export const alertasGoogle = tipo => ({ useDefault: false, overrides: [{ method: 'popup', minutes: tipo === 'evaluacion' ? 120 : 15 }] });
+// ¿El evento que ya está en el calendario «LIA» tiene la alerta que le toca? Los de antes del 4-nov no la tienen.
+function conAlertas(item, tipo) {
+  const r = item && item.reminders, o = r && Array.isArray(r.overrides) ? r.overrides : [], q = alertasGoogle(tipo).overrides[0];
+  return !!r && r.useDefault === false && o.length === 1 && o[0].method === q.method && Number(o[0].minutes) === q.minutes;
+}
 export function eventoGoogle(e) {
   return {
     id: idEvento(e), summary: String(e.titulo).slice(0, 80), description: DESCRIPCION[e.tipo] || DESCRIPCION.otro,
     start: { dateTime: e.inicio, timeZone: ZONA }, end: { dateTime: e.fin, timeZone: ZONA }, transparency: 'opaque',
+    reminders: alertasGoogle(e.tipo),
     extendedProperties: { private: { lia: '1', tipo: e.tipo || 'otro' } },
   };
 }
@@ -279,19 +289,24 @@ async function accionApp(req, deps, origen, responder) {
       lista = await listar(cal);
     }
     if (lista.status !== 200 || !lista.datos) throw { error: 'google', http: lista.status, paso: 'listar' };
-    const quiero = new Map(eventos.map(e => [idEvento(e), e])), hay = new Set((lista.datos.items || []).map(e => e.id));
-    const sobran = [...hay].filter(id => !quiero.has(id)), faltan = [...quiero.keys()].filter(id => !hay.has(id));
+    const quiero = new Map(eventos.map(e => [idEvento(e), e])), hay = new Map((lista.datos.items || []).map(e => [e.id, e]));
+    const sobran = [...hay.keys()].filter(id => !quiero.has(id)), faltan = [...quiero.keys()].filter(id => !hay.has(id));
+    // Los que ya estaban (mismo id: misma hora y título) sin la alerta que les toca se actualizan.
+    const sinAlerta = [...quiero.keys()].filter(id => hay.has(id) && !conAlertas(hay.get(id), quiero.get(id).tipo));
     let errores = 0;
-    await enTandas(sobran, 3, async id => { const r = await google(deps, token, 'DELETE', `/calendars/${encodeURIComponent(cal)}/events/${id}`); if (r.status >= 300 && r.status !== 404 && r.status !== 410) errores++; });
+    const evento = id => `/calendars/${encodeURIComponent(cal)}/events/${id}`;
+    await enTandas(sobran, 3, async id => { const r = await google(deps, token, 'DELETE', evento(id)); if (r.status >= 300 && r.status !== 404 && r.status !== 410) errores++; });
     await enTandas(faltan, 3, async id => {
       const r = await google(deps, token, 'POST', `/calendars/${encodeURIComponent(cal)}/events`, eventoGoogle(quiero.get(id)));
       if (r.status === 409) {   // ya existía (borrado antes): se reemplaza
-        const u = await google(deps, token, 'PUT', `/calendars/${encodeURIComponent(cal)}/events/${id}`, { ...eventoGoogle(quiero.get(id)), status: 'confirmed' });
+        const u = await google(deps, token, 'PUT', evento(id), { ...eventoGoogle(quiero.get(id)), status: 'confirmed' });
         if (u.status >= 300) errores++;
       } else if (r.status >= 300) errores++;
     });
-    if (errores) return responder(502, { ok: false, error: 'google', creados: faltan.length, borrados: sobran.length }, { ...extra, errores });
-    return responder(200, { ok: true, creados: faltan.length, borrados: sobran.length }, extra);
+    await enTandas(sinAlerta, 3, async id => { const u = await google(deps, token, 'PUT', evento(id), eventoGoogle(quiero.get(id))); if (u.status >= 300) errores++; });
+    const totales = { creados: faltan.length, borrados: sobran.length, actualizados: sinAlerta.length };
+    if (errores) return responder(502, { ok: false, error: 'google', ...totales }, { ...extra, errores });
+    return responder(200, { ok: true, ...totales }, extra);
   } catch (e) {
     if (e && e.error === 'vencida') return responder(401, { ok: false, error: 'vencida' }, extra);
     return responder(502, { ok: false, error: 'google' }, { ...extra, http: e && e.http, en: e && e.paso });
@@ -363,10 +378,13 @@ export async function manejar(req, deps) {
     // Aviso de Google: solo con el secreto de ese canal.
     const canal = req.headers.get('x-goog-channel-id');
     if (canal) {
-      const c = await rpc(deps, 'google_por_canal', { p_canal: canal });
-      if (!c) return responder(404, { ok: false }, { paso: 'aviso' });
-      if (!iguales(c.canal_token, req.headers.get('x-goog-channel-token'))) return responder(403, { ok: false }, { paso: 'aviso' });
       const estado = req.headers.get('x-goog-resource-state');
+      const c = await rpc(deps, 'google_por_canal', { p_canal: canal });
+      // Google manda el primer aviso del canal («sync») apenas lo crea, antes de que google_guardar (o
+      // google_actualizar_canal) lo guarde. Con un 404, Google dejó de avisar (registro del 3-nov, 22:49). Un canal
+      // desconocido, sync o no, responde 200 y no hace nada: no hay a quién avisar.
+      if (!c) return responder(200, { ok: true }, { paso: 'aviso', resultado: 'desconocido', recurso: estado });
+      if (!iguales(c.canal_token, req.headers.get('x-goog-channel-token'))) return responder(403, { ok: false }, { paso: 'aviso' });
       if (estado !== 'sync') await rpc(deps, 'google_avisar', { p_user: c.user_id });
       return responder(200, { ok: true }, { paso: 'aviso', recurso: estado });
     }
