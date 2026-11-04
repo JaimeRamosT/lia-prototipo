@@ -3,7 +3,7 @@
 // más nueva primero, así cada cambio publicado llega sin tener que tocar este archivo.
 // El cliente de Supabase (vendor/) no se descarga al instalar: se guarda la primera vez que alguien usa su cuenta.
 
-const VERSION = '0.11.1';
+const VERSION = '0.12.0';
 const CACHE = `lia-${VERSION}`;
 // La app se guarda y se pide por la raíz del sitio ('./'), no por './index.html': en Cloudflare, /index.html
 // redirige a la raíz, y una copia que viene de una redirección no sirve para abrir la página sin internet.
@@ -11,6 +11,8 @@ const SHELL = [
   './',
   './manifest.webmanifest',
   './config.js',
+  './horario.js',
+  './horario.css',
   './fonts/inter-latin-wght-normal.woff2',
   './icons/favicon.svg',
   './icons/favicon-32.png',
@@ -86,7 +88,10 @@ function withTimeout(promise, ms) {
   });
 }
 
-// ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
+// ---------- Recordatorios en el teléfono (hasta la 0.11, docs/notificaciones.md) ----------
+// Desde la 0.12.0 la app ya no activa avisos del navegador (llegan por WhatsApp y con la alerta de Google) y, al abrirse,
+// da de baja los que estaban activos. Esto queda para mostrar bien los avisos que Supabase ya tenía programados para un
+// teléfono que todavía no abrió la versión nueva: en iPhone, un aviso que llega y no se muestra quita el permiso.
 // El servidor solo manda {tipo, ref, cuando}: el texto con el nombre del curso lo guardó la app en este teléfono
 // (caché «datos-avisos»; no empieza con «lia-», así que no se borra al cambiar de versión). Si no está, va un texto
 // genérico. En iPhone cada aviso tiene que mostrarse siempre: nunca se descarta en silencio.

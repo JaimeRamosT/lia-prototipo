@@ -1,0 +1,76 @@
+/* LIA · horario (iteración 3, docs/iteracion-3.md §5 y §6): cruces lado a lado, cuadrícula de Semana, aviso antes de
+   guardar, cursos de una evaluación y botón «+». Usa los colores de index.html (--pri, --line…), que ya llegan a 4.5:1
+   en claro y en oscuro; aquí no hay colores nuevos. Se carga después de los estilos de index.html. */
+
+/* «Tu día»: lo que pasa a la vez, en una fila con columnas */
+.ag.cruce{align-items:start}
+.cruce-in{display:flex;flex-direction:column;gap:6px;min-width:0;border-left:3px solid var(--pri);padding-left:8px}
+.cruce-t{font-size:12px;font-weight:600;color:var(--pri);padding-top:2px}
+.cruce-cols{display:grid;gap:6px}
+.cruce-col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cruce-col .blk{width:100%;text-align:left;min-height:44px}
+.blk.pasado{background:var(--surface);color:var(--mute);border:1px dashed var(--line)}
+.blk.pasado small{opacity:1}
+/* «+N»: abre la lista de lo que pasa a la vez */
+.k-mas{background:var(--pri-soft);color:var(--pri);border:1.5px solid var(--pri);align-items:center;justify-content:center;text-align:center}
+.k-mas b{font-size:17px}
+.k-mas small{opacity:1}
+/* Evaluación de un curso que ya existe: el color de su clase, con una franja de evaluación (el color nunca va solo:
+   el nombre dice «Parcial · …» y lleva el ícono de Clases) */
+.ev-clase{box-shadow:inset 4px 0 0 var(--exam)}
+.sw.ev-clase{box-shadow:inset 0 -4px 0 var(--exam)}
+/* Hoy: lo de más temprano, plegado arriba */
+details.antes{border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+details.antes summary{cursor:pointer;min-height:44px;display:flex;align-items:center;padding:0 14px;font-size:13px;font-weight:600;color:var(--mute)}
+details.antes[open] summary{border-bottom:1px solid var(--line)}
+details.antes .agenda{padding:10px}
+
+/* Semana: cuadrícula de horas por día. Las horas a la izquierda; cada día, una columna con sus actividades en su hora. */
+.grilla{display:grid;grid-template-columns:44px repeat(var(--cols),minmax(0,1fr));position:relative}
+.g-esq,.g-cab{position:sticky;top:0;z-index:3;background:var(--bg)}
+.g-cab{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 8px;border-bottom:1px solid var(--line);font-size:12px;color:var(--mute);font-weight:500}
+.g-cab b{font-size:17px;font-weight:600;color:var(--ink);width:34px;height:34px;display:grid;place-items:center;border-radius:50%}
+.g-cab.hoy span{color:var(--pri);font-weight:600}
+.g-cab.hoy b{background:var(--pri-fill);color:var(--pri-ink)}
+.g-horas{position:relative}
+.g-horas span{position:absolute;right:8px;transform:translateY(-50%);font-size:11px;color:var(--mute)}
+.g-dia{min-width:0;border-left:1px solid var(--line)}
+.g-cuerpo{position:relative;background-image:repeating-linear-gradient(to bottom,var(--line) 0 1px,transparent 1px var(--hora))}
+.g-blk{position:absolute;padding:4px 6px;border-radius:8px;gap:1px;overflow:hidden;text-align:left;justify-content:flex-start;box-shadow:0 0 0 1px var(--bg)}
+.g-blk b{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex-shrink:0}
+.g-blk b .ki{width:13px;height:13px;margin-right:4px;vertical-align:-2px}
+.g-blk small{font-size:11px;line-height:1.2;overflow:hidden;min-height:0}
+.g-blk.ev-clase{box-shadow:inset 3px 0 0 var(--exam),0 0 0 1px var(--bg)}
+.g-blk.k-mas{align-items:center;justify-content:flex-start;padding-top:6px}
+.g-blk:focus-visible{z-index:4}
+/* La hora de ahora, como en Google Calendar */
+.g-ahora{position:absolute;left:0;right:0;height:2px;background:var(--exam);z-index:2;pointer-events:none}
+.g-ahora::before{content:"";position:absolute;left:-5px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--exam)}
+
+/* Antes de guardar: «Ya tienes…» o «Se cruza con…» */
+.warn.choque{border:1.5px solid var(--exam)}
+.choque-chat b{color:var(--exam-ink)}
+
+/* Cursos de una evaluación: el elegido, relleno y con ✓ (no solo por el color) */
+.cursos .pill[aria-pressed="true"]{background:var(--pri-fill);color:var(--pri-ink)}
+.cursos .pill[aria-pressed="true"]::after{content:"✓";font-weight:700}
+
+/* Un solo botón «+»: en el celular flota abajo a la derecha, sobre la barra de secciones (menos en el chat de Lía). */
+.fab{position:fixed;z-index:20;right:max(16px,calc(50% - 204px));bottom:calc(92px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:18px;background:var(--pri-fill);color:var(--pri-ink);display:grid;place-items:center;box-shadow:0 6px 18px var(--shadow),0 2px 4px var(--shadow)}
+.fab svg{width:26px;height:26px}
+.fab span{display:none}
+body:not(.con-fab) .fab{display:none}
+body.con-fab main{padding-bottom:96px}
+body.con-fab .toast:not(.arriba){bottom:calc(160px + env(safe-area-inset-bottom,0px))}
+/* En la computadora, «+ Agregar» encabeza la barra lateral (como «Crear» en Google Calendar) y Semana se ensancha. */
+@media (min-width:900px){
+  .fab{position:static;display:flex;align-items:center;width:auto;height:48px;border-radius:14px;gap:10px;padding:0 18px 0 14px;margin:0 0 16px;font-weight:600;font-size:15px;box-shadow:0 2px 8px var(--shadow)}
+  .fab svg{width:22px;height:22px}
+  .fab span{display:inline}
+  body:not(.con-fab) .fab{display:flex}
+  body.con-fab main{padding-bottom:48px}
+  body.con-fab .toast:not(.arriba){bottom:28px}
+  main.ancha{max-width:1000px}
+  /* Los días quedan a la vista al bajar: pegados al borde de arriba de la vista (que tiene 32 px de margen interno). */
+  .g-esq,.g-cab{top:-32px}
+}
