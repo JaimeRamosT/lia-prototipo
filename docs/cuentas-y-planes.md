@@ -38,6 +38,7 @@ Con la bandera `pagos`, la diferencia entre Gratis y Pro no se podía probar com
 ### Requisitos y criterios de aceptación (P0)
 
 - [x] Sin cuenta, la app usa los límites de Gratis (3 evaluaciones próximas, semana fija, sin voz, sin modo sesión, sin reorganización automática).
+- [x] En Gratis, la semana armada no se mueve, pero lo nuevo entra solo en los huecos libres: las evaluaciones nuevas (decisión del 28-oct) y, desde el 4-nov-2026, el bloque que la persona marca con «No pude» (antes de su evaluación, sin mover lo demás). Reorganizar toda la semana sigue siendo de Pro.
 - [x] "Pasarme a Pro" pide crear cuenta o iniciar sesión antes del checkout; al aprobar el pago de prueba, Pro queda guardado en Supabase.
 - [x] Registro e inicio de sesión con correo y contraseña (mínimo 8 caracteres al crearla). Si el proyecto exige confirmar el correo, la app lo explica y completa el inicio al volver desde el enlace.
 - [x] Perfil muestra la cuenta y permite cerrar sesión; al cerrarla, el dispositivo vuelve a Gratis sin borrar datos.
