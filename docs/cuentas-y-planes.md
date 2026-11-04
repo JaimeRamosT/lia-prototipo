@@ -57,7 +57,7 @@ Con la bandera `pagos`, la diferencia entre Gratis y Pro no se podía probar com
 - [x] **Herramientas del equipo solo en modo pruebas.** *Simular el fin del periodo* aparece solo al abrir la app con `?pruebas=1`. El modo se recuerda en ese navegador (`lia.pruebas`) y `?pruebas=0` lo apaga.
 
 Queda para después: borrar la cuenta y cambiar la contraseña desde Perfil.
-P2: sincronizar el estado del horario por cuenta, webhook de Culqi en lugar de `simular_pago`, inicio de sesión con Google.
+P2: ~~sincronizar el estado del horario por cuenta~~ (hecho el 4-nov-2026 para LIA Pro, ver [`horario-en-cuenta.md`](horario-en-cuenta.md)), webhook de Culqi en lugar de `simular_pago`, inicio de sesión con Google.
 
 ### Cómo sabremos si funciona (en la prueba con 15 a 20 estudiantes)
 

@@ -1557,6 +1557,45 @@ function fusionarGcal(st,cand,hoy,op={}){const g=st.gcal||{},nuevoId=op.nuevoId|
     const e={id:nuevoId(),...campoV(v),hours:(EVAL_TYPES[v.type]||EVAL_TYPES.parcial).h,gcal:v.gcal};e.gh=huellaGcal(e);es.push(e);nuevasEvals.push(e.id);cambios.nuevos++;}
   const ignorar=[...ign].filter(k=>{const m=/:(\d{4}-\d{2}-\d{2})$/.exec(k);return !m||m[1]>=hoy;}).slice(-2000);
   return{commitments:cs,exceptions:xs,evals:es,done,gcal:{...g,ignorar,traidos:[...cs,...xs,...es].filter(o=>o.gcal).map(o=>o.gcal)},cambios,nuevasEvals,sinCupo};}
+
+// ---------- Tu horario en tu cuenta (LIA Pro, docs/horario-en-cuenta.md) ----------
+// Lo que se sube: el horario, sin el chat, la cuenta, el plan ni nada que vino de Google (la base nunca guarda títulos de
+// Google). Los avisos son de cada dispositivo. Los días libres de una rutina de Google se quedan con ella, aquí.
+// Un día libre puede apuntar a una rutina o a un evento de un día de Google: también se queda aquí.
+function deGoogle(st){const g=new Set([...(st.commitments||[]),...(st.exceptions||[]),...(st.evals||[])].filter(x=>x.gcal).map(x=>x.id));
+  return x=>!!x.gcal||!!(x.ref&&g.has(x.ref));}
+function horarioParaCuenta(st){const g=deGoogle(st),sin=a=>(a||[]).filter(x=>!g(x));const{avisos,...settings}=st.settings||{};
+  return{v:1,onboarded:!!st.onboarded,completar:!!st.completar,settings,commitments:sin(st.commitments),evals:sin(st.evals),
+    exceptions:sin(st.exceptions),done:st.done||[],frozen:st.frozen||null};}
+// Firma con las claves ordenadas (jsonb las devuelve en otro orden y no por eso es otro horario), resumida en una huella
+// corta (cyrb53) para no guardar el horario dos veces en el navegador.
+function firmaHorario(d){const o=v=>Array.isArray(v)?v.map(o):v&&typeof v==='object'?Object.keys(v).sort().reduce((a,k)=>(v[k]!==undefined&&(a[k]=o(v[k])),a),{}):v;
+  const t=JSON.stringify(o(d));let h1=0xdeadbeef^t.length,h2=0x41c6ce57^t.length;
+  for(let i=0;i<t.length;i++){const c=t.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
+  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
+  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36)+':'+t.length;}
+// Lo que viene de la cuenta reemplaza el horario; lo de Google, los avisos, el chat y la cuenta de aquí se quedan.
+function aplicarHorario(st,d){const g=deGoogle(st),mios=k=>(st[k]||[]).filter(g),av=st.settings&&st.settings.avisos;
+  return{...st,onboarded:!!d.onboarded,completar:!!d.completar,settings:{...(d.settings||{}),...(av?{avisos:av}:{})},
+    commitments:[...(d.commitments||[]),...mios('commitments')],evals:[...(d.evals||[]),...mios('evals')],
+    exceptions:[...(d.exceptions||[]),...mios('exceptions')],done:d.done||[],frozen:d.frozen||null};}
+const horarioVacio=d=>!d.onboarded&&!(d.commitments||[]).length&&!(d.evals||[]).length&&!(d.exceptions||[]).length&&!(d.done||[]).length;
+// Qué hacer al comparar este navegador con la cuenta. meta: lo último que los dos tenían en común ({uid,rev,firma}),
+// o {uid,apagado:true} si aquí se dejó de guardar en la cuenta. cuenta: {rev,datos,actualizado} o null si no hay copia.
+function decidirHorario(local,cuenta,meta,uid){const mio=!!meta&&meta.uid===uid;
+  if(mio&&meta.apagado)return{accion:'nada'};
+  const f=firmaHorario(local);
+  if(cuenta&&mio&&cuenta.rev===meta.rev&&f===meta.firma)return{accion:'nada'};
+  if(cuenta&&firmaHorario(cuenta.datos)===f)return{accion:'alinear'};
+  if(!cuenta){if(mio&&meta.rev>0)return{accion:'apagar'};if(horarioVacio(local))return{accion:'nada'};
+    return meta&&!mio?{accion:'preguntar',motivo:'cuenta-vacia'}:{accion:'subir'};}
+  if(!mio)return horarioVacio(local)?{accion:'bajar'}:{accion:'preguntar',motivo:'primera-vez'};
+  const cambieAqui=f!==meta.firma;
+  if(cuenta.rev===meta.rev)return{accion:cambieAqui?'subir':'nada'};
+  return cambieAqui?{accion:'preguntar',motivo:'otro-dispositivo'}:{accion:'bajar'};}
+// Para elegir cuál conservar: cuántas rutinas y evaluaciones próximas, y los cursos de las primeras.
+function resumenHorario(d,hoy){const ev=(d.evals||[]).filter(e=>e.date>=hoy).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  return{rutinas:(d.commitments||[]).length,evals:ev.length,proximas:ev.slice(0,3).map(e=>e.course),sesiones:(d.done||[]).length};}
 /*LOGIC-END*/
 
 // ---------- Estado ----------
@@ -1578,7 +1617,8 @@ if(!state||state.v!==1){state=emptyState();fresh=true;}
     if(sub)state.sub=sub;if(cuenta)state.cuenta=cuenta;
     try{if(fresh)localStorage.removeItem(KEY);else localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
   try{localStorage.removeItem(KEY_MIOS);}catch(e){}}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}if(typeof revisarDeshacer==='function')revisarDeshacer();}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}if(typeof revisarDeshacer==='function')revisarDeshacer();
+  try{alGuardarHorario();}catch(e){}}  // con LIA Pro, el cambio también se guarda en la cuenta
 // Deshacer vuelve al estado de antes de la última acción. Solo vale mientras nada más cambió: si después se armó la
 // semana, se marcó estudio o se cambió otra cosa sin Deshacer propio, ese Deshacer viejo borraría también lo nuevo,
 // así que se retira (el aviso se cierra y el botón del chat desaparece).
@@ -1661,7 +1701,7 @@ function subDesdeFila(f){const h=(state.sub&&state.sub.history)||[];
   return{tier:'pro',period:f.periodo,method:MEDIO_APP[f.medio]||f.medio,since:f.desde,until:f.hasta,autoRenew:!!f.renovacion_automatica,demo:f.demo!==false,history:h};}
 function aplicarFila(f,avisar){const antes=state.sub||freeSub(),era=isPro();state.sub=subDesdeFila(f);const es=isPro();
   if(era&&!es)armWeek(true);else if(!es&&state.onboarded&&!state.frozen)armWeek(true);
-  save();
+  save();if(es)sincronizarHorario();
   if(avisar){if(era&&!es)toast('Tu LIA Pro terminó. Volviste a Gratis y tus datos siguen aquí.');
     else if(es&&antes.autoRenew&&antes.until&&state.sub.until>antes.until)toast('LIA Pro se renovó por un mes más (demo: sin cobro real).');}
   return es;}
@@ -1739,8 +1779,8 @@ function vWelcome(){return `<section class="welcome">
    <div class="blk k-estudio"><b>Estudiar Cálculo II</b><small>20:00 – 21:00 · en tu hora libre</small></div></div>
   <h1>Estudia en las horas que de verdad tienes libres.</h1>
   <p style="margin:0;opacity:.85">Para universitarios que estudian y trabajan: cada semana Lía te arma un horario para estudiar en tus horas libres, para que no te amanezcas antes de cada examen.</p>
-  <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button></div>
-  <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este navegador.</p></section>`;}
+  <div class="stack"><button class="btn light" data-a="start-own">Empezar con mis horarios</button>${cuentasActivas()&&!state.cuenta?'<button class="btn ghostw" data-a="cuenta-ingresar">Ya tengo cuenta</button>':''}</div>
+  <p class="small" style="margin:0;opacity:.9;text-align:center">Empieza gratis, sin cuenta. Tus datos se guardan solo en este navegador. Con LIA Pro, se guardan en tu cuenta.</p></section>`;}
 
 function vOnboarding(){const s=ui.ob;const steps=`<div class="steps">${[1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div>`;
   if(s===1)return `${steps}<div class="row-h"><button data-a="ob-back" aria-label="Atrás" class="ico">${I.back}</button><span class="kicker">Paso 1 de 2</span></div>
@@ -2212,7 +2252,7 @@ function sheetPerdidos(){const l=P().perdidos||[];
   return `<div class="grab"></div><h2>¿Qué bloques estudiaste?</h2><p class="muted" style="margin:0">Marca los que sí hiciste. Lo demás queda pendiente en tus evaluaciones.</p>
   <form data-form="perdidos" class="stack">${l.map(b=>{const e=evById(b.evalId);return `<label class="opt"><input type="checkbox" name="b" value="${esc(claveBloque(b))}"><span class="grow"><b>${esc(e?e.course:'')}</b><br><span class="small muted tnum">${cap(fechaCorta(b.date))} · ${fmt(b.s)} – ${fmt(b.e)}</span></span></label>`;}).join('')}
   <button class="btn pri" type="submit">Guardar</button></form><button class="btn sec" data-a="close">Ahora no</button>`;}
-function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus rutinas, evaluaciones y sesiones de este navegador. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
+function sheetReset(){return `<div class="grab"></div><h2>¿Borrar todo?</h2><p class="muted" style="margin:0">Se borran tus rutinas, evaluaciones y sesiones de este navegador${horarioEnCuenta()?', de tu cuenta y de tus otros dispositivos':''}. No se puede deshacer.</p><button class="btn danger" data-a="reset">Sí, borrar todo</button><button class="btn sec" data-a="close">Cancelar</button>`;}
 
 // ---------- Planes y pago (modo demo) ----------
 const WHY={
@@ -2257,7 +2297,7 @@ function sheetSuccess(){const s=state.sub;
   const cta=w==='evals'?(c.items?(c.items.length===1?'Guardar mi evaluación':'Guardar lo que agregaste'):'Agregar una evaluación'):w==='voice'&&c.target?'Dictar ahora':w==='session'&&c.ev?'Empezar a estudiar':w==='reorg'&&c.ev?'Mover el bloque':'Listo';
   return `<div class="grab"></div><span class="big-check">${I.check}</span><h2 style="text-align:center;font-size:22px">Ya tienes LIA Pro</h2>
   <p class="muted" style="margin:0;text-align:center">${PRICES[s.period].name} · ${esc(medioNombre(s.method))}. ${line}</p>
-  <div class="card stack small">${['Evaluaciones sin límite','Lía reorganiza tu semana sola','Dictado por voz','Modo sesión'].map(t=>`<div class="row-h"><span class="check">${I.check}</span><span>${t}</span></div>`).join('')}</div>
+  <div class="card stack small">${['Evaluaciones sin límite','Lía reorganiza tu semana sola','Tu horario en todos tus dispositivos','Dictado por voz','Modo sesión'].map(t=>`<div class="row-h"><span class="check">${I.check}</span><span>${t}</span></div>`).join('')}</div>
   <div class="demo-note"><b>Modo demo.</b> No se realizó ningún cobro.</div>
   <button class="btn pri" data-a="pay-done">${cta}</button>`;}
 function sheetFail(){return `<div class="grab"></div><span class="eyebrow" style="color:var(--exam-ink)">Pago no completado</span><h2>No se pudo completar el pago</h2><p class="muted" style="margin:0">No se te cobró nada. ${esc(ui.pay.error||(METHODS[ui.pay.method]||METHODS.yape).fail)}</p><button class="btn pri" data-a="pay-retry">Intentar de nuevo</button><button class="btn sec" data-a="close">Ahora no</button>`;}
@@ -2265,6 +2305,7 @@ function sheetPlans(){const pro=isPro(),soon='<span class="soon">pronto</span>';
   const rows=[['Precio','S/ 0',`${soles(PRICES.mes.amount)} al mes o ${soles(PRICES.ciclo.amount)} por ciclo (4 meses, ${SAVE_PCT}% menos)`],
    ['Rutinas y evaluaciones',`Hasta ${FREE_EVALS} evaluaciones`,'Ilimitadas'],
    ['Horario de estudio','Lo armas una vez por semana; las evaluaciones nuevas y lo que no pudiste estudiar entran solos en tus horas libres','Lía lo arma y lo reorganiza sola cuando algo cambia'],
+   ['Dónde se guarda','Solo en este navegador','En tu cuenta: el mismo horario en todos tus dispositivos'],
    ['Voz','—',`Dictado ilimitado. Notas de voz ${soon}`],
    ['Sílabos y aula virtual','—',`Lía los lee y agrega las evaluaciones ${soon}`],
    ['Recordatorios','Dentro de la app','Con notificaciones, aunque LIA esté cerrada: exámenes, cada sesión de estudio y un resumen cada mañana. Modo sesión']];
@@ -2679,7 +2720,7 @@ function claveFoco(el){if(!el||el===document.body||!el.dataset)return null;
   const d=el.dataset;if(!d.a)return null;
   return `[data-a="${CSS.escape(d.a)}"]`+['t','d','v','id','ev','s','k','why'].filter(k=>d[k]!==undefined).map(k=>`[data-${k}="${CSS.escape(d[k])}"]`).join('');}
 let abridor=null;
-function render(){ensureState();avisosLuego();canalesLuego();gcalLuego();googleLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
+function render(){ensureState();soltarConflictoHorario();avisosLuego();canalesLuego();gcalLuego();googleLuego();const L=document.getElementById('layer'),a=document.activeElement,habia=!!L.firstElementChild,enCapa=habia&&L.contains(a),clave=claveFoco(a);
   dibujando=true;planDibujo=null;try{dibujar();}finally{dibujando=false;planDibujo=null;}
   const hay=!!L.firstElementChild,app=document.getElementById('app');if(hay&&!habia)abridor=clave;
   // Una capa que marca adónde va el foco ([data-foco], p. ej. la pregunta al salir de una sesión) manda sobre el foco anterior.
@@ -3050,7 +3091,7 @@ const A={
  close:()=>{ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();},  // al cerrar no se guarda la contraseña escrita
  scrim:(d,el,ev)=>{if(ev.target===el){ui.sheet=null;ui.agregarPre=null;if(ui.cuentaForm)ui.cuentaForm.pass='';if(ui.iaPendiente){soltarPendienteIA();return;}render();}},
  'ask-reset':()=>{ui.sheet=sheetReset();render();},
- reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(TU_SEMANA_KEY);localStorage.removeItem(INSTALACION_KEY);localStorage.removeItem(METRICAS_ENV);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();},
+ reset:()=>{const sub=state.sub,cuenta=state.cuenta;try{localStorage.removeItem(KEY);localStorage.removeItem(TU_SEMANA_KEY);localStorage.removeItem(INSTALACION_KEY);localStorage.removeItem(METRICAS_ENV);}catch(e){}state=emptyState();state.sub=sub||freeSub();state.cuenta=cuenta||null;ensureState();ui.welcome=true;ui.sheet=null;ui.pay=null;ui.tab='hoy';render();alGuardarHorario();},  // con el horario en la cuenta, también se borra ahí
  mic:d=>{if(!isPro()){openPaywall('voice',{target:d.target});return;}startMic(d.target);},
  'aviso-ios-ok':()=>{try{localStorage.setItem('lia.avisoIOS','1');}catch(e){}rerenderKeepScroll();},
  'listen-stop':()=>{stopMic(true);},
@@ -3309,7 +3350,7 @@ function enviarCuenta(email,pass){const f=ui.cuentaForm;if(!f||f.cargando)return
     .catch(fallo);}
 function cuentaCard(){if(!cuentasActivas())return '';
   if(!state.cuenta)return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div class="small muted">Sin cuenta. Tus datos se guardan solo en este navegador. Crea una cuenta para pasarte a Pro.</div><div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="cuenta-registrar">Crear cuenta</button><button class="btn sec sm" data-a="cuenta-ingresar">Iniciar sesión</button></div></div>`;
-  return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis'} · tus horarios siguen solo en este navegador</div></div><button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
+  return `<div class="card stack"><span class="eyebrow">Tu cuenta</span><div><b style="overflow-wrap:anywhere">${esc(state.cuenta.email)}</b><div class="small muted">${isPro()?'LIA Pro':'LIA Gratis · tus horarios siguen solo en este navegador. Con LIA Pro, se guardan en tu cuenta.'}</div></div>${estadoHorarioHTML()}<button class="btn sec sm" data-a="cuenta-salir" style="align-self:flex-start">Cerrar sesión</button></div>`;}
 Object.assign(A,{
  'correo-pago':()=>{const c=ui.correoOk;ui.correoOk=null;if(c&&c.pago&&!isPro()){ui.pay=c.pago;ui.sheet=sheetCheckout();render();}else A.close();},
  'cuenta-registrar':d=>abrirCuenta('registro',d.pro==='1'),
@@ -3321,14 +3362,127 @@ Object.assign(A,{
      .catch(e=>{f.cargando=false;f.error=mensajeError(e);if(ui.cuentaForm===f&&ui.sheet)pintarCuenta();});},
  'ver-clave':(d,el)=>{const i=document.getElementById('cu-pass'),f=ui.cuentaForm;if(!i)return;const ver=i.type==='password';i.type=ver?'text':'password';
    el.textContent=ver?'Ocultar':'Mostrar';el.setAttribute('aria-label',`${ver?'Ocultar':'Mostrar'} contraseña`);if(f){f.ver=ver;f.pass=i.value;ui.sheet=sheetCuenta();}},
- 'cuenta-salir':()=>{ui.sheet=`<div class="grab"></div><h2>¿Cerrar sesión?</h2><p class="muted" style="margin:0">En este dispositivo vuelves a LIA Gratis. Tus horarios y evaluaciones no se borran${isPro()?', y tu plan Pro sigue en tu cuenta':''}.</p><button class="btn pri" data-a="cuenta-salir-ok">Cerrar sesión</button><button class="btn sec" data-a="close">Cancelar</button>`;render();},
+ 'cuenta-salir':()=>{if(horarioEnCuenta()){ui.sheet=`<div class="grab"></div><h2>¿Cerrar sesión?</h2><p class="muted" style="margin:0">En este dispositivo vuelves a LIA Gratis. Tu horario y tu plan Pro siguen en tu cuenta. ¿Dejas también una copia de tu horario aquí?</p><button class="btn pri" data-a="cuenta-salir-ok">Cerrar sesión y dejar mi horario aquí</button><button class="btn sec" data-a="cuenta-salir-borrar">Cerrar sesión y borrarlo de aquí</button><button class="btn sec" data-a="close">Cancelar</button>`;render();return;}
+   ui.sheet=`<div class="grab"></div><h2>¿Cerrar sesión?</h2><p class="muted" style="margin:0">En este dispositivo vuelves a LIA Gratis. Tus horarios y evaluaciones no se borran${isPro()?', y tu plan Pro sigue en tu cuenta':''}.</p><button class="btn pri" data-a="cuenta-salir-ok">Cerrar sesión</button><button class="btn sec" data-a="close">Cancelar</button>`;render();},
  'cuenta-salir-ok':()=>{ui.sheet=null;render();ui.authBusy=true;
    const fin=()=>{ui.authBusy=false;try{localStorage.removeItem('lia.auth');}catch(e){}quitarCuenta();rerenderKeepScroll();toast('Cerraste sesión. Estás en LIA Gratis.');};
    sb().then(c=>c.auth.signOut({scope:'local'})).then(fin,fin);},
+ // Primero se guarda en la cuenta lo que falte; sin conexión, no se borra nada de aquí.
+ 'cuenta-salir-borrar':()=>{ui.sheet=null;render();
+   const desde=Date.now(),seguir=()=>{
+     if(ui.horarioConflicto||ui.horarioEspera){toast('Primero elige qué horario conservar.');return;}
+     if(!horarioEnCuenta()){toast('Tu cuenta ya no guarda tu horario, así que no lo borro de aquí.');return;}
+     if(!(ui.horarioVisto>=desde)||horarioPorSubir()){toast('Necesito conexión para comprobar que tu horario está en tu cuenta antes de borrarlo de aquí.');return;}
+     ui.authBusy=true;
+     const fin=()=>{ui.authBusy=false;try{localStorage.removeItem('lia.auth');}catch(e){}quitarCuenta();borrarHorarioLocal();render();toast('Cerraste sesión y borré tu horario de este dispositivo.');};
+     soltarAvisosDeAqui().then(()=>sb()).then(c=>c.auth.signOut({scope:'local'})).then(fin,fin);};
+   ui.horarioPausa=false;ui.horarioError=null;sincronizarHorario().then(seguir,seguir);},
 });
 
+// ---------- Tu horario en tu cuenta (LIA Pro, docs/horario-en-cuenta.md) ----------
+// lia.horario guarda lo último que este navegador y la cuenta tenían en común ({uid,rev,firma}), o {uid,apagado:true}
+// si aquí se dejó de guardar en la cuenta. Se sube a los 2 segundos de cada cambio; se trae al abrir LIA, al volver a la
+// pestaña y al recuperar la conexión. Si cambiaron los dos lados, Lía pregunta cuál conservar.
+function metaHorario(){try{return JSON.parse(localStorage.getItem('lia.horario'))||null;}catch(e){return null;}}
+function guardarMetaHorario(m){try{if(m)localStorage.setItem('lia.horario',JSON.stringify(m));else localStorage.removeItem('lia.horario');}catch(e){}}
+function metaMia(){const m=metaHorario();return m&&state.cuenta&&m.uid===state.cuenta.id?m:null;}
+const horarioEnCuenta=()=>{const m=metaMia();return isPro()&&!!m&&!m.apagado;};
+const horarioPorSubir=()=>{const m=metaMia();return !!m&&!m.apagado&&firmaHorario(horarioParaCuenta(state))!==m.firma;};
+function alGuardarHorario(){if(!horarioEnCuenta()||ui.horarioPausa||!horarioPorSubir())return;
+  if(ui.horarioError&&ui.horarioError.firma===firmaHorario(horarioParaCuenta(state)))return;  // el servidor ya lo rechazó así
+  clearTimeout(ui.horarioT);ui.horarioT=setTimeout(()=>sincronizarHorario(),2000);}
+// Un paso a la vez: si llega otro pedido mientras tanto, se repite al terminar.
+function sincronizarHorario(){if(!isPro()||!state.cuenta||ui.horarioPausa||ui.horarioConflicto||ui.horarioEspera)return Promise.resolve();
+  if(ui.horarioOcupado){ui.horarioOtraVez=true;return ui.horarioOcupado;}
+  clearTimeout(ui.horarioT);ui.horarioUltima=Date.now();
+  ui.horarioOcupado=pasoHorario().catch(()=>{}).then(()=>{ui.horarioOcupado=null;if(ui.horarioOtraVez){ui.horarioOtraVez=false;return sincronizarHorario();}});
+  return ui.horarioOcupado;}
+async function pasoHorario(vuelta=0){const uid=state.cuenta.id,r=await sbRpc('mi_horario');
+  if(!r||!r.pro||!state.cuenta||state.cuenta.id!==uid)return;
+  ui.horarioVisto=Date.now();  // la cuenta respondió
+  const cuenta=r.rev>0?{rev:r.rev,datos:r.datos,actualizado:r.actualizado}:null,meta=metaHorario(),local=horarioParaCuenta(state),
+    d=decidirHorario(local,cuenta,meta,uid),firma=firmaHorario(local);
+  if(d.accion==='nada'){if(!meta||meta.uid!==uid)guardarMetaHorario({uid,rev:0,firma});return;}
+  if(d.accion==='alinear'){guardarMetaHorario({uid,rev:cuenta.rev,firma});pintarHorario();return;}
+  if(d.accion==='apagar'){guardarMetaHorario({uid,apagado:true});pintarHorario();return;}
+  if(d.accion==='subir'){const x=await sbRpc('guardar_horario',{p_datos:local,p_rev:cuenta?cuenta.rev:0});
+    if(x&&x.ok){ui.horarioError=null;guardarMetaHorario({uid,rev:x.rev,firma});pintarHorario();}
+    else if(x&&x.motivo==='conflicto'){if(vuelta<2)return pasoHorario(vuelta+1);}
+    else if(x&&x.motivo){ui.horarioError={motivo:x.motivo,firma};pintarHorario();}
+    return;}
+  // Traer o preguntar cambia lo que se ve: se espera a que no haya un formulario abierto.
+  ui.horarioEspera=true;
+  cuandoTranquilo(()=>{ui.horarioEspera=false;if(!state.cuenta||state.cuenta.id!==uid||ui.horarioPausa)return;
+    const m=metaMia();if(m&&m.apagado)return;  // mientras esperaba, se dejó de guardar en la cuenta
+    if(firmaHorario(horarioParaCuenta(state))!==firma){sincronizarHorario();return;}  // cambió algo mientras esperaba
+    if(d.accion==='bajar'){bajarHorario(cuenta,!meta||meta.uid!==uid);return;}
+    ui.horarioConflicto={motivo:d.motivo,cuenta};ui.sheet=sheetConflictoHorario();render();});}
+// Sin hojas abiertas y sin estar escribiendo (el chat vacío con el cursor puesto no cuenta: en la computadora casi siempre lo está).
+function tranquiloHorario(){const a=document.activeElement;
+  return !ui.sheet&&!ui.session&&!ui.listen&&!(a&&a.matches('input,select,textarea')&&!(a.id==='chat-in'&&!a.value));}
+// Si la pregunta se cerró de cualquier forma (fondo, Escape, otra hoja), cuenta como «Decidir después».
+function soltarConflictoHorario(){if(ui.horarioConflicto&&!(typeof ui.sheet==='string'&&ui.sheet.includes('data-a="horario-aqui"'))){ui.horarioConflicto=null;ui.horarioPausa=true;}}
+function cuandoTranquilo(fn){if(tranquiloHorario())fn();else setTimeout(()=>cuandoTranquilo(fn),1500);}
+// Reemplaza el horario de aquí por el de la cuenta (o por uno vacío si la cuenta no tiene).
+function bajarHorario(cuenta,primera){const uid=state.cuenta.id;
+  state=aplicarHorario(state,cuenta?cuenta.datos:horarioParaCuenta(emptyState()));ensureState();
+  guardarMetaHorario({uid,rev:cuenta?cuenta.rev:0,firma:firmaHorario(horarioParaCuenta(state))});
+  undoStack=null;undoTras=null;quitarAvisoDeshacer();save();
+  if(state.onboarded)ui.welcome=false;else{ui.welcome=true;ui.ob=0;}
+  render();if(primera&&cuenta)toast('Listo: traje tu horario de tu cuenta.');}
+function pintarHorario(){if(ui.tab==='perfil'&&calm())rerenderKeepScroll();}
+const fechaHoraCorta=x=>{const t=new Date(x);return `${fechaCorta(ymd(t))}, ${fmt(t.getHours()*60+t.getMinutes())}`;};
+function sheetConflictoHorario(){const c=ui.horarioConflicto,hoy=ymd(now()),aqui=resumenHorario(horarioParaCuenta(state),hoy),alla=c.cuenta?resumenHorario(c.cuenta.datos,hoy):null;
+  const linea=r=>r?`${r.rutinas} ${r.rutinas===1?'rutina':'rutinas'} · ${r.evals} ${r.evals===1?'evaluación próxima':'evaluaciones próximas'} · ${r.sesiones} ${r.sesiones===1?'sesión de estudio':'sesiones de estudio'}${r.proximas.length?`<br><span class="muted">${esc(r.proximas.join(', '))}${r.evals>r.proximas.length?'…':''}</span>`:''}`:'Sin horario';
+  const[titulo,texto]={'otro-dispositivo':['Cambiaste tu horario en dos lugares','Hiciste cambios aquí y en otro dispositivo. ¿Con cuál te quedas? El otro se reemplaza.'],
+    'primera-vez':['Ya tienes un horario en tu cuenta','Este dispositivo también tiene uno, y son distintos. ¿Con cuál te quedas? El otro se reemplaza.'],
+    'cuenta-vacia':['¿Guardar este horario en tu cuenta?','Este dispositivo tiene un horario que no está en tu cuenta. Puedes guardarlo en tu cuenta o empezar de cero.']}[c.motivo];
+  const cuando=c.cuenta&&c.cuenta.actualizado?`<span class="muted"> · guardado el ${fechaHoraCorta(c.cuenta.actualizado)}</span>`:'';
+  return `<div class="grab"></div><h2>${titulo}</h2><p class="muted" style="margin:0">${texto}</p>
+   <div class="card stack small" style="gap:4px"><b>Este dispositivo</b><span>${linea(aqui)}</span></div>
+   <div class="card stack small" style="gap:4px"><span><b>Tu cuenta</b>${cuando}</span><span>${linea(alla)}</span></div>
+   <button class="btn sec" data-a="horario-aqui">${c.motivo==='cuenta-vacia'?'Guardar este horario en mi cuenta':'Quedarme con el de este dispositivo'}</button>
+   <button class="btn sec" data-a="horario-cuenta">${c.cuenta?'Usar el de mi cuenta':'Empezar de cero'}</button>
+   <button class="pill ghost" data-a="horario-despues" style="align-self:center">Decidir después</button>`;}
+// Al borrar el horario de este dispositivo también se van los avisos programados aquí (sus textos tienen los cursos).
+// serviceWorker.ready nunca termina si no hay service worker: se espera como mucho 3 segundos.
+async function soltarAvisosDeAqui(){const l=avisosLocal();guardarAvisosLocal(null);
+  if(l){try{const reg=await Promise.race([navigator.serviceWorker.ready,new Promise((_,no)=>setTimeout(no,3000))]),s=await reg.pushManager.getSubscription();if(s)await s.unsubscribe();}catch(e){}
+    try{if(l.endpoint)await sbRpc('quitar_dispositivo',{p_endpoint:l.endpoint});}catch(e){}}
+  try{await caches.delete(CACHE_AVISOS);}catch(e){}}
+function borrarHorarioLocal(){try{[KEY,TU_SEMANA_KEY,KEY_SES,'lia.horario','lia.semanaPesada'].forEach(k=>localStorage.removeItem(k));}catch(e){}
+  const sub=state.sub;state=emptyState();state.sub=sub||freeSub();state.cuenta=null;ensureState();
+  ui.welcome=true;ui.ob=0;ui.sheet=null;ui.tab='hoy';ui.session=null;}
+function estadoHorarioHTML(){if(!isPro())return '';const m=metaMia();
+  if(m&&m.apagado)return `<div class="small muted">Tu horario está solo en este dispositivo.</div><button class="btn sec sm" data-a="horario-encender" style="align-self:flex-start">Guardar mi horario en mi cuenta</button>`;
+  const e=ui.horarioError&&ui.horarioError.motivo,t=ui.horarioPausa?'Tienes que elegir qué horario conservar: te pregunto la próxima vez que abras LIA.'
+    :e==='muy_grande'?'No pude guardar tu horario en tu cuenta: es demasiado grande. Sigue completo en este dispositivo.'
+    :e?'No pude guardar tu horario en tu cuenta. Sigue completo en este dispositivo; si vuelve a pasar, avísanos.'
+    :horarioPorSubir()?'Tienes cambios por guardar en tu cuenta. Se guardan cuando tengas conexión.':'Tu horario está guardado en tu cuenta: lo ves igual en todos tus dispositivos.';
+  return `<div class="small muted">${t}</div><button class="btn sec sm" data-a="horario-apagar" style="align-self:flex-start">Dejar de guardarlo en mi cuenta</button>`;}
+Object.assign(A,{
+ 'horario-aqui':()=>{const c=ui.horarioConflicto;ui.horarioConflicto=null;ui.sheet=null;render();if(!c||!state.cuenta)return;
+   const uid=state.cuenta.id,local=horarioParaCuenta(state);
+   sbRpc('guardar_horario',{p_datos:local,p_rev:c.cuenta?c.cuenta.rev:0}).then(x=>{
+     if(x&&x.ok){guardarMetaHorario({uid,rev:x.rev,firma:firmaHorario(local)});pintarHorario();toast('Listo: tu cuenta ya tiene el horario de este dispositivo.');}
+     else if(x&&x.motivo==='conflicto')sincronizarHorario();
+     else toast('No pude guardarlo en tu cuenta. Inténtalo otra vez.');})
+   .catch(e=>toast(mensajeError(e)));},
+ 'horario-cuenta':()=>{const c=ui.horarioConflicto;ui.horarioConflicto=null;ui.sheet=null;if(!c||!state.cuenta){render();return;}
+   bajarHorario(c.cuenta,false);toast(c.cuenta?'Listo: ahora usas el horario de tu cuenta.':'Listo: empiezas de cero.');},
+ 'horario-despues':()=>{ui.horarioConflicto=null;ui.horarioPausa=true;ui.sheet=null;render();toast('Listo: te pregunto la próxima vez que abras LIA.');},
+ 'horario-apagar':()=>{ui.sheet=`<div class="grab"></div><h2>¿Dejar de guardar tu horario en tu cuenta?</h2><p class="muted" style="margin:0">Se borra la copia de tu cuenta. Tu horario sigue en este dispositivo, y tus otros dispositivos se quedan con la copia que tienen ahora.</p><button class="btn danger" data-a="horario-apagar-ok">Dejar de guardarlo</button><button class="btn sec" data-a="close">Cancelar</button>`;render();},
+ 'horario-apagar-ok':()=>{ui.sheet=null;render();if(!state.cuenta)return;const uid=state.cuenta.id,pausa=ui.horarioPausa;
+   clearTimeout(ui.horarioT);ui.horarioPausa=true;  // nada más se sube mientras se borra
+   Promise.resolve(ui.horarioOcupado).then(()=>sbRpc('borrar_horario')).finally(()=>{ui.horarioPausa=pausa;}).then(()=>{guardarMetaHorario({uid,apagado:true});rerenderKeepScroll();toast('Listo: tu horario ya no se guarda en tu cuenta.');}).catch(e=>toast(mensajeError(e)));},
+ 'horario-encender':()=>{guardarMetaHorario(null);ui.horarioPausa=false;
+   sincronizarHorario().then(()=>{rerenderKeepScroll();if(horarioEnCuenta()&&!horarioPorSubir())toast('Listo: tu horario se guarda en tu cuenta.');});},
+});
+window.addEventListener('online',()=>{if(isPro())sincronizarHorario();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&isPro()&&!(Date.now()-(ui.horarioUltima||0)<30000))sincronizarHorario();});
+
 // ---------- App instalable ----------
-const APP_VERSION='0.10.6';
+const APP_VERSION='0.11.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
