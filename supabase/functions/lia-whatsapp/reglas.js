@@ -291,7 +291,7 @@ const NUMW={una:1,uno:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nuev
 const MESN={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
 const TIMECTX=new Set(['las','la','de','a','desde','hasta','y','entre']);
 function tokenize(text){
-  const raw=text.replace(/[“”"¿?¡!]/g,' ').replace(/(\d)(am|pm|hrs|hr|h)\b/gi,'$1 $2').replace(/([ap])\.\s?m\.?/gi,'$1m').replace(/,/g,' , ').split(/\s+/).filter(Boolean);
+  const raw=text.replace(/[“”"«»¿?¡!]/g,' ').replace(/(\d)(am|pm|hrs|hr|h)\b/gi,'$1 $2').replace(/([ap])\.\s?m\.?/gi,'$1m').replace(/,/g,' , ').split(/\s+/).filter(Boolean);
   const toks=raw.map(o=>({o:o.replace(/[.;]+$/,''),n:norm(o).replace(/[.;]+$/,'')}));
   for(let i=0;i<toks.length;i++){const t=toks[i];if(NUMW[t.n]&&i>0&&TIMECTX.has(toks[i-1].n)){t.n=String(NUMW[t.n]);}}
   // «Práctica de fútbol», «entrenamiento de vóley»: un deporte, no una práctica calificada.
@@ -399,6 +399,8 @@ function diaConNumero(d,wd,now){if(d<1||d>31)return null;const hoy=new Date(now.
   for(let k=0;k<3;k++){const dt=new Date(now.getFullYear(),now.getMonth()+k,d);if(dt.getDate()===d&&dt>=hoy&&dt.getDay()===wd)return ymd(dt);}
   return diaDelMes(d,now);}
 function parseDays(ns){
+  // «Todos los días de semana» y «días hábiles» son de lunes a viernes («todos los días de la semana», toda la semana).
+  if(/\b(dias de semana|dias habiles|dias laborables|dias utiles)\b/.test(ns))return[1,2,3,4,5];
   if(/\b(todos los dias|diario|diariamente|cada dia)\b/.test(ns))return[0,1,2,3,4,5,6];
   if(/\bfin(?:es)? de semana\b/.test(ns))return[6,0];
   if(/\bentre semana\b/.test(ns))return[1,2,3,4,5];
@@ -407,7 +409,7 @@ function parseDays(ns){
   if(m){const a=DAYW[m[1]],b=DAYW[m[2]];const out=[];let d=a;for(let k=0;k<7;k++){out.push(d);if(d===b)break;d=(d+1)%7;}return out;}
   const out=[];for(const [w,wd] of Object.entries(DAYW))if(new RegExp(`\\b${w}\\b`).test(ns)&&!out.includes(wd))out.push(wd);
   return out.sort((a,b)=>((a+6)%7)-((b+6)%7));}
-const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera','dentro','faltan','falta']);
+const STOPW=new Set(['el','la','los','las','a','y',',','hoy','manana','pasado','este','esta','proximo','proxima','siguiente','que','para','con','en','al','del','por','tengo','es','son','sera','dentro','faltan','falta','vence','vencen','vencera']);
 // «Práctica calificada de química»: «calificada» es parte del tipo, no del curso.
 const SKIPW=new Set(['de','del','en','el','la','mi','un','una','los','las','sobre','para','curso','curso:','calificada','calificado','calificadas','calificados']);
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
@@ -449,36 +451,96 @@ function nombreRutina(toks,i,type){if(type==='clase'||type==='trabajo'||type==='
   return cap(w.o.toLowerCase());}
 // La categoría que sugiere el nombre de una rutina («Almuerzo» → comida), o null si no se sabe.
 function tipoPorNombre(nombre){for(const w of norm(String(nombre||'')).split(/[^a-z0-9]+/))if(COMMIT_KW[w])return COMMIT_KW[w];return null;}
-function parseClause(toks,now,prev,S){
-  const ns=toks.map(t=>t.n).join(' ');
+// ---------- Una evaluación nueva se liga a su curso (iteración 3) ----------
+// «Parcial de cálculo» → «Cálculo I» si esa clase existe: así queda con el nombre exacto del curso (y con el color de su
+// clase). Los cursos conocidos son las clases y los cursos de las evaluaciones que ya están (sin las entregas con nombre
+// propio, como «Informe de Química», ni las rutinas que se llaman como su tipo, como «Clases»).
+const ROMANOS={i:'1',ii:'2',iii:'3',iv:'4',v:'5',vi:'6'};
+const palCurso=s=>norm(String(s||'')).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!/^(de|del|la|las|el|los|y|e|en|a|al|para|con)$/.test(w)).map(w=>ROMANOS[w]||w);
+function cursosConocidos(state){const out=[],vistos=new Set();
+  const poner=n=>{const k=palCurso(n).join(' ');if(!k||vistos.has(k)||COMMIT_KW[k]||/^(clases?|cursos?|otro)$/.test(k))return;vistos.add(k);out.push(n);};
+  for(const c of state.commitments||[])if(c.type==='clase')poner(c.name);
+  for(const e of state.evals||[])if(!(e.type==='entrega'&&/^(tareas?|proyecto|monografia|informe|ensayo|trabajo)\b/.test(norm(e.course||''))))poner(e.course);
+  return out;}
+// El curso conocido más parecido a lo dicho, o null. Sin tildes ni mayúsculas; «1» y «I» valen igual; una palabra de
+// 4 letras o más vale como abreviatura («mate» → «Matemática Básica»). Todo lo dicho tiene que estar en el curso (otro
+// número es otro curso). Si dos cursos se parecen igual, no elige; el nombre exacto gana.
+function cursoParecido(x,state){const xs=palCurso(x),num=w=>/^\d+$/.test(w);if(!xs.some(w=>!num(w)))return null;
+  let mejor=0,cual=[];
+  for(const c of cursosConocidos(state)){const cs=palCurso(c);let p=xs.join(' ')===cs.join(' ')?3:2;
+    for(const w of xs){if(cs.includes(w))continue;
+      if(!num(w)&&w.length>=4&&cs.some(v=>!num(v)&&v.length>=4&&(v.startsWith(w)||w.startsWith(v))))p=Math.min(p,1);else{p=0;break;}}
+    if(p>mejor){mejor=p;cual=[c];}else if(p&&p===mejor)cual.push(c);}
+  return cual.length===1?cual[0]:null;}
+function parseClause(toks,now,prev,S,state){
+  const ns=toks.map(t=>t.n).join(' '),ligar=c=>(state&&cursoParecido(c,state))||c;
   const iE=toks.findIndex(t=>EVAL_KW[t.n]);
   const iC=toks.findIndex(t=>COMMIT_KW[t.n]);
   const iN=toks.findIndex((t,j)=>ENTREGA_N.has(t.n)&&(t.n!=='trabajo'||TRABAJO_ENTREGA.test((toks[j+1]||{}).n||'')||toks.slice(Math.max(0,j-3),j).some(x=>EVAL_KW[x.n]==='entrega')));
   if(iN>=0&&!toks.slice(0,iN).some(x=>EVAL_KW[x.n]&&EVAL_KW[x.n]!=='entrega')){
     const doble=toks[iN].n==='trabajo'&&TRABAJO_ENTREGA.test((toks[iN+1]||{}).n||'');
     const resto=extractCourse(toks,doble?iN+1:iN,true);
-    const nombre=cap(toks[iN].o.toLowerCase()+(doble?' '+toks[iN+1].o.toLowerCase():''))+(resto?' de '+resto:'');
+    // «Un avance del proyecto de emprendimiento», «el borrador del informe de marketing»: lo que se entrega es parte de
+    // otra cosa, así que el curso es lo último («Emprendimiento»). Si el curso ya existe, se liga a ese (cursoParecido).
+    const antes=toks[iN-2],anidado=iN>=2&&/^(de|del)$/.test(toks[iN-1].n)&&!!antes&&!EVAL_KW[antes.n]&&!SKIPW.has(antes.n)&&!STOPW.has(antes.n)&&!/^\d/.test(antes.n);
+    const ligado=resto&&state?cursoParecido(resto,state):null;
+    const nombre=ligado||(anidado&&resto?resto:cap(toks[iN].o.toLowerCase()+(doble?' '+toks[iN+1].o.toLowerCase():''))+(resto?' de '+resto:''));
     return evalDe(ns,now,'entrega',nombre);}
   if(iE>=0){let k=iE;while(k+1<toks.length&&EVAL_KW[toks[k+1].n])k++;const type=EVAL_KW[toks[k].n];
-    return evalDe(ns,now,type,extractCourse(toks,k));}
+    return evalDe(ns,now,type,ligar(extractCourse(toks,k)));}
   if(iC>=0||(prev&&prev.kind==='commit')){
     const type=iC>=0?COMMIT_KW[toks[iC].n]:prev.type;
     const name=iC>=0?nombreRutina(toks,iC,type):prev.name;
-    const days=parseDays(ns);const tm=parseTimes(ns);let range=tm.range;
-    if(!range&&tm.part)range=FRANJA_RUTINA[tm.part];
-    return{kind:'commit',type,name,days,start:range?fmt(range[0]):'',end:range?fmt(range[1]):''};}
+    return rutinaDicha(ns,type,name);}
   return null;}
+// Días y horas de una rutina. Con solo la hora de inicio («cena todos los días a las 8») el fin queda vacío y Lía lo
+// pregunta; con una parte del día y sin hora («en la tarde»), la franja del formulario.
+function rutinaDicha(ns,type,name){const days=parseDays(ns),tm=parseTimes(ns);let range=tm.range,start='';
+  if(!range&&tm.at!=null)start=fmt(tm.at);else if(!range&&tm.part)range=FRANJA_RUTINA[tm.part];
+  return{kind:'commit',type,name,days,start:range?fmt(range[0]):start,end:range?fmt(range[1]):''};}
 // Compromisos de un solo día que no son clases ni trabajo.
 const EVENTO=/\b(cumpleanos|reunion|cita|fiesta|matrimonio|boda|evento|consulta|dentista|entrevista|partido|velorio|tramite|concierto)\b/;
 function nombreEvento(toks,w){const i=toks.findIndex(t=>t.n===w);if(i<0)return cap(w);const sig=toks[i+1];
   return cap(toks[i].o.toLowerCase()+(sig&&/^(medica|medico|familiar)$/.test(sig.n)?' '+sig.o.toLowerCase():''));}
+// ---------- Lo que se repite cada semana es una rutina (iteración 3) ----------
+const REPITE=/\b(semanal|semanales|semanalmente|cada semana|todas las semanas|todos los (?:lunes|martes|miercoles|jueves|viernes|sabados|domingos|dias|fines de semana)|cada (?:lunes|martes|miercoles|jueves|viernes|sabado|domingo|dia|fin de semana)|los (?:lunes|martes|miercoles|jueves|viernes|sabados|domingos|fines de semana)|diario|diariamente|entre semana|dias de semana|dias habiles|dias laborables)\b/;
+const RANGO_DIAS=/\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?\s+(?:a|al|hasta)\s+(?:el\s+)?(lunes|martes|miercoles|jueves|viernes|sabado|domingo)s?\b/;
+// El nombre que sigue a una palabra, hasta los días o las horas: «reunión de equipo todos los martes» → «Reunión de equipo».
+function frasePropia(toks,i){const out=[];
+  for(let j=i;j<toks.length&&out.length<6;j++){const t=toks[j],sig=(toks[j+1]||{n:''}).n,n=t.n.replace(/[^a-z0-9]/g,'');
+    if(!n||DAYW[n]!==undefined||/^\d/.test(n)||/^(semanal|semanales|semanalmente|todos|todas|cada|diario|diariamente|entre|desde|hasta)$/.test(n))break;
+    if(/^(de|del|a|al|los|las|el|la|en|por)$/.test(n)&&(DAYW[sig]!==undefined||/^\d/.test(sig)||/^(las?|todos|cada|semana|manana|tarde|noche|fines?)$/.test(sig)))break;
+    out.push(t.o.replace(/[,:;.]+$/,''));if(/[,:;]$/.test(t.o))break;}
+  while(out.length&&/^(de|del|a|al|el|la|los|las|y|con|en|para|por|que)$/.test(norm(out[out.length-1])))out.pop();
+  return out.length?cap(out[0].toLowerCase())+(out.length>1?' '+out.slice(1).join(' '):''):'';}
+// Una rutina dicha como evento que se repite («evento semanal», «todos los martes», «de lunes a viernes»), o null.
+function rutinaSemanal(toks,ns,iC){
+  const iV=toks.findIndex(t=>t.n!=='evento'&&EVENTO.test(t.n)),iG=toks.findIndex(t=>/^(evento|eventos|rutina|rutinas|actividad|actividades)$/.test(t.n.replace(/[^a-z]/g,'')));
+  if(iV<0&&iG<0)return null;
+  if(!(REPITE.test(ns)||RANGO_DIAS.test(ns)||parseDays(ns).length>=3))return null;
+  let type,name;
+  if(iV>=0){name=frasePropia(toks,iV);type=catEvento(name);}   // «Reunión de equipo», «Cita con la psicóloga»
+  else if(iC>=0){type=COMMIT_KW[toks[iC].n];name=nombreRutina(toks,iC,type);}   // «evento semanal de almuerzo» → Almuerzo
+  else{let j=iG+1;while(j<toks.length&&/^(semanal|semanales|fijo|fija|fijos|recurrente|de|del|un|una|mi|el|la|para)$/.test(toks[j].n.replace(/[^a-z]/g,'')))j++;
+    name=frasePropia(toks,j);type=catEvento(name);
+    // Sin nombre, solo si se pide crearla («crea un evento semanal de lunes a viernes de 7 a 8»).
+    if(!name){if(!/\b(crea|creame|crear|agrega|agregame|agregar|anade|anademe|anota|anotame|pon|ponme|registra|registrame|programa|programame|agenda|agendame)\b/.test(ns))return null;name='Evento';}}
+  return rutinaDicha(ns,type,name);}
 // "No tengo clases", "cancelaron mi clase", "hoy no voy a trabajar": ese compromiso no va ese día.
 const NO_VA=/\b(cancelaron|cancelo|suspendieron|suspendio|no hay|no tengo|no tendre|no voy a (?:ir|tener|trabajar)|no voy al?|no ire|no trabajo|no entro)\b/;
 const ESTUDIE=/\b(estudie|repase|avance|practique|adelante|le meti)\b/;
+// «Avancé el informe» es estudio hecho; «una entrega de un avance del proyecto» o «el primer avance», algo que se entrega
+// (salvo que diga cuánto: «hice un avance de 2 horas»).
+const AVANCE_SUST=/\b(un|el|del|al|mi|tu|su|primer|segundo|tercer|cuarto|ultimo|otro|nuevo|este|ese|cada|de)\s+avances?\b/g;
+const estudie=ns=>ESTUDIE.test(minutosDichos(ns)?ns:ns.replace(AVANCE_SUST,' '));
 // Frases nuevas del 2-nov-2026 (incluida la del supervisor): quitar una rutina, cambiar la hora de entrada de un día
 // y pedir que Lía agende algo.
 const QUITAR_RUT=/\b(borra|borrame|borrar|elimina|eliminame|eliminar|quita|quitame|quitar|saca|sacame|sacar)\b/;
 const ENTRO=/\b(entro|entrare|ingreso|ingresare|empiezo|empezare|comienzo|comenzare)\b/;
+// «En vez de (entrar a) las 9», «en lugar de las 8»: la hora de siempre, que no es la nueva.
+const EN_VEZ=new RegExp(`\\b(?:en vez de|en lugar de)\\s+(?:(?:entrar|salir|ir|empezar|comenzar|ingresar)\\s+)?(?:(?:a|desde)\\s+)?(?:las?\\s+)?(\\d{1,2})(?::(\\d{2}))?(?:\\s*(am|pm))?`);
+// Cambiar para siempre una rutina que ya está.
+const CAMBIA_RUT=/\b(cambia|cambiame|cambiar|cambie|mueve|mueveme|mover|ahora (?:es|son|sera|seran|empieza|empiezan|termina|terminan|salgo|entro)|ya no es)\b/;
 const AGENDAR=/^(agenda|agendame|agendes|agendar|agendarme|agendalo|agendala|programa|programame|programes|programar|reserva|reservame|reservar|separame|apartame|bloquea|bloqueame|anota|anotame|anotes|apunta|apuntame)$/;
 // Las rutinas que nombra una frase: por su nombre («la clase de inglés» → Inglés) o, si no, por su tipo.
 function rutinasNombradas(toks,ns,state){const gs=agruparRutinas(state.commitments);
@@ -568,7 +630,7 @@ function cambioDeEval(text,state,now){const toks=tokenize(text),ns=toks.map(t=>t
   const nv=fechaHoraNueva(ns,now),hay=!!(nv.date||nv.suelta||nv.time);
   const mover=ds.find(d=>d.accion==='mover'&&(d.firme||hay)),quitar=ds.find(d=>d.accion==='quitar');
   const accion=mover&&(!quitar||hay)?'mover':quitar?'quitar':null;if(!accion)return null;
-  const dicho=parseClause(toks,now,null,state.settings),ref=dicho&&dicho.kind==='eval'?dicho:{type:'parcial',course:''};
+  const dicho=parseClause(toks,now,null,state.settings,state),ref=dicho&&dicho.kind==='eval'?dicho:{type:'parcial',course:''};
   const cs=evalesAludidas(dicho&&dicho.kind==='eval'?dicho:null,toks,ns,nv.antes,state,now);
   if(!cs.length)return accion==='quitar'?{intent:'aviso',texto:`No encontré ${nombreEval(ref)} entre tus evaluaciones próximas, así que no hay nada que quitar.`,deCambio:true}:null;
   const it={kind:'cambio',accion,evalId:'',type:ref.type,course:ref.course,date:'',time:'',cands:cs.slice(0,4).map(e=>e.id)};
@@ -577,6 +639,136 @@ function cambioDeEval(text,state,now){const toks=tokenize(text),ns=toks.map(t=>t
     it.date=nv.date||(nv.suelta&&!cs.some(e=>e.date===nv.suelta)?nv.suelta:'');
     it.time=nv.time&&!(una&&!it.date&&nv.time===una.time)?nv.time:'';}
   return continuarBorrador({intent:'cambio',items:[it]},state,now);}
+// «¿Cuándo es la práctica de física?», «¿a qué hora es mi parcial de cálculo?»: la fecha de esa evaluación (antes
+// respondía la próxima evaluación, fuera la que fuera). Sin curso («¿cuándo es mi próximo examen?») o con una fecha
+// nueva («el parcial es el viernes, ¿cuándo estudio?»), null: lo ven las reglas de siempre.
+function cuandoEsEval(toks,ns,state,now){
+  if(!/\b(cuando|que dia|que fecha|a que hora)\b/.test(ns)||!toks.some((t,j)=>esEvalTok(toks,j)))return null;
+  const dicho=parseClause(toks,now,null,state.settings,state);if(!dicho||dicho.kind!=='eval'||!dicho.course||dicho.date)return null;
+  const cs=evalesAludidas(dicho,toks,ns,'',state,now);
+  if(!cs.length)return{intent:'aviso',texto:`No encontré ${nombreEval(dicho)} entre tus evaluaciones próximas.`};
+  const e=cs[0],k=dayDiff(ymd(now),e.date);
+  return{intent:'aviso',texto:`${cap(nombreEval(e))} ${e.type==='entrega'?'vence':'es'} ${k===0?'hoy':k===1?'mañana':'el '+fechaLarga(e.date)} a las ${e.time}.`};}
+// ---------- Quitar algo del horario (iteración 3, revisión de Coconut del 4-nov-2026) ----------
+// «Elimina el evento del lunes a la 1:00 pm», «borra lo del martes a las 3», «cancelaron la reunión del jueves». Antes
+// Lía creaba un evento nuevo. Ahora busca lo que hay ese día a esa hora (o lo que se nombra) y propone quitarlo:
+// - un evento de un día: {intent:'quitaEvento',exId,date}; una evaluación: {intent:'quitaEval',evalId}, como siempre;
+// - una rutina: pregunta si solo ese día (se libera, como «mañana no tengo clases») o toda la rutina
+//   ({intent:'quitaRutina',ids,name}). La app pide confirmar antes de borrar (textoQuitar, sinLoQuitado);
+// - si no hay nada, lo dice. Las evaluaciones nombradas («borra el parcial de física») las ve cambioDeEval.
+const QUITAR=/\b(borra|borrame|borrar|borralo|borrala|elimina|eliminame|eliminar|eliminalo|eliminala|quita|quitame|quitar|quitalo|quitala|saca|sacame|sacar|sacalo|sacala|cancela|cancelame|cancelar|cancelalo|cancelala|anula|anular|anulalo|anulala)\b/;
+const YA_NO_HAY=/\b(cancelaron|cancelo|suspendieron|suspendio|ya no (?:tengo|tendre|hay|habra|va)|no (?:voy a (?:poder )?(?:ir|asistir)|podre (?:ir|asistir)|puedo (?:ir|asistir)|ire|asistire|voy (?:al|a la)))\b/;
+// Palabras que no nombran lo que se quita («el evento», «lo del lunes», «mi compromiso de mañana»).
+const NO_NOMBRE=new Set(['cancelaron','cancelo','suspendieron','suspendio','ya','no','tengo','tendre','hay','habra','va','tenia','habia','voy','ir','ire','poder','puedo','podre','asistir','asistire',
+  'el','la','los','las','lo','un','una','unos','unas','de','del','a','al','en','por','para','con','sin','mi','mis','tu','tus','su','sus','que','y','o','e',
+  'evento','eventos','actividad','actividades','cosa','cosas','algo','todo','toda','todos','todas','eso','esto','esa','ese','esta','este','compromiso','compromisos',
+  'pendiente','pendientes','plan','planes','rutina','rutinas','horario','agenda','calendario','hoy','manana','pasado','proximo','proxima','siguiente','semana','dia','dias',
+  'tarde','noche','madrugada','mediodia','medianoche','am','pm','hr','hrs','hora','horas','lia','oye','porfa','favor','please','nomas','solo','tambien','me','te','nos','le','les','se']);
+const esNombreQuitar=t=>{const w=t.n.replace(/[^a-z0-9]/g,'');return w.length>=3&&!QUITAR.test(w)&&!NO_NOMBRE.has(w)&&DAYW[w]===undefined&&!MESN[w]&&!/^\d/.test(w);};
+const nombreQuitar=toks=>toks.filter(esNombreQuitar).map(t=>t.n.replace(/[^a-z0-9]/g,''));
+// Lo nombrado como lo escribió la persona, para decir «No encontré «cita con el dentista»»: de la primera palabra que
+// nombra a la última, con hasta dos palabras de enlace en medio («con mi», «de»).
+function nombreQuitarTexto(toks){const i=toks.findIndex(esNombreQuitar);if(i<0)return'';let fin=i;
+  for(let j=i+1;j<toks.length;j++){if(esNombreQuitar(toks[j])){fin=j;continue;}if(/^(de|del|con|y|mi|mis|su|sus|la|el|los|las|al|a)$/.test(toks[j].n)&&j-fin<=2)continue;break;}
+  return toks.slice(i,fin+1).map(t=>t.o).join(' ').replace(/[¿?¡!.,;:]+/g,'');}
+// Cuánto se parece lo nombrado a algo del horario: palabras en común (o abreviadas) y el tipo de la rutina («chamba» → Trabajo).
+function puntosNombre(ws,c){const cw=norm(c.label||'').split(/[^a-z0-9]+/).filter(w=>w.length>=3);let p=0;
+  for(const w of ws){const tipo=COMMIT_KW[w];
+    if(cw.includes(w)||w.length>=4&&cw.some(v=>v.length>=4&&(v.startsWith(w)||w.startsWith(v)))||tipo&&tipo!=='otro'&&(c.t==='rutina'?c.type===tipo:c.t==='evento'&&c.cat===tipo))p++;}
+  return p;}
+// Lo que hay un día: rutinas y eventos (sin lo ya liberado; de una rutina que viene de anoche, d es el día en que empezó)
+// y evaluaciones, en orden.
+function cosasDelDia(state,date){const prev=ymd(addDays(fromYmd(date),-1)),out=[];
+  for(const b of busyFor(state,date)){const ev=b.kind==='excepcion',o=ev?state.exceptions.find(x=>x.id===b.ref):state.commitments.find(x=>x.id===b.ref);if(!o)continue;
+    out.push({t:ev?'evento':'rutina',id:o.id,d:ev?o.date:b.cola?prev:date,s:b.s,e:b.e,cola:!!b.cola,label:ev?o.label:o.name,type:o.type,cat:o.cat});}
+  for(const e of state.evals)if(e.date===date&&HHMM.test(e.time||'')){const s=toMin(e.time);out.push({t:'eval',id:e.id,d:date,s,e:s+120,cola:false,label:e.course});}
+  return out.sort((a,b)=>a.s-b.s);}
+// «hoy», «mañana», «el jueves», «el lunes 2» (dentro de 7 días, para no confundirlo con hoy) o «el lun 9 nov».
+function elDia(f,now){const k=dayDiff(ymd(now),f),d=fromYmd(f),w=DIAS[d.getDay()];
+  return k===0?'hoy':k===1?'mañana':k>1&&k<7?`el ${w}`:k===7?`el ${w} ${d.getDate()}`:`el ${fechaCorta(f)}`;}
+// La hora como la dice la persona: «a la 1:00 p. m.», «a las 8:00 a. m.».
+const aLa=m=>{const h=Math.floor(m/60)%24,h12=h%12||12;return `a ${h12===1?'la':'las'} ${h12}:${pad(m%60)} ${h<12?'a. m.':'p. m.'}`;};
+const conPunto=t=>/\.$/.test(t)?t:t+'.';   // «…a las 3:00 p. m.» ya termina en punto
+// Los días de una rutina: «de lunes a viernes», «los fines de semana», «los martes y jueves».
+function diasRutina(days){const s=[...new Set(days||[])].sort((a,b)=>((a+6)%7)-((b+6)%7)),l=s.map(d=>(d+6)%7);
+  if(s.length===7)return'todos los días';if(s.join()==='6,0')return'los fines de semana';
+  if(s.length>=3&&l.every((v,i)=>!i||v===l[i-1]+1))return`de ${DIAS[s[0]]} a ${DIAS[s[s.length-1]]}`;
+  const p=s.map(d=>DIAS[d]+(d===0||d===6?'s':''));return'los '+(p.length>1?p.slice(0,-1).join(', ')+' y '+p[p.length-1]:p[0]||'');}
+const avisoQuitarRutina=gs=>({intent:'aviso',texto:gs.length===1?`Para quitar «${gs[0].name}» de tus rutinas, ábrela en Perfil, en «Tus rutinas», y toca «Eliminar rutina». Así ves qué se borra antes de borrarlo.`
+  :`Tienes varias rutinas así: ${gs.map(g=>g.name).join(', ')}. Elige cuál quitar en Perfil, en «Tus rutinas».`});
+// Devuelve la intención, o null si la frase no pide quitar algo del horario.
+function quitarAlgo(toks,ns,state,now){
+  const ya=YA_NO_HAY.test(ns)&&EVENTO.test(ns)&&!toks.some(t=>COMMIT_KW[t.n]);   // «ya no tengo clases» lo ve NO_VA
+  if(!QUITAR.test(ns)&&!ya)return null;
+  if(toks.some((t,j)=>esEvalTok(toks,j))||/\bsac(?:a|ar|o|ame)\s+(?:una\s+)?(?:cita|turno|hora|consulta|ficha)\b/.test(ns))return null;   // «sacar cita» es pedirla
+  if(!ya&&/\b(bloques?|estudiar|estudio|sesion|sesiones|repaso|repasar|tiempo)\b/.test(ns))return null;   // «sácame tiempo para estudiar»
+  const ws=nombreQuitar(toks),nombre=nombreQuitarTexto(toks),fecha=parseDate(ns,now),tm=parseTimes(ns),hoy=ymd(now);
+  // «A las 8» puede ser 08:00 o 20:00: primero la lectura de siempre y, si ahí no hay nada, la otra.
+  const h0=tm.range?tm.range[0]:tm.at!=null?tm.at:tm.until!=null?tm.until:null;
+  const horas=h0==null?[]:[h0,...(tm.crudo&&!tm.range?horasPosibles(...tm.crudo):[])].filter((v,i,a)=>a.indexOf(v)===i);
+  const mejores=l=>{if(!ws.length)return l;const p=l.map(c=>puntosNombre(ws,c)),m=Math.max(0,...p);return m?l.filter((c,k)=>p[k]===m):[];};
+  if(!fecha&&!horas.length){if(!ws.length)return null;
+    // Sin día ni hora: lo próximo que se llame así. Una rutina por su nombre se quita en Perfil (decisión del 2-nov).
+    const evs=state.exceptions.filter(x=>!x.libre&&x.date>=hoy).map(x=>({t:'evento',id:x.id,d:x.date,s:toMin(x.start),label:x.label,cat:x.cat}));
+    const vs=state.evals.filter(e=>e.date>=hoy).map(e=>({t:'eval',id:e.id,d:e.date,s:toMin(e.time||'00:00'),label:e.course}));
+    const sel=mejores([...evs,...vs]).sort((a,b)=>(a.d+fmt(a.s)).localeCompare(b.d+fmt(b.s)));
+    if(sel.length)return propuestaQuitar(sel,'',null,state,now);
+    const gs=rutinasNombradas(toks,ns,state);if(gs.length)return avisoQuitarRutina(gs);
+    return EVENTO.test(ns)?{intent:'aviso',texto:`No encontré «${nombre}» en tu horario.`}:null;}
+  const D=fecha||hoy,todas=cosasDelDia(state,D);let sel=[],T=horas.length?horas[0]:null;
+  if(horas.length){
+    // Lo que empieza a esa hora va antes que lo que solo la cruza («la reunión de las 10» en medio de las clases).
+    for(const h of horas){const empieza=mejores(todas.filter(c=>!c.cola&&c.s===h)),cruza=mejores(todas.filter(c=>c.s<h&&h<c.e));
+      const l=empieza.length?empieza:cruza;if(l.length){sel=l;T=h;break;}}
+    if(!sel.length&&ws.length)sel=mejores(todas);}   // lo nombrado ese día, aunque la hora no coincida: la propuesta muestra la suya
+  else if(tm.part){const [a,b]=FRANJA_EVENTO[tm.part];sel=mejores(todas.filter(c=>c.s<b&&c.e>a));}
+  else sel=mejores(todas);
+  sel=sel.filter((c,k)=>sel.findIndex(x=>x.t===c.t&&x.id===c.id&&x.d===c.d)===k);
+  if(!sel.length){const cuando=elDia(D,now)+(T!=null?' '+aLa(T):'');
+    return{intent:'aviso',texto:ws.length?conPunto(`No encontré «${nombre}» ${cuando}`):T!=null?`${cap(cuando)} no tienes nada.`:`${cap(cuando)} no tienes nada en tu horario.`};}
+  return propuestaQuitar(sel,D,T,state,now);}
+function propuestaQuitar(sel,D,T,state,now){
+  const it={kind:'quitar',date:D,hora:T,cands:sel.slice(0,6).map(c=>({t:c.t,id:c.id,d:c.d})),t:'',id:'',d:'',alcance:''};
+  if(sel.length===1)Object.assign(it,{t:sel[0].t,id:sel[0].id,d:sel[0].d});
+  return continuarBorrador({intent:'quitar',items:[it]},state,now);}
+// Lo elegido para quitar (x: {t,id,d}), como opción de una respuesta rápida.
+function cosaQuitar(state,x){
+  if(x.t==='evento'){const o=state.exceptions.find(y=>y.id===x.id);if(!o)return null;
+    return{t:'evento',label:o.label,cat:o.cat,start:o.start,opcion:`${o.label} (${o.start}–${o.end})`,conFecha:`${o.label} (${fechaCorta(o.date)}, ${o.start})`};}
+  if(x.t==='eval'){const e=state.evals.find(y=>y.id===x.id);if(!e)return null;const l=`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label} de ${e.course}`;
+    return{t:'eval',label:e.course,start:e.time,opcion:`${l} (${e.time})`,conFecha:`${l} (${fechaCorta(e.date)}, ${e.time})`};}
+  const c=state.commitments.find(y=>y.id===x.id);if(!c)return null;
+  return{t:'rutina',label:c.name,type:c.type,start:c.start,opcion:`${c.name} (${c.start}–${c.end})`,conFecha:`${c.name} (${c.start}–${c.end})`};}
+// «¿Cuál quito?» respondido con palabras: por su nombre, por su hora o «la primera».
+function cualQuitar(p,toks,tm,state){const cs=(p.cands||[]).map(x=>({x,c:cosaQuitar(state,x)})).filter(o=>o.c),ws=nombreQuitar(toks);
+  if(ws.length){const pts=cs.map(o=>puntosNombre(ws,o.c)),m=Math.max(0,...pts),l=cs.filter((o,k)=>m>0&&pts[k]===m);if(l.length===1)return l[0].x;}
+  const hs=tm.range?[tm.range[0]]:tm.crudo?horasPosibles(...tm.crudo):tm.at!=null?[tm.at]:[];
+  if(hs.length){const l=cs.filter(o=>hs.includes(toMin(o.c.start)));if(l.length===1)return l[0].x;}
+  const ord=['primer','primero','primera','segundo','segunda','tercer','tercero','tercera','cuarto','cuarta'].findIndex(w=>toks.some(t=>t.n===w));
+  if(ord>=0){const o=cs[[0,0,0,1,1,2,2,2,3,3][ord]];if(o)return o.x;}
+  return null;}
+// «¿Solo ese día o toda la rutina?» respondido con palabras.
+function alcanceDicho(ns){const s=ns.trim();
+  if(/\b(toda|todas|todos|siempre|completa|completo|entera|entero|definitivamente)\b/.test(s)||/^(la )?rutina$/.test(s))return'rutina';
+  if(/\b(solo|solamente|nomas|unicamente|esa vez|una vez|ese|este|esa|esta)\b/.test(s)||/\b(hoy|manana)\b/.test(s)&&s.split(/\s+/).length<=3)return'dia';
+  if(/^(no|nada|ninguno|ninguna)\b|\b(mejor no|dejalo|dejala|deja|asi esta bien|no (?:lo |la )?quites)\b/.test(s))return'nada';
+  return null;}
+function finQuitar(x,state){
+  if(x.t==='evento')return{intent:'quitaEvento',exId:x.id,date:x.d};
+  if(x.t==='eval')return{intent:'quitaEval',evalId:x.id};
+  if(x.alcance==='nada')return{intent:'aviso',texto:'Listo, lo dejo como está.'};
+  const c=state.commitments.find(y=>y.id===x.id);if(!c)return{intent:'aviso',texto:'Esa rutina ya no está en tu horario.'};
+  if(x.alcance==='dia'){const ex={date:x.d,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id};return{intent:'except',exs:[ex],ex};}
+  return{intent:'quitaRutina',ids:c.grupo?state.commitments.filter(y=>y.grupo===c.grupo).map(y=>y.id):[c.id],name:c.name};}
+// Para la app: qué se va a quitar («quitar «Reunión de grupo» del jue 29 oct (10:00–11:00)») y el horario sin eso, sin
+// tocar el estado. Al quitar algo se quita también lo que se había liberado de eso.
+function textoQuitar(state,r){
+  if(r.intent==='quitaEvento'){const x=state.exceptions.find(y=>y.id===r.exId);return x?`quitar «${x.label}» del ${fechaCorta(x.date)} (${x.start}–${x.end})`:'';}
+  if(r.intent==='quitaRutina'){const cs=state.commitments.filter(c=>(r.ids||[]).includes(c.id));if(!cs.length)return'';
+    return`quitar la rutina «${cs[0].name}» (${cs.map(c=>`${diasRutina(c.days)}, ${c.start}–${c.end}`).join('; ')})`;}
+  return'';}
+function sinLoQuitado(state,r){const fuera=new Set(r.intent==='quitaEvento'?[r.exId]:r.intent==='quitaRutina'?(r.ids||[]):[]);
+  return{commitments:state.commitments.filter(c=>!fuera.has(c.id)),exceptions:state.exceptions.filter(x=>!fuera.has(x.id)&&!(x.libre&&fuera.has(x.ref)))};}
 // ---------- Lía pide lo que falta (iteración 2) ----------
 // Lo que necesita cada cosa para guardarse; nada se guarda sin hora (decisión 4). Si falta algo, Lía lo pregunta, una
 // cosa a la vez y con respuestas rápidas, y guarda lo entendido como borrador por 10 minutos (state.borrador).
@@ -590,6 +782,7 @@ function faltaDe(it){if(!it)return null;
   if(it.kind==='evento')return it.que&&!it.label?'que':!it.date?'fecha':!(it.start&&it.end)?'horario':null;
   if(it.kind==='log')return !it.evalId?'evaluacion':!it.min?'minutos':null;
   if(it.kind==='cambio')return !it.evalId?'evaluacion':it.accion==='mover'&&!it.date&&!it.time?'fecha':null;
+  if(it.kind==='quitar')return !it.id?'cual':it.t==='rutina'&&!it.alcance?'alcance':null;
   return null;}
 const minus=s=>s.charAt(0).toLowerCase()+s.slice(1);
 // «tu examen de Inglés», «tu informe de Química» (una entrega con nombre propio ya lo dice).
@@ -613,8 +806,17 @@ function preguntaPara(it,falta,state,now){
     if(falta==='fecha')return{texto:ent?`¿Para qué día es ${n}?`:`¿Qué día es ${n}?`,opciones:[...dias(),otra('Otra fecha','Escribe la fecha, por ejemplo: el 12 de noviembre')]};
     return{texto:ent?`¿A qué hora vence ${n}?`:`¿A qué hora es ${n}${it.date?' '+delDia(it.date,now):''}?`,
       opciones:[...(ent?['23:59']:['08:00','14:00','19:00']).map(h=>({t:h,set:{time:h}})),otra('Otra hora','Escribe la hora, por ejemplo: a las 7 de la noche')]};}
+  if(it.kind==='quitar'){const cs=(it.cands||[]).map(x=>({x,c:cosaQuitar(state,x)})).filter(o=>o.c);
+    if(falta==='cual'){const donde=it.date?`${cap(elDia(it.date,now))}${it.hora!=null?' '+aLa(it.hora):''} tienes varias cosas.`:'Encontré varias cosas con ese nombre.';
+      return{texto:`${donde} ¿Cuál quito?`,opciones:cs.map(({x,c})=>({t:it.date?c.opcion:c.conFecha,set:{t:x.t,id:x.id,d:x.d}}))};}
+    const c=state.commitments.find(y=>y.id===it.id),k=dayDiff(ymd(now),it.date||it.d),f=fromYmd(it.date||it.d);
+    const corto=k===0?'hoy':k===1?'mañana':`el ${DIAS[f.getDay()].slice(0,3)} ${f.getDate()}`,dr=c?diasRutina(c.days):'';
+    return{texto:`«${c?c.name:'Esa rutina'}» es una rutina${c?` ${/^de /.test(dr)?dr:'de '+dr}, de ${c.start} a ${c.end}`:''}. ¿La quito solo ${elDia(it.date||it.d,now)} o toda la rutina?`,
+      opciones:[{t:`Solo ${corto}`,set:{alcance:'dia'}},{t:'Toda la rutina',set:{alcance:'rutina'}},{t:'Dejarlo así',set:{alcance:'nada'}}]};}
   if(it.kind==='commit'){const n=minus(it.name||'eso');
     if(falta==='dias')return{texto:`¿Qué días tienes ${n}?`,opciones:[{t:'Lun a Vie',set:{days:[1,2,3,4,5]}},{t:'Fines de semana',set:{days:[6,0]}},otra('Otros días','Escribe los días, por ejemplo: martes y jueves')]};
+    if(it.start&&!it.end){const s0=toMin(it.start);
+      return{texto:`«${it.name||'Tu rutina'}» empieza a las ${it.start}. ¿Hasta qué hora es?`,opciones:[30,60,120].map(m=>({t:`Hasta las ${fmt(s0+m)}`,set:{end:fmt(s0+m)}})).concat(otra('Otra hora','Escribe la hora, por ejemplo: hasta las 9 de la noche'))};}
     return{texto:`¿De qué hora a qué hora tienes ${n}?`,opciones:[...franja(FRANJA_RUTINA,[['manana','Mañana'],['tarde','Tarde'],['noche','Noche']]),otra('Otra hora','Escribe el horario, por ejemplo: de 4 a 8 de la noche')]};}
   if(it.kind==='evento'&&falta==='que'){const k=it.date?dayDiff(ymd(now),it.date):null,cuando=it.date?(k===0?' hoy':k===1?' mañana':` el ${fechaCorta(it.date)}`):'';
     return{texto:`¿Qué quieres que agende${cuando}${it.start?` a las ${it.start}`:''}?`,opciones:[{t:'Una cita',set:{label:'Cita'}},{t:'Una reunión',set:{label:'Reunión'}},otra('Otra cosa','Escribe qué es, por ejemplo: repaso de cálculo')]};}
@@ -636,6 +838,7 @@ function continuarBorrador(b,state,now){const i=b.items.findIndex(x=>faltaDe(x))
   if(b.intent==='except'){const exs=b.items.map(x=>({date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{})}));return{intent:'except',exs,ex:exs[0]};}
   if(b.intent==='log'){const x=b.items[0];return{intent:'log',evalId:x.evalId,course:x.course,date:x.date,min:x.min};}
   if(b.intent==='cambio'){const x=b.items[0];return x.accion==='quitar'?{intent:'quitaEval',evalId:x.evalId}:{intent:'cambiaEval',evalId:x.evalId,date:x.date||'',time:x.time||''};}
+  if(b.intent==='quitar')return finQuitar(b.items[0],state);
   return{intent:'add',items:b.items};}
 // «La próxima semana tengo examen»: Lía pregunta qué día de esa semana, con los días de lunes a sábado.
 function preguntaSemana(q,n,now){const cual=n===1?'la próxima semana':'la subsiguiente semana';
@@ -647,16 +850,19 @@ function respuestaBorrador(b,q,state,now){const it=b&&b.items&&b.items[b.i],falt
   const toks=tokenize(q),ns=toks.map(t=>t.n).join(' ');if(!ns.trim())return null;
   // Para «¿De qué curso?» vale nombrar una entrega («del informe de química»), pero no otro examen.
   const tema=t=>COMMIT_KW[t.n]||(falta==='curso'?EVAL_KW[t.n]&&EVAL_KW[t.n]!=='entrega':EVAL_KW[t.n]||ENTREGA_N.has(t.n));
-  if(falta!=='evaluacion'&&falta!=='que'&&(toks.some(tema)||EVENTO.test(ns)||ESTUDIE.test(ns)||NO_VA.test(ns)))return null;
+  // «¿Cuál quito?» se responde nombrando lo que se quita («la reunión», «el almuerzo»): no es otra cosa.
+  if(falta!=='evaluacion'&&falta!=='que'&&falta!=='cual'&&(toks.some(tema)||EVENTO.test(ns)||estudie(ns)||NO_VA.test(ns)))return null;
   const p={...it},tm=parseTimes(ns),d=parseDate(ns,now),hora=tm.at!=null?tm.at:tm.range?tm.range[0]:null;
   const rango=tm.range||(tm.at!=null&&p.kind==='evento'?[tm.at,tm.at+60]:null)||(tm.part?(p.kind==='commit'?FRANJA_RUTINA:FRANJA_EVENTO)[tm.part]:null);
-  if(falta==='que'){const l=queAgendar(toks,-1);if(!l)return null;p.label=l;if(p.start&&!p.end&&!tm.range){const fin=finDespues(p.start,tm);if(fin!=null)p.end=fin;}}
+  if(falta==='alcance'){const a=alcanceDicho(ns);if(!a)return null;p.alcance=a;}
+  else if(falta==='cual'){const c=cualQuitar(p,toks,tm,state);if(!c)return null;Object.assign(p,{t:c.t,id:c.id,d:c.d});}
+  else if(falta==='que'){const l=queAgendar(toks,-1);if(!l)return null;p.label=l;if(p.start&&!p.end&&!tm.range){const fin=finDespues(p.start,tm);if(fin!=null)p.end=fin;}}
   else if(falta==='curso'){let j=0;while(j<toks.length&&(SKIPW.has(toks[j].n)||STOPW.has(toks[j].n)))j++;  // «es de estadística»
-    const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=c;}
+    const c=extractCourse(toks,j-1,true);if(!c)return null;p.course=cursoParecido(c,state)||c;}
   else if(falta==='fecha'){const wd=p.semana&&!/\d/.test(ns)&&!fechaRelativa(ns,now)&&Object.entries(DAYW).find(([w])=>new RegExp(`\\b${w}\\b`).test(ns));
     if(wd)p.date=diaEnSemanas(wd[1],p.semana,now);else if(d)p.date=d;else if(p.kind==='cambio'&&hora!=null)p.time=fmt(hora);else return null;}  // a una evaluación que cambió le basta la hora
   else if(falta==='hora'){const h=hora!=null?hora:p.type==='entrega'&&/\bmedianoche\b/.test(ns)?1439:null;if(h==null)return null;p.time=fmt(h);}
-  else if(falta==='horario'&&p.kind==='evento'&&p.start&&!tm.range){const fin=finDespues(p.start,tm);if(fin==null)return null;p.end=fin;}
+  else if(falta==='horario'&&(p.kind==='evento'||p.kind==='commit')&&p.start&&!tm.range){const fin=finDespues(p.start,tm);if(fin==null)return null;p.end=fin;}
   else if(falta==='horario'){if(!rango)return null;p.start=fmt(rango[0]);p.end=fmt(rango[1]);}
   else if(falta==='dias'){const ds=parseDays(ns);if(!ds.length)return null;p.days=ds;}
   else if(falta==='evaluacion'&&p.kind==='cambio'){const e=cualDeEstas(p.cands,toks,ns,d,state);if(!e)return null;Object.assign(p,{evalId:e.id,type:e.type,course:e.course});}
@@ -736,10 +942,13 @@ function interpretFrase(text,state,now){
   const toks=tokenize(text);const ns=toks.map(t=>t.n).join(' ');const S=state.settings;
   if(!ns.trim())return{intent:'help'};
   const social=charla(ns);if(social)return{intent:'charla',tipo:social};
+  // «Elimina el evento del lunes a la 1:00 pm»: quitar lo que hay (antes se leía como algo nuevo o como la agenda).
+  const qa=quitarAlgo(toks,ns,state,now);if(qa)return qa;
   // «Recuérdame que tengo examen de cálculo el viernes» cuenta algo nuevo: no es una pregunta por la agenda.
   const cuenta=!/[¿?]/.test(text)&&toks.some(t=>EVAL_KW[t.n]||COMMIT_KW[t.n]||ENTREGA_N.has(t.n))&&!/\b(mi agenda|como esta mi|estoy libre|tengo libre)\b/.test(ns);
   if(!cuenta&&(/\b(que tengo|que me toca|mi agenda|como esta mi|estoy libre|tengo libre|que hago)\b/.test(ns)||preguntaAgenda(text,ns))){const d=parseDate(ns,now)||ymd(now);return{intent:'agenda',date:d};}
   if(/\b(cuanto me falta|cuantas horas|como voy)\b/.test(ns))return{intent:'progress'};
+  const cu=cuandoEsEval(toks,ns,state,now);if(cu)return cu;
   if(/\b(cuando es|proximo examen|siguiente examen)\b/.test(ns))return{intent:'next'};
   // Una evaluación que ya está y cambió o se canceló («me cambiaron el examen de cálculo al viernes»).
   const ce=cambioDeEval(text,state,now);if(ce)return ce;
@@ -747,12 +956,10 @@ function interpretFrase(text,state,now){
   // «Borra la clase de inglés», «quita mi rutina del gimnasio»: se quita desde Perfil, donde se ve qué se borra. Antes se
   // leía como una rutina nueva y Lía preguntaba sus días. Con fecha («borra la clase de mañana») lo ve la IA.
   if(!hasEval&&QUITAR_RUT.test(ns)&&toks.some(t=>COMMIT_KW[t.n]||/^rutinas?$/.test(t.n))){if(parseDate(ns,now))return{intent:'help'};
-    const gs=rutinasNombradas(toks,ns,state);
-    if(gs.length===1)return{intent:'aviso',texto:`Para quitar «${gs[0].name}» de tus rutinas, ábrela en Perfil, en «Tus rutinas», y toca «Eliminar rutina». Así ves qué se borra antes de borrarlo.`};
-    if(gs.length)return{intent:'aviso',texto:`Tienes varias rutinas así: ${gs.map(g=>g.name).join(', ')}. Elige cuál quitar en Perfil, en «Tus rutinas».`};
+    const gs=rutinasNombradas(toks,ns,state);if(gs.length)return avisoQuitarRutina(gs);
     return{intent:'aviso',texto:'No encontré esa rutina. Tus rutinas están en Perfil: desde ahí las editas o las eliminas.'};}
   // Estudio que ya hiciste: "ayer estudié 2 horas de cálculo".
-  if(ESTUDIE.test(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns)||0,date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
+  if(estudie(ns)&&!/\b(voy a|tengo que|debo|quiero)\b/.test(ns)){const min=minutosDichos(ns)||0,date=fechaPasada(ns,now),e=evalMencionada(ns,state,now);
     if(!e&&!state.evals.some(x=>x.date>=ymd(now)))return{intent:'aviso',texto:'Todavía no tienes evaluaciones. Agrega una y luego anotamos lo que estudiaste.'};
     return continuarBorrador({intent:'log',items:[{kind:'log',evalId:e?e.id:'',course:e?e.course:'',date,min}]},state,now);}
   // Un compromiso que ese día no va: "mañana no tengo clases", "cancelaron mi clase", "hoy no voy a trabajar".
@@ -772,12 +979,17 @@ function interpretFrase(text,state,now){
     if(!cs.length)return{intent:'aviso',texto:`${cap(fechaLarga(date))} no tienes ${cosa} en tu horario, así que no hay nada que liberar.`};
     const exs=cs.map(c=>({date,start:c.start,end:c.end,label:`Sin ${c.name}`,libre:true,ref:c.id}));return{intent:'except',exs,ex:exs[0]};}
   // «Mañana entro a trabajar más temprano, a las 7», «el jueves entro a clases a las 10»: cambia la entrada de ese día.
-  if(!hasEval&&ENTRO.test(ns)&&!NO_VA.test(ns)){const tm=parseTimes(ns),dicha=parseDate(ns,now),date=dicha||ymd(now),wd=fromYmd(date).getDay();
+  if(!hasEval&&ENTRO.test(ns)&&!NO_VA.test(ns)){
+    // «Entro a las 10 en vez de las 9»: la hora vieja dice qué rutina cambia y no se confunde con la nueva.
+    const vez=ns.match(EN_VEZ),tm=parseTimes(vez?ns.replace(EN_VEZ,' '):ns),dicha=parseDate(ns,now),date=dicha||ymd(now),wd=fromYmd(date).getDay();
     const kind=/\bclase/.test(ns)?'clase':'trabajo',h=tm.at!=null?tm.at:tm.range?tm.range[0]:null;
     // Un cambio para siempre («me cambiaron el horario de clases, ahora entro a las 9») se hace en la rutina.
     if(!dicha&&/\b(ahora|a partir|siempre|todos los|cada|cambiaron el horario|cambiaron mi horario|nuevo horario)\b/.test(ns)){const cosa=kind==='clase'?'clases':'trabajo';
       return{intent:'aviso',texto:`Si tu horario de ${cosa} cambió para siempre, cámbialo en tus rutinas, en Perfil. Si es solo un día, dime por ejemplo: “mañana entro a las ${h!=null?fmt(h):'9'}”.`};}
-    const c=state.commitments.filter(x=>x.type===kind&&x.days.includes(wd)).sort((a,b)=>intervalo(a.start,a.end).s-intervalo(b.start,b.end).s)[0];
+    let c=state.commitments.filter(x=>x.type===kind&&x.days.includes(wd)).sort((a,b)=>intervalo(a.start,a.end).s-intervalo(b.start,b.end).s)[0];
+    if(vez){const viejas=horasPosibles(vez[1],vez[2],vez[3],null),nombra=/\b(clases?|trabajo|trabajar|chamba|turno|oficina)\b/.test(ns);
+      const v=state.commitments.find(x=>x.days.includes(wd)&&vigente(x,date)&&viejas.includes(toMin(x.start))&&(!nombra||x.type===kind));
+      if(v)c=v;else if(!nombra)return{intent:'aviso',texto:conPunto(`${cap(elDia(date,now))} no tienes nada que empiece ${aLa(adj(vez[1],vez[2],vez[3],null))}`)};}
     if(h==null||!c)return{intent:'help'};
     // «más temprano» o «antes» solo acepta una hora antes de la entrada de siempre; «recién», «más tarde» o «después», una después.
     const dir=/\b(temprano|antes)\b/.test(ns)?-1:/\b(recien|tarde|despues|luego)\b/.test(ns)?1:0,r=intervalo(c.start,c.end);
@@ -786,6 +998,16 @@ function interpretFrase(text,state,now){
     if(x===r.s)return{intent:'aviso',texto:`${cap(fechaLarga(date))} ya entras a las ${c.start}.`};
     if(x<r.s){const ex={date,start:fmt(x),end:c.start,label:`${c.name} (más temprano)`};return{intent:'except',exs:[ex],ex};}
     const ex={date,start:c.start,end:fmt(x),label:'Entrada más tarde',libre:true,ref:c.id};return{intent:'except',exs:[ex],ex};}
+  // «Mi clase de inglés ahora es el sábado de 10 a 12», «cambia mi trabajo de los viernes»: un cambio para siempre de una
+  // rutina que ya está se hace en Perfil (antes Lía la leía como una rutina nueva). Un solo día («este viernes», «mañana»,
+  // «el lunes 9») lo ven las reglas de siempre.
+  const unDiaDicho=/\b(hoy|manana|pasado manana|este|esta|solo)\b/.test(ns.replace(/\b(?:en|por|de|a) (?:la|las) mananas?\b/g,' '))
+    ||/\b\d{1,2} de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\b\d{1,2}\s*\/\s*\d{1,2}\b|\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+\d{1,2}\b(?!\s*(?::|a\s|am\b|pm\b|-))/.test(ns);
+  if(!hasEval&&CAMBIA_RUT.test(ns)&&!unDiaDicho){
+    // «Mis clases de los martes»: solo las rutinas de esos días.
+    let gs=rutinasNombradas(toks,ns,state);const ds=parseDays(ns),deDias=gs.filter(g=>g.tramos.some(t=>t.days.some(d=>ds.includes(d))));if(deDias.length)gs=deDias;
+    if(gs.length===1)return{intent:'aviso',texto:`Para cambiar el horario de «${gs[0].name}» para siempre, ábrela en Perfil, en «Tus rutinas». Si es solo un día, dime por ejemplo: “este viernes salgo a las 8”.`};
+    if(gs.length)return{intent:'aviso',texto:`Tienes varias rutinas así: ${gs.map(g=>g.name).join(', ')}. Para cambiar su horario para siempre, ábrela en Perfil, en «Tus rutinas».`};}
   const busyWords=/\b(me quedo|quedarme|salgo|no puedo|ocupad[oa]|me extendieron|turno extra|libera|liberame|tengo un compromiso|cancela|no voy a poder|no podre|no tengo tiempo)\b/;
   // El turno de un día se alarga: «el viernes me toca chamba hasta las 10 de la noche», «me pidió quedarme hasta tarde
   // el jueves». Solo si ese día ya hay trabajo (o clase) en el horario; si no, lo ven las reglas de siempre.
@@ -800,6 +1022,9 @@ function interpretFrase(text,state,now){
       const madrugada=/\b(madrugada|de la manana|medianoche)\b/.test(ns);
       const x=(tm.crudo?horasPosibles(...tm.crudo):[tm.until]).flatMap(v=>madrugada?[v,v+1440]:[v]).filter(v=>v>r.e&&v<=r.e+720).sort((a,b)=>a-b)[0];
       if(x!=null){const ex={date:dia,start:c.end,end:fmt(x),label:`${c.name} (más tarde)`};return{intent:'except',exs:[ex],ex};}}}
+  // «Crea un evento semanal de almuerzo, de lunes a viernes de 1 a 2:30», «los lunes tengo reunión de equipo de 9 a 10»:
+  // lo que se repite cada semana es una rutina, aunque se diga «evento» o «reunión» (antes se anotaba solo el primer día).
+  const sem=!hasEval&&rutinaSemanal(toks,ns,iC);if(sem)return continuarBorrador({intent:'add',items:[sem]},state,now);
   // Un evento con nombre se anota si lo dice como algo que tiene («tengo una cita», «el sábado hay fiesta»), no si pregunta
   // por otra cosa («¿quién ganó el partido?»).
   const ev=!hasEval&&(parseDate(ns,now)||/\d/.test(ns)||/\b(tengo|tendre|hay|habra|voy|ire|me toca)\b/.test(ns))&&EVENTO.exec(ns);
@@ -853,7 +1078,7 @@ function interpretFrase(text,state,now){
       if(s0==null&&tm.part)[s0,e0]=FRANJA_EVENTO[tm.part];
       return continuarBorrador({intent:'except',items:[{kind:'evento',date:date||'',start:s0!=null?fmt(s0):'',end:e0!=null?fmt(e0):'',label,cat:'otro',...(label?{}:{que:true})}]},state,now);}}
   const clauses=splitClauses(toks);let prev=null;const items=[];
-  for(const c of clauses){const r=parseClause(c,now,prev,S);if(r){items.push(r);prev=r;}}
+  for(const c of clauses){const r=parseClause(c,now,prev,S,state);if(r){items.push(r);prev=r;}}
   // Varias evaluaciones en una frase comparten la fecha si solo una la dice; los horarios de una misma rutina, sus días
   // («trabajo de 8 a 12 y de 2 a 6 de lunes a viernes»).
   const conFecha=items.find(i=>i.kind==='eval'&&i.date);
@@ -889,7 +1114,8 @@ function validarIA(r,state,now){
   const nuevas=()=>{const items=[];
     for(const e of lista(r.evaluaciones)){const type=EVAL_TYPES[e.tipo]?e.tipo:null,date=fecha(e.fecha,0,400);if(!type||date===null)continue;
       const h=Number(e.horas);
-      items.push({kind:'eval',type,course:cap(textoIA(e.curso,60)),date,time:HHMM.test(e.hora)?e.hora:'',hours:h>=0.5&&h<=40?Math.round(h*2)/2:EVAL_TYPES[type].h});}
+      const curso=cap(textoIA(e.curso,60));   // ligada al curso que ya existe («calculo» → «Cálculo I»)
+      items.push({kind:'eval',type,course:(curso&&cursoParecido(curso,state))||curso,date,time:HHMM.test(e.hora)?e.hora:'',hours:h>=0.5&&h<=40?Math.round(h*2)/2:EVAL_TYPES[type].h});}
     for(const c of lista(r.compromisos)){const type=COMMIT_TYPES[c.tipo]?c.tipo:null;if(!type)continue;
       const days=[...new Set((Array.isArray(c.dias)?c.dias:[]).filter(d=>Number.isInteger(d)&&d>=0&&d<=6))].sort((x,y)=>x-y),horas=HHMM.test(c.inicio)&&HHMM.test(c.fin)&&c.inicio!==c.fin;
       items.push({kind:'commit',type,name:cap(textoIA(c.nombre,40))||(type==='otro'?'Otro':COMMIT_TYPES[type]),days,start:horas?c.inicio:'',end:horas?c.fin:''});}
@@ -957,6 +1183,9 @@ function revisarPropuesta(state,it,now,room){const t=ymd(now),HH=/^([01]\d|2[0-3
   if(it.intent==='log'){if(!ev(it.evalId))return no('sin_eval');if(!fechaIA(it.date)||it.date>t||dayDiff(it.date,t)>14||!(it.min>=5&&it.min<=720))return no('rara');return{ok:true};}
   if(it.intent==='cambiaEval'){if(!ev(it.evalId))return no('sin_eval');if(!fechaIA(it.date)||!HH.test(it.time))return no('rara');return it.date<t?no('pasada'):{ok:true};}
   if(it.intent==='quitaEval')return ev(it.evalId)?{ok:true}:no('sin_eval');
+  if(it.intent==='quitaEvento')return state.exceptions.some(x=>x.id===it.exId&&!x.libre)?{ok:true}:no('sin_evento');
+  if(it.intent==='quitaRutina'){const ids=Array.isArray(it.ids)?it.ids:[];if(!ids.length||!ids.every(x=>typeof x==='string'))return no('rara');
+    return ids.every(id=>state.commitments.some(c=>c.id===id))?{ok:true}:no('sin_rutina');}
   return no('rara');}
 // ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
 // Los avisos de los próximos 8 días con su hora, su tipo, una referencia interna (lo único que va al servidor) y el
@@ -1209,6 +1438,6 @@ function fusionarGcal(st,cand,hoy,op={}){const g=st.gcal||{},nuevoId=op.nuevoId|
   const ignorar=[...ign].filter(k=>{const m=/:(\d{4}-\d{2}-\d{2})$/.exec(k);return !m||m[1]>=hoy;}).slice(-2000);
   return{commitments:cs,exceptions:xs,evals:es,done,gcal:{...g,ignorar,traidos:[...cs,...xs,...es].filter(o=>o.gcal).map(o=>o.gcal)},cambios,nuevasEvals,sinCupo};}
 
-return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, parseClause, EVENTO, nombreEvento, NO_VA, ESTUDIE, QUITAR_RUT, ENTRO, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, AVISOS_DEF, avisosDe, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal };
+return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, ROMANOS, palCurso, cursosConocidos, cursoParecido, parseClause, rutinaDicha, EVENTO, nombreEvento, REPITE, RANGO_DIAS, frasePropia, rutinaSemanal, NO_VA, ESTUDIE, AVANCE_SUST, estudie, QUITAR_RUT, ENTRO, EN_VEZ, CAMBIA_RUT, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, cuandoEsEval, QUITAR, YA_NO_HAY, NO_NOMBRE, esNombreQuitar, nombreQuitar, nombreQuitarTexto, puntosNombre, cosasDelDia, elDia, aLa, conPunto, diasRutina, avisoQuitarRutina, quitarAlgo, propuestaQuitar, cosaQuitar, cualQuitar, alcanceDicho, finQuitar, textoQuitar, sinLoQuitado, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, AVISOS_DEF, avisosDe, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal };
 }
 export const L = crear();
