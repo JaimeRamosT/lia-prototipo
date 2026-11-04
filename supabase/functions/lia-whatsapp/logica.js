@@ -4,7 +4,8 @@
 //   - POST de Meta (firmado con WHATSAPP_APP_SECRET): mensajes que llegan. «LIA 123456» vincula el número. Después,
 //     Lía entiende igual que en la app: las reglas de index.html (reglas.js) y, en Pro y con cupo, la IA de lia-ia
 //     (ia.js). Lo que se puede guardar lo propone; con «sí» queda confirmado y la app lo guarda al abrirse.
-//   - POST de pg_cron (cabecera x-lia-cron): avisos 15 minutos antes de estudiar y 2 horas antes de una evaluación.
+//   - POST de pg_cron (cabecera x-lia-cron): avisos de toda la agenda publicada, 15 minutos antes (estudio, clases y
+//     eventos o rutinas) y 2 horas antes de una evaluación. Fuera de las 24 horas, solo con la plantilla Utility.
 //   - POST de la app (con la sesión de la persona, {accion:'codigo', numero}): pide el código y se lo envía por WhatsApp
 //     con la plantilla de autenticación WHATSAPP_PLANTILLA_CODIGO; la persona lo escribe en la app.
 // verify_jwt está apagado: Meta y pg_cron no tienen sesión; cada llamada se revisa aquí.
@@ -121,11 +122,13 @@ export function textoAgenda(filas, nombre, dias) {
   });
   return `${nombre} en LIA:\n${lineas.join('\n')}`;
 }
+// El recordatorio de cada tipo de agenda_canales (tomar_avisos_whatsapp): evaluación 2 horas antes; estudio, clase y
+// otro (eventos de un día y rutinas), 15 minutos antes. Con plantilla Utility va su texto, con la hora y el título.
 export function textoAviso(f) {
   const a = enLima(f.inicio), b = enLima(f.fin);
-  return f.tipo === 'evaluacion'
-    ? `Hola, soy Lía. A las ${a.hora} tienes ${f.titulo}. ¡Éxitos!`
-    : `Hola, soy Lía. A las ${a.hora} empieza tu sesión: ${f.titulo} (hasta las ${b.hora}). Escribe «pausa» si no quieres estos avisos.`;
+  if (f.tipo === 'evaluacion') return `Hola, soy Lía. A las ${a.hora} tienes ${f.titulo}. ¡Éxitos!`;
+  const que = f.tipo === 'estudio' ? `empieza tu sesión: ${f.titulo}` : `empieza: ${f.titulo}`;
+  return `Hola, soy Lía. A las ${a.hora} ${que} (hasta las ${b.hora}). Escribe «pausa» si no quieres estos avisos.`;
 }
 export const AYUDA = 'Hola, soy Lía. Por aquí puedes:\n• Anotar: «parcial de Cálculo el jueves a las 9», «hoy salgo del trabajo a las 9», «ayer estudié 2 horas de Física» o «pasaron mi parcial de Cálculo al viernes».\n• Preguntar: «¿qué tengo mañana?», «semana» o «¿cuál es mi próxima evaluación?».\nAntes de guardar algo, te pregunto. Escribe «pausa» si no quieres avisos.';
 export const SIN_VINCULAR = 'Hola, soy Lía. Para usarme aquí, entra a LIA, ve a Perfil y, en WhatsApp, escribe tu número. Luego envíame el código que te doy.';
@@ -363,13 +366,13 @@ async function atender(deps, numero, entrada, ahora) {
   const bm = entrada.boton ? /^(si|no|op\d)(?::([0-9a-f-]{36}))?$/.exec(String(entrada.boton)) : null, boton = bm ? bm[1] : null;
   if (q.tipo === 'vincular') {
     const ok = await rpc(deps, 'vincular_whatsapp', { p_numero: numero, p_codigo: q.codigo });
-    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada sesión de estudio y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA, en Perfil, WhatsApp.' };
+    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada actividad y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA, en Perfil, WhatsApp.' };
   }
   const est = await rpc(deps, 'whatsapp_estado', { p_numero: numero });
   if (!est || typeof est !== 'object') return { tipo: 'sin_vincular', texto: SIN_VINCULAR };
   if (q.tipo === 'pausa' || q.tipo === 'avisos') {
     await rpc(deps, 'avisos_whatsapp_numero', { p_numero: numero, p_activos: q.tipo === 'avisos' });
-    return { tipo: q.tipo, texto: q.tipo === 'pausa' ? 'Listo, ya no te envío avisos. Escribe «avisos» para volver a activarlos.' : 'Listo, te vuelvo a avisar antes de cada sesión y evaluación.' };
+    return { tipo: q.tipo, texto: q.tipo === 'pausa' ? 'Listo, ya no te envío avisos. Escribe «avisos» para volver a activarlos.' : 'Listo, te vuelvo a avisar antes de cada actividad y evaluación.' };
   }
   const n = relojLima(ahora), state = estadoDesde(est.contexto), prop = est.propuesta && typeof est.propuesta === 'object' ? est.propuesta : null;
   const borr = borradorDe(prop, n), pendiente = prop && prop.estado === 'pendiente';
