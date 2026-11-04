@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { estadoEval } from './ia/evaluar.mjs';
 
 const SECRETO = 'secreto-de-la-app', NUM = '51987654321';
+const P1 = '11111111-1111-4111-8111-111111111111', P2 = '22222222-2222-4222-8222-222222222222';  // ids de propuestas
 const LUNES_10 = '2026-10-26T15:00:00Z';   // lunes 26 de octubre, 10:00 en Lima
 // Lo que publica la app (contextoWhatsapp) con el horario de ejemplo de pruebas/ia/frases.json.
 const CONTEXTO = (() => { const s = estadoEval(); return {
@@ -20,7 +21,7 @@ const estadoWa = (x = {}) => ({ avisos: true, pro: true, contexto: CONTEXTO, pro
 function lia({ estado = estadoWa(), env = {}, ahora = LUNES_10, rpc = {}, groq = null } = {}) {
   const llamadas = [], enviados = [], logs = [], ia = [];
   const E = { SUPABASE_URL: 'https://p.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'srv', WHATSAPP_TOKEN: 'tok', WHATSAPP_PHONE_ID: '123', WHATSAPP_APP_SECRET: SECRETO, ...env };
-  const R = { whatsapp_estado: estado, whatsapp_visto: true, guardar_propuesta_whatsapp: 'p-1', confirmar_propuesta_whatsapp: true, descartar_propuesta_whatsapp: true, agenda_whatsapp: [], ...rpc };
+  const R = { whatsapp_estado: estado, whatsapp_visto: true, guardar_propuesta_whatsapp: P1, confirmar_propuesta_whatsapp: true, descartar_propuesta_whatsapp: true, agenda_whatsapp: [], ...rpc };
   const deps = {
     env: k => E[k], log: d => logs.push(d), crypto: webcrypto, ahora: () => new Date(ahora),
     fetch: async (url, op) => {
@@ -53,7 +54,7 @@ test('propone una evaluación con «¿Lo guardo?» y los botones Sí y No, y la 
   const m = lia();
   const e = await llega(m, texto('tengo parcial de estadística el viernes a las 10'));
   assert.match(cuerpo(e), /^Entendí: Parcial de Estadística, vie 30 oct a las 10:00\. ¿Lo guardo en tu LIA\?$/);
-  assert.deepEqual(botones(e), [['si', 'Sí, guárdalo'], ['no', 'No, déjalo']]);
+  assert.deepEqual(botones(e), [[`si:${P1}`, 'Sí, guárdalo'], [`no:${P1}`, 'No, déjalo']], 'cada botón lleva el id de su propuesta');
   const g = m.fn('guardar_propuesta_whatsapp')[0].body;
   assert.deepEqual([g.p_numero, g.p_estado], [NUM, 'pendiente']);
   assert.deepEqual(g.p_intencion, { intent: 'add', items: [{ kind: 'eval', type: 'parcial', course: 'Estadística', date: '2026-10-30', time: '10:00', hours: 5 }] });
@@ -67,22 +68,65 @@ test('«mañana tengo examen…» es algo que anotar, no la agenda de mañana', 
   assert.equal(m.fn('guardar_propuesta_whatsapp')[0].body.p_intencion.items[0].date, '2026-10-27');
 });
 
+const pendiente = (creado = LUNES_10, id = P1) => estadoWa({ propuesta: { id, estado: 'pendiente', intencion: { intent: 'add', items: [] }, creado } });
 test('«sí», «dale» o el botón confirman la propuesta pendiente; «no» la descarta', async () => {
-  const pend = estadoWa({ propuesta: { id: 'p-1', estado: 'pendiente', intencion: { intent: 'add', items: [] }, creado: LUNES_10 } });
-  for (const msj of [texto('Sí'), texto('dale'), texto('ok, guárdalo'), boton('si', 'Sí, guárdalo')]) {
+  const pend = pendiente();
+  for (const msj of [texto('Sí'), texto('dale'), texto('ok, guárdalo'), boton(`si:${P1}`, 'Sí, guárdalo')]) {
     const m = lia({ estado: pend });
     const e = await llega(m, msj);
     assert.deepEqual(m.fn('confirmar_propuesta_whatsapp').map(l => l.body), [{ p_numero: NUM }]);
-    assert.match(cuerpo(e), /^Listo, quedó guardado\. Lo verás en LIA en unos segundos si la tienes abierta; si no, apenas la abras\./);
+    assert.equal(cuerpo(e), W.CONFIRMADO + ' Ahí reacomodo tu estudio.');
     assert.equal(m.fn('guardar_propuesta_whatsapp').length, 0);
   }
-  for (const msj of [texto('no'), texto('cancela'), boton('no', 'No, déjalo')]) {
+  for (const msj of [texto('no'), texto('cancela'), boton(`no:${P1}`, 'No, déjalo')]) {
     const m = lia({ estado: pend });
     const e = await llega(m, msj);
     assert.equal(m.fn('descartar_propuesta_whatsapp').length, 1);
     assert.equal(m.fn('confirmar_propuesta_whatsapp').length, 0);
     assert.equal(cuerpo(e), 'Ok, no guardé nada.');
   }
+});
+
+test('un botón de un mensaje viejo no confirma ni completa otra cosa', async () => {
+  for (const msj of [boton(`si:${P2}`, 'Sí, guárdalo'), boton(`no:${P2}`, 'No, déjalo'), boton('si', 'Sí, guárdalo'), boton(`op0:${P1}`, '23:59')]) {
+    const m = lia({ estado: pendiente() });
+    const e = await llega(m, msj);
+    assert.equal(m.fn('confirmar_propuesta_whatsapp').length + m.fn('descartar_propuesta_whatsapp').length + m.fn('guardar_propuesta_whatsapp').length, 0, JSON.stringify(msj));
+    assert.equal(cuerpo(e), W.VIEJO);
+  }
+  const m = lia();   // sin nada pendiente
+  assert.equal(cuerpo(await llega(m, boton(`si:${P1}`, 'Sí, guárdalo'))), W.VIEJO);
+});
+
+test('«ok» o «listo» solo confirman una propuesta de los últimos 5 minutos; «sí» siempre', async () => {
+  let m = lia({ estado: pendiente('2026-10-26T14:56:00Z') });
+  await llega(m, texto('ok'));
+  assert.equal(m.fn('confirmar_propuesta_whatsapp').length, 1, 'a los 4 minutos, «ok» confirma');
+  m = lia({ estado: pendiente('2026-10-26T14:40:00Z') });
+  await llega(m, texto('listo'));
+  assert.equal(m.fn('confirmar_propuesta_whatsapp').length, 0, 'a los 20 minutos, «listo» no');
+  m = lia({ estado: pendiente('2026-10-26T14:40:00Z') });
+  await llega(m, texto('sí'));
+  assert.equal(m.fn('confirmar_propuesta_whatsapp').length, 1, 'a los 20 minutos, «sí» sí');
+});
+
+test('si los botones no salen, la propuesta va como texto con cómo responder', async () => {
+  const m = lia();
+  const f = m.deps.fetch;
+  m.deps.fetch = async (url, op) => (url.includes('graph.facebook.com') && JSON.parse(op.body).type === 'interactive' ? new Response('{"error":{"code":131009}}', { status: 400 }) : f(url, op));
+  const e = await llega(m, texto('tengo parcial de estadística el viernes a las 10'));
+  assert.equal(e.type, 'text');
+  assert.match(e.text.body, /¿Lo guardo en tu LIA\?\nResponde «sí» o «no»\.$/);
+});
+
+test('sin Lía activada en WhatsApp (sin contexto), no anota ni usa la IA: dice cómo activarla', async () => {
+  const m = lia({ estado: estadoWa({ contexto: null }), env: { GROQ_API_KEY: 'g', IA_PROVEEDOR: 'groq' }, rpc: { usar_ia_whatsapp: { permitido: true } } });
+  let e = await llega(m, texto('tengo parcial de estadística el viernes a las 10'));
+  assert.equal(cuerpo(e), W.SIN_CONTEXTO);
+  e = await llega(m, texto('asdfgh'));
+  assert.equal(m.ia.length + m.fn('usar_ia_whatsapp').length + m.fn('guardar_propuesta_whatsapp').length, 0);
+  e = await llega(m, texto('¿qué tengo hoy?'));
+  assert.equal(m.fn('agenda_whatsapp').length, 1, 'la agenda sigue funcionando');
 });
 
 test('«sí» sin nada pendiente no confirma nada y dice cómo anotar', async () => {
@@ -93,9 +137,15 @@ test('«sí» sin nada pendiente no confirma nada y dice cómo anotar', async ()
 });
 
 test('si la base ya no tiene la propuesta (venció), «sí» lo dice', async () => {
-  const m = lia({ estado: estadoWa({ propuesta: { id: 'p-1', estado: 'pendiente', intencion: { intent: 'add', items: [] }, creado: LUNES_10 } }), rpc: { confirmar_propuesta_whatsapp: false } });
+  const m = lia({ estado: pendiente(), rpc: { confirmar_propuesta_whatsapp: false } });
   const e = await llega(m, texto('sí'));
-  assert.match(cuerpo(e), /venció|no tengo nada/i);
+  assert.equal(cuerpo(e), W.VENCIDA);
+});
+
+test('un audio o una foto reciben que por ahora solo lee texto', async () => {
+  const m = lia();
+  const e = await llega(m, { from: NUM, type: 'audio', audio: { id: 'x' } });
+  assert.match(cuerpo(e), /^Por ahora solo leo mensajes de texto\./);
 });
 
 // ---------- Lo que falta ----------
@@ -103,13 +153,13 @@ test('si falta un dato, pregunta con respuestas rápidas y guarda el borrador; l
   const m = lia();
   const e = await llega(m, texto('el otro jueves entrego el ensayo de filosofía'));
   assert.equal(cuerpo(e), '¿A qué hora vence tu ensayo de Filosofía?');
-  assert.deepEqual(botones(e), [['op0', '23:59']], 'solo las respuestas que completan el dato, sin «Otra hora»');
+  assert.deepEqual(botones(e), [[`op0:${P1}`, '23:59']], 'solo las respuestas que completan el dato, sin «Otra hora»');
   const g = m.fn('guardar_propuesta_whatsapp')[0].body;
   assert.equal(g.p_estado, 'borrador');
   assert.equal(g.p_intencion.items[0].date, '2026-11-05');
   assert.deepEqual(g.p_intencion.opciones, [{ t: '23:59', set: { time: '23:59' } }]);
-  const borr = estadoWa({ propuesta: { id: 'p-2', estado: 'borrador', intencion: g.p_intencion, creado: '2026-10-26T14:59:00Z' } });
-  for (const msj of [texto('a las 11:59 de la noche'), boton('op0', '23:59')]) {
+  const borr = estadoWa({ propuesta: { id: P2, estado: 'borrador', intencion: g.p_intencion, creado: '2026-10-26T14:59:00Z' } });
+  for (const msj of [texto('a las 11:59 de la noche'), boton(`op0:${P2}`, '23:59')]) {
     const m2 = lia({ estado: borr });
     const e2 = await llega(m2, msj);
     const g2 = m2.fn('guardar_propuesta_whatsapp')[0].body;
@@ -121,7 +171,7 @@ test('si falta un dato, pregunta con respuestas rápidas y guarda el borrador; l
 
 test('un borrador de hace más de 10 minutos ya no se usa', async () => {
   const g = { intent: 'add', items: [{ kind: 'eval', type: 'entrega', course: 'Ensayo de Filosofía', date: '2026-11-05', time: '', hours: 4 }], i: 0, opciones: [] };
-  const m = lia({ estado: estadoWa({ propuesta: { id: 'p-2', estado: 'borrador', intencion: g, creado: '2026-10-26T14:40:00Z' } }) });
+  const m = lia({ estado: estadoWa({ propuesta: { id: P2, estado: 'borrador', intencion: g, creado: '2026-10-26T14:40:00Z' } }) });
   await llega(m, texto('a las 11:59 de la noche'));
   assert.equal(m.fn('guardar_propuesta_whatsapp').filter(l => l.body.p_estado === 'pendiente').length, 0);
 });
@@ -168,11 +218,22 @@ test('en Gratis, sin espacio para otra evaluación, avisa del límite y no propo
   assert.equal(pro.fn('guardar_propuesta_whatsapp').length, 1, 'en Pro no hay límite');
 });
 
+test('el límite de Gratis cuenta lo que cuenta la app (también lo de Google) y lo confirmado que falta guardar', async () => {
+  const dos = { ...CONTEXTO, evals: CONTEXTO.evals.slice(0, 2) };
+  let m = lia({ estado: estadoWa({ pro: false, contexto: dos }) });
+  await llega(m, texto('tengo parcial de estadística el viernes a las 10'));
+  assert.equal(m.fn('guardar_propuesta_whatsapp').length, 1, 'con 2 próximas, cabe una');
+  m = lia({ estado: estadoWa({ pro: false, contexto: { ...dos, proximas: 3 } }) });
+  assert.match(cuerpo(await llega(m, texto('tengo parcial de estadística el viernes a las 10'))), /ya tienes 3/, 'la de Google que cuenta la app');
+  m = lia({ estado: estadoWa({ pro: false, contexto: dos, confirmadas: 1, confirmadas_evals: 1 }) });
+  assert.match(cuerpo(await llega(m, texto('tengo parcial de estadística el viernes a las 10'))), /ya tienes 3/, 'la confirmada que la app aún no guarda');
+});
+
 // ---------- Preguntas ----------
 test('responde la próxima evaluación y el avance con lo que publicó la app', async () => {
   let m = lia();
   let e = await llega(m, texto('¿cuál es mi próxima evaluación?'));
-  assert.equal(cuerpo(e), 'Tu próxima evaluación es parcial de Cálculo II, el jueves 29 de octubre a las 09:00.');
+  assert.equal(cuerpo(e), 'Tu próxima evaluación: parcial de Cálculo II, el jueves 29 de octubre a las 09:00.');
   m = lia();
   e = await llega(m, texto('¿cómo voy?'));
   assert.match(cuerpo(e), /^Cálculo II: 1 h de 5 h\nInforme de Química: 0 min de 4 h\nFísica: 0 min de 3 h/);
@@ -183,7 +244,21 @@ test('«¿qué tengo mañana?» lee la agenda de ese día y avisa si hay cambios
   const e = await llega(m, texto('¿qué tengo mañana?'));
   const a = m.fn('agenda_whatsapp')[0].body;
   assert.deepEqual([a.p_desde, a.p_hasta], ['2026-10-27T05:00:00.000Z', '2026-10-28T05:00:00.000Z']);
-  assert.equal(cuerpo(e), 'Mañana en LIA:\n• 18:00–20:00 Estudiar Física\nOjo: tienes 1 cambio que guardo cuando abras LIA.');
+  assert.equal(cuerpo(e), 'Mañana en LIA:\n• 18:00–20:00 Estudiar Física\nOjo: tienes 1 cambio por guardar. Se guarda cuando abras LIA.');
+});
+
+test('en Pro, una frase larga con «hoy» o «mañana» va a la IA antes que a la agenda; una corta, a la agenda', async () => {
+  const conIA = () => lia({ env: { GROQ_API_KEY: 'g', IA_PROVEEDOR: 'groq', IA_RESPALDO: 'ninguno' }, rpc: { usar_ia_whatsapp: { permitido: true, restantes_dia: 20 } },
+    groq: groqDice({ intent: 'aviso', texto: 'Si hoy no pudiste, dime cuándo puedes y lo reacomodo.' }) });
+  let m = conIA();
+  let e = await llega(m, texto('hoy salí tarde y no pude estudiar nada de nada'));
+  assert.equal(m.ia.length, 1);
+  assert.equal(m.fn('agenda_whatsapp').length, 0);
+  assert.equal(cuerpo(e), 'Si hoy no pudiste, dime cuándo puedes y lo reacomodo.');
+  m = conIA();
+  await llega(m, texto('semana'));
+  assert.equal(m.ia.length, 0, 'corta: directo a la agenda');
+  assert.equal(m.fn('agenda_whatsapp').length, 1);
 });
 
 // ---------- IA: solo Pro, con el mismo cupo ----------
@@ -215,7 +290,7 @@ test('en Pro, si la IA falla no descuenta y responde con la ayuda; sin cupo, lo 
   m = lia({ estado: estadoWa({ pro: true }), env: { GROQ_API_KEY: 'g', IA_PROVEEDOR: 'groq' }, rpc: { usar_ia_whatsapp: { permitido: false, motivo: 'cupo_dia', restantes_dia: 0 } } });
   e = await llega(m, texto('asdfgh'));
   assert.equal(m.ia.length, 0);
-  assert.match(cuerpo(e), /^Ya usaste tus 25 mensajes con IA de hoy\./);
+  assert.match(cuerpo(e), /^Ya usaste tus 25 mensajes con IA de hoy\. Hasta mañana te respondo con lo básico\./);
 });
 
 // ---------- Robustez y privacidad ----------

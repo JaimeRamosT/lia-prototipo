@@ -13,11 +13,11 @@ after(async () => { await nav?.close(); await srv?.cerrar(); });
 
 async function preparar(dispositivo, filas) {
   const { ctx, pg, errores } = await abrir(nav, srv.url, dispositivo);
-  const sb = { filas, quitadas: [], contextos: [], agendas: 0, borrar: true };
+  const sb = { filas, quitadas: [], contextos: [], agendas: 0, borrar: true, falla: false };
   await ctx.route('**/rest/v1/rpc/**', async r => {
     const fn = r.request().url().split('/rpc/')[1].split('?')[0], b = r.request().postDataJSON() || {};
     const resp = d => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(d) });
-    if (fn === 'canales_estado') return resp({ calendario: null, whatsapp: { numero: '51987654321', verificado: true, avisos: true } });
+    if (fn === 'canales_estado') return sb.falla ? r.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"no"}' }) : resp({ calendario: null, whatsapp: { numero: '51987654321', verificado: true, avisos: true } });
     if (fn === 'propuestas_whatsapp_confirmadas') return resp(sb.filas);
     if (fn === 'quitar_propuestas_whatsapp') { sb.quitadas.push(...b.p_ids); if (sb.borrar) sb.filas = sb.filas.filter(f => !b.p_ids.includes(f.id)); return resp(b.p_ids.length); }
     if (fn === 'publicar_contexto_whatsapp') { sb.contextos.push(b.p_contexto); return resp(true); }
@@ -32,45 +32,73 @@ async function preparar(dispositivo, filas) {
   await pg.evaluate(() => { state.cuenta = { id: 'u1', email: 'ana@correo.pe' }; save(); });
   return { ctx, pg, errores, sb };
 }
+const fila = (id, intencion) => ({ id, creado: new Date().toISOString(), intencion });
+const evalNueva = (course, k, type = 'parcial') => ({ intent: 'add', items: [{ kind: 'eval', type, course, date: fecha(k), time: '10:00', hours: 3 }] });
+const traer = async (pg, sb, filas) => { sb.filas = filas; await pg.evaluate(() => traerWhatsapp()); };
 const guardado = pg => pg.evaluate(() => JSON.parse(localStorage.getItem('lia.app.v1')));
 
 for (const dispositivo of ['iPhone', 'Computadora']) {
-  test(`${dispositivo}: al abrir LIA guarda lo confirmado por WhatsApp, con Deshacer y sin repetir`, async () => {
-    const filas = [{ id: 'p1', creado: new Date().toISOString(), intencion: { intent: 'add', items: [{ kind: 'eval', type: 'parcial', course: 'Física', date: fecha(4), time: '10:00', hours: 4 }] } }];
+  test(`${dispositivo}: guarda lo confirmado por WhatsApp con un solo Deshacer, sin repetir y explicando lo que no vale`, async () => {
+    const filas = [fila('p1', evalNueva('Física', 4))];
     const { ctx, pg, errores, sb } = await preparar(dispositivo, filas);
     await pg.evaluate(() => cargarCanales());
-    await pg.getByText(/Guardé lo que me pediste por WhatsApp: Parcial de Física/).waitFor({ timeout: 10000 });
+    await pg.getByText(/^Guardé por WhatsApp: Parcial de Física/).waitFor({ timeout: 10000 });
     let s = await guardado(pg);
-    assert.ok(s.evals.some(e => e.course === 'Física' && e.date === filas[0].intencion.items[0].date && e.time === '10:00' && e.hours === 4));
+    assert.ok(s.evals.some(e => e.course === 'Física' && e.date === fecha(4) && e.time === '10:00' && e.hours === 3));
     assert.deepEqual(sb.quitadas, ['p1'], 'la app la borra del servidor al guardarla');
-    // La agenda y el contexto se publican con la evaluación nueva, para que WhatsApp quede al día.
-    await pg.waitForFunction(() => true);
+    // Sin aceptar el aviso en Perfil, no se publica el contexto (una cuenta que ya estaba vinculada).
     await new Promise(r => setTimeout(r, 3500));
-    assert.ok(sb.contextos.at(-1) && sb.contextos.at(-1).evals.some(e => e.course === 'Física'), 'el contexto llega con la evaluación nueva');
+    assert.equal(sb.contextos.length, 0, 'sin «Activar», nada de evaluaciones ni rutinas en el servidor');
+    await pestana(pg, 'Perfil');
+    await pg.getByText(/Tus mensajes no se guardan/).first().waitFor();
+    await pg.getByRole('button', { name: 'Activar Lía en WhatsApp' }).click();
+    await pg.getByText('Listo: ya puedes pedirle a Lía por WhatsApp que anote algo.').waitFor();
+    const ctx0 = sb.contextos.at(-1);
+    assert.ok(ctx0 && ctx0.evals.some(e => e.course === 'Física') && ctx0.proximas >= 2, 'al activar, se publica el contexto');
     assert.ok(!JSON.stringify(sb.contextos).includes('ana@correo.pe'));
+    assert.equal(await pg.getByRole('button', { name: 'Activar Lía en WhatsApp' }).count(), 0);
+    await pg.getByText('Qué guarda LIA en su servidor').waitFor();
     // Si el servidor no la borró, no se guarda dos veces.
-    sb.borrar = false; sb.filas = filas;
-    await pg.evaluate(() => traerWhatsapp());
+    sb.borrar = false;
+    await traer(pg, sb, filas);
+    assert.equal((await guardado(pg)).evals.filter(e => e.course === 'Física').length, 1);
+    sb.borrar = true;
+    // Varias juntas: un solo aviso y un solo Deshacer para todas.
+    const fis = (await guardado(pg)).evals.find(e => e.course === 'Física');
+    await traer(pg, sb, [fila('p2', { intent: 'except', exs: [{ date: fecha(2), start: '18:00', end: '20:00', label: 'Cumpleaños', cat: 'ocio' }] }),
+      fila('p3', { intent: 'log', evalId: fis.id, course: 'Física', date: fecha(0), min: 60 }),
+      fila('p4', { intent: 'cambiaEval', evalId: fis.id, date: fecha(5), time: '11:00' })]);
+    await pg.getByText('Guardé 3 cambios que me pediste por WhatsApp.').waitFor();
     s = await guardado(pg);
-    assert.equal(s.evals.filter(e => e.course === 'Física').length, 1);
-    // Deshacer la quita.
-    sb.filas = [{ id: 'p2', creado: new Date().toISOString(), intencion: { intent: 'add', items: [{ kind: 'eval', type: 'examen', course: 'Arte', date: fecha(6), time: '08:00', hours: 3 }] } }];
-    await pg.evaluate(() => traerWhatsapp());
-    await pg.getByText(/Guardé lo que me pediste por WhatsApp: Examen de Arte/).waitFor();
+    assert.ok(s.exceptions.some(x => x.label === 'Cumpleaños') && s.done.some(d => d.evalId === fis.id && d.min === 60) && s.evals.find(e => e.id === fis.id).date === fecha(5));
     await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).click();
     await pg.getByText('Listo, lo dejé como estaba.').waitFor();
     s = await guardado(pg);
-    assert.ok(!s.evals.some(e => e.course === 'Arte'));
-    // Lo que ya no vale se explica y no se guarda.
-    sb.filas = [{ id: 'p3', creado: new Date().toISOString(), intencion: { intent: 'log', evalId: 'no-existe', course: 'Química', date: fecha(0), min: 60 } }];
-    await pg.evaluate(() => traerWhatsapp());
-    await pg.getByText('No pude guardar uno: esa evaluación ya no está en LIA.').waitFor();
-    s = await guardado(pg);
-    assert.ok(!s.done.some(d => d.evalId === 'no-existe'));
-    // La tarjeta de WhatsApp explica qué se guarda en el servidor.
-    await pestana(pg, 'Perfil');
-    await pg.getByText(/Tus mensajes no se guardan/).first().waitFor();
+    assert.ok(!s.exceptions.some(x => x.label === 'Cumpleaños') && !s.done.some(d => d.evalId === fis.id) && s.evals.find(e => e.id === fis.id).date === fecha(4), 'Deshacer quita las tres');
+    // En Gratis, la que no cabe se explica; y lo que ya no existe también.
+    await traer(pg, sb, [fila('p5', evalNueva('Química', 6)), fila('p6', evalNueva('Historia', 7))]);
+    await pg.getByText(/^Guardé por WhatsApp: Parcial de Química.*No pude guardar otro: en Gratis ya tienes 3 evaluaciones próximas\. Si quieres, pídemelo otra vez\.$/).waitFor();
+    assert.ok(!(await guardado(pg)).evals.some(e => e.course === 'Historia'));
+    await traer(pg, sb, [fila('p7', { intent: 'log', evalId: 'no-existe', course: 'Química', date: fecha(0), min: 60 })]);
+    await pg.getByText('No pude guardar uno: esa evaluación ya no está en LIA. Si quieres, pídemelo otra vez.').waitFor();
+    await traer(pg, sb, [fila('p8', { intent: 'quitaEval', evalId: fis.id })]);
+    await pg.getByText(/^Guardé por WhatsApp: quitar parcial de Física/).waitFor();
+    assert.ok(!(await guardado(pg)).evals.some(e => e.id === fis.id));
     assert.deepEqual(errores, []);
     await ctx.close();
   });
 }
+
+test('si no puede revisar los canales al abrir, no da por desvinculado a nadie y deja reintentar', async () => {
+  const { ctx, pg, errores, sb } = await preparar('iPhone', []);
+  sb.falla = true;
+  await pg.evaluate(() => { ui.canales = undefined; return cargarCanales(); });
+  await pestana(pg, 'Perfil');
+  await pg.getByText('No pude revisar tu WhatsApp. Revisa tu conexión.').waitFor();
+  assert.equal(await pg.getByRole('button', { name: 'Vincular WhatsApp' }).count(), 0);
+  sb.falla = false;
+  await pg.getByRole('button', { name: 'Reintentar' }).click();
+  await pg.getByText(/Vinculado: \+51987654321/).waitFor();
+  assert.deepEqual(errores.filter(e => !/503/.test(e)), []);
+  await ctx.close();
+});

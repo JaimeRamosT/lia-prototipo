@@ -2,6 +2,7 @@
 # - logica: node --test (motor de horarios, lectura de frases, avisos, IA con respuestas simuladas,
 #   que no haya claves en el repositorio y que la app abra sin internet).
 # - navegador: Playwright simulando un iPhone y un Android (pruebas/navegador).
+# - sql: migraciones de Supabase en PGlite (pruebas/sql): permisos, RLS y funciones.
 # No usa secretos. La evaluación con el modelo real está en eval-ia.yml.
 name: Pruebas
 
@@ -47,4 +48,21 @@ jobs:
           cache-dependency-path: pruebas/navegador/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - run: npm test
+
+  sql:
+    name: Base de datos (PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: pruebas/sql
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pruebas/sql/package-lock.json
+      - run: npm ci
       - run: npm test

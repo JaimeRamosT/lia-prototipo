@@ -36,7 +36,8 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 **Piezas:**
 
 - **Reglas en el servidor.** `supabase/functions/lia-whatsapp/reglas.js` se **genera** a partir del bloque `LOGIC` de `index.html` (`node supabase/functions/lia-whatsapp/copiar.mjs`). Lo mismo con la lógica de la IA: `ia.js` es una copia exacta de `lia-ia/logica.js`. Una prueba falla si alguna de las dos copias se desactualiza. Así hay una sola fuente de verdad y las 365 pruebas de las reglas valen para WhatsApp.
-- **Contexto publicado.** Con WhatsApp vinculado, la app publica lo que Lía necesita para entender: horas de despertar y de dormir, evaluaciones desde hace 14 días (curso, tipo, fecha, hora, horas, lo estudiado y lo que quedó sin hueco) y rutinas (nombre, tipo, días y horas). Es lo mismo que ya va a la IA en cada mensaje (`contextoIA`), más el avance. Se reemplaza cuando cambia y se borra al desvincular WhatsApp. Sin nombre ni correo.
+- **Consentimiento.** La tarjeta de WhatsApp en Perfil dice qué se guarda en el servidor y que, en Pro, el mensaje puede pasar por la IA. Quien vincula su número desde la app lo acepta en el mismo formulario. Quien ya estaba vinculado ve «Activar Lía en WhatsApp». Sin aceptar (`settings.waLia`), la app no publica el contexto y WhatsApp sigue como antes: agenda y avisos. Para anotar, Lía dice cómo activarlo. Lo que se confirmó se guarda en cualquier dispositivo con la cuenta, porque no envía nada al servidor.
+- **Contexto publicado.** Con Lía activada en WhatsApp, la app publica lo que Lía necesita para entender: horas de despertar y de dormir, evaluaciones desde hace 14 días (curso, tipo, fecha, hora, horas, lo estudiado y lo que quedó sin hueco) y rutinas (nombre, tipo, días y horas). Es lo mismo que ya va a la IA en cada mensaje (`contextoIA`), más el avance y cuántas evaluaciones próximas cuenta la app (para el límite de Gratis). Se reemplaza cuando cambia y se borra al desvincular WhatsApp. Sin nombre, correo ni lo que vino de Google Calendar.
 - **Propuestas** (tabla `propuestas_whatsapp`, solo mediante funciones):
   - `borrador`: Lía preguntó un dato (vence a los 10 minutos, como en la app).
   - `pendiente`: Lía mostró el cambio y espera el «sí» (vence a los 30 minutos; una nueva reemplaza a la anterior).
@@ -50,9 +51,9 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 
 1. Llega un mensaje de texto, o el toque de un botón, de un número vinculado.
 2. «pausa», «avisos», «hoy», «mañana» y «semana» funcionan como hoy.
-3. Si hay un `pendiente` y el mensaje es «sí» (o «dale», «ok», «confirmo», «guárdalo», o el botón «Sí, guárdalo»), pasa a `confirmada`. Si es «no» (o «cancela», o el botón «No»), se descarta.
+3. Si hay un `pendiente` y el mensaje es «sí» (o «dale», «confirmo», «guárdalo», o el botón «Sí, guárdalo»), pasa a `confirmada`. «ok», «ya» y «listo» solo confirman si la propuesta es de los últimos 5 minutos. Si es «no» (o «cancela», o el botón «No, déjalo»), se descarta. Cada botón lleva el id de su propuesta: uno de un mensaje viejo responde «Ese mensaje ya no vale» y no hace nada.
 4. Si hay un `borrador`, el mensaje puede ser la respuesta (`respuestaBorrador`, como en la app).
-5. Si no, entienden las reglas (`interpret`). Si no entienden (`pideIA`) y la cuenta es Pro con cupo, la IA (`lia-ia`: Groq y, si no responde, Gemini), revisada con `validarIA`. Se descuenta 1 del cupo solo si la IA respondió.
+5. Si no, entienden las reglas (`interpret`). Si no entienden (`pideIA`) y la cuenta es Pro con cupo, la IA (`lia-ia`: Groq y, si no responde, Gemini), revisada con `validarIA`. Se descuenta 1 del cupo solo si la IA respondió. Los atajos «hoy», «mañana» y «semana» responden la agenda directo en una frase de hasta 4 palabras; en una más larga, en Pro, va primero la IA («hoy salí tarde y no pude estudiar» no es la agenda).
 6. Según lo entendido:
    - **Agregar** (evaluación o rutina), **un cambio de un día**, **estudio hecho**, **mover o quitar una evaluación**: Lía resume lo que entendió y pregunta «¿Lo guardo?», con los botones «Sí, guárdalo» y «No».
    - **Falta un dato**: Lía pregunta ese dato y guarda el borrador.
@@ -134,14 +135,18 @@ Los revisa `design:ux-copy` antes de programar.
 | Copias | `pruebas/whatsapp-copias.test.mjs` | `reglas.js` e `ia.js` iguales a sus originales; las reglas del servidor (módulo estricto) entienden las 105 frases igual que la app |
 | Servidor | `pruebas/whatsapp-lia.test.mjs` (Meta, Supabase y Groq simulados) | Proponer, «sí», «no», botones, borrador con respuestas rápidas, hora de Lima a las 23:30 y 00:30, límite de Gratis, IA solo Pro y cupo, mensajes repetidos, registros sin textos |
 | App | `pruebas/whatsapp-app.test.mjs` | `contextoWhatsapp()` sin datos personales ni lo de Google; `revisarPropuesta()` con cada motivo |
-| Base | PGlite (sesión de Claude) | Permisos de cada función, aplicar dos veces, reemplazar, confirmar una vez, vencer, tope de 20, mismo cupo que `usar_ia()`, `auth.uid()` vuelve a vacío, desvincular y borrar la cuenta (58 comprobaciones) |
-| Navegador | `pruebas/navegador/whatsapp.nav.mjs` (iPhone y computadora) | Guardar al abrir, Deshacer, no repetir si el servidor no borró, explicar lo que ya no vale, aviso de privacidad |
+| Base | `pruebas/sql/whatsapp.sql.mjs` (PGlite, también en la CI) | Permisos de cada función, aplicar dos veces, reemplazar, confirmar una vez, vencer, tope de 20, evaluaciones confirmadas para el límite, mismo cupo que `usar_ia()`, `auth.uid()` vuelve a vacío, desvincular y borrar la cuenta (59 comprobaciones) |
+| Navegador | `pruebas/navegador/whatsapp.nav.mjs` (iPhone y computadora) | Guardar al abrir; sin «Activar», nada al servidor; varias juntas con un solo Deshacer (cambio de un día, estudio hecho, mover y quitar); no repetir si el servidor no borró; límite de Gratis y lo que ya no existe; sin red al abrir no ofrece vincular de nuevo |
+
+Revisión de la fábrica (4-nov): el agente `revisor` (otro modelo) encontró 1 punto bloqueante (botones viejos que confirmaban otra propuesta) y 4 importantes (consentimiento de quien ya estaba vinculado, prueba de la base en el repositorio, atajos de agenda antes de la IA y el límite de Gratis contado distinto que la app), además de 8 menores; el agente `ux` encontró 2 altos (privacidad honesta y cómo responder sin botones) y varios textos. Todos corregidos antes de publicar, salvo lo que queda en «Limitaciones conocidas».
 
 Lo que queda para la prueba con Meta real: botones interactivos en el celular, Realtime en la app abierta y el tiempo de respuesta con la IA.
 
 ## Limitaciones conocidas
 
 - Lo que vino de Google Calendar no se publica en el contexto (la base nunca guarda eventos ni títulos de Google). Por WhatsApp, «mañana no tengo clases» no libera una clase traída de Google; en la app sí.
+- El consentimiento vive en el dispositivo (`settings.waLia`): en otro navegador, o en la app instalada en iPhone, Perfil vuelve a ofrecer «Activar». Hasta activarlo ahí, ese dispositivo no actualiza el contexto.
+- `whatsapp_visto` marca el mensaje antes de atenderlo: si la función se cae a mitad, Meta lo reenvía y no se responde. La persona vuelve a escribir.
 - La agenda de WhatsApp se ve al día cuando la app publica. Lo confirmado por WhatsApp aparece en la agenda después de abrir LIA (Lía lo avisa: «Ojo: tienes 1 cambio…»).
 
 ## Esfuerzo

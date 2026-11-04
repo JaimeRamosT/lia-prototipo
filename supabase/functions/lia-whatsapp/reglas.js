@@ -931,7 +931,8 @@ function validarIA(r,state,now){
 // Lo que lia-whatsapp necesita para entender igual que la app: ajustes del plan, evaluaciones desde hace 14 días (con
 // lo estudiado y lo que quedó sin hueco) y rutinas. Nunca el nombre, el correo ni lo que vino de Google Calendar.
 function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),unmet=(p&&p.unmet)||{};
-  return{settings:{wake:S.wake,sleep:S.sleep,maxDay:S.maxDay,block:S.block,minBlock:S.minBlock,...(S.cicloInicio?{cicloInicio:S.cicloInicio}:{})},
+  return{proximas:state.evals.filter(e=>e.date>=ymd(now)).length,   // como upcomingEvals(): también las de Google (para el límite de Gratis)
+    settings:{wake:S.wake,sleep:S.sleep,maxDay:S.maxDay,block:S.block,minBlock:S.minBlock,...(S.cicloInicio?{cicloInicio:S.cicloInicio}:{})},
     evals:state.evals.filter(e=>!e.gcal&&e.date>=desde).sort((x,y)=>(x.date+x.time).localeCompare(y.date+y.time)).slice(0,40)
       .map(e=>({id:e.id,type:e.type,course:e.course,date:e.date,time:e.time,hours:e.hours,hecho:doneFor(state,e.id),sinHueco:unmet[e.id]||0})),
     commitments:state.commitments.filter(c=>!c.gcal).slice(0,40)
@@ -941,14 +942,16 @@ function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(
 function revisarPropuesta(state,it,now,room){const t=ymd(now),HH=/^([01]\d|2[0-3]):[0-5]\d$/,no=motivo=>({ok:false,motivo}),ev=id=>state.evals.find(e=>e.id===id);
   if(!it||typeof it!=='object')return no('rara');
   if(it.intent==='add'){const items=Array.isArray(it.items)?it.items:[];if(!items.length)return no('rara');
-    for(const i of items){if(i&&i.kind==='eval'){if(!EVAL_TYPES[i.type]||!i.course||!fechaIA(i.date)||!HH.test(i.time))return no('rara');if(i.date<t)return no('pasada');}
-      else if(i&&i.kind==='commit'){if(!COMMIT_TYPES[i.type]||!i.name||!Array.isArray(i.days)||!i.days.length||!HH.test(i.start)||!HH.test(i.end))return no('rara');}
+    const texto=v=>typeof v==='string'&&v.trim().length>0&&v.length<=60,dias=d=>Array.isArray(d)&&d.length>0&&d.length<=7&&d.every(x=>Number.isInteger(x)&&x>=0&&x<=6);
+    for(const i of items){if(i&&i.kind==='eval'){if(!EVAL_TYPES[i.type]||!texto(i.course)||!fechaIA(i.date)||!HH.test(i.time)||(i.hours!==undefined&&!(i.hours>=0.5&&i.hours<=40)))return no('rara');if(i.date<t)return no('pasada');}
+      else if(i&&i.kind==='commit'){if(!COMMIT_TYPES[i.type]||!texto(i.name)||!dias(i.days)||!HH.test(i.start)||!HH.test(i.end)||i.start===i.end)return no('rara');}
       else return no('rara');}
-    const evs=items.filter(i=>i.kind==='eval');
-    if(evs.length&&evs.every(i=>state.evals.some(e=>e.type===i.type&&norm(e.course)===norm(i.course)&&e.date===i.date&&e.time===i.time)))return no('repetida');
+    const evs=items.filter(i=>i.kind==='eval'),ya=i=>i.kind==='eval'?state.evals.some(e=>e.type===i.type&&norm(e.course)===norm(i.course)&&e.date===i.date&&e.time===i.time)
+      :state.commitments.some(c=>norm(c.name)===norm(i.name)&&c.start===i.start&&c.end===i.end&&[...c.days].sort().join()===[...i.days].sort().join());
+    if(items.every(ya))return no('repetida');
     return evs.length>room?no('limite'):{ok:true};}
   if(it.intent==='except'){const exs=Array.isArray(it.exs)?it.exs:[];if(!exs.length)return no('rara');
-    for(const x of exs){if(!x||!fechaIA(x.date)||!HH.test(x.start)||!HH.test(x.end)||!x.label)return no('rara');if(x.date<t)return no('pasada');
+    for(const x of exs){if(!x||!fechaIA(x.date)||!HH.test(x.start)||!HH.test(x.end)||typeof x.label!=='string'||!x.label||x.label.length>60||(x.cat!==undefined&&typeof x.cat!=='string'))return no('rara');if(x.date<t)return no('pasada');
       if(x.libre&&!state.commitments.some(c=>c.id===x.ref))return no('sin_rutina');}
     return{ok:true};}
   if(it.intent==='log'){if(!ev(it.evalId))return no('sin_eval');if(!fechaIA(it.date)||it.date>t||dayDiff(it.date,t)>14||!(it.min>=5&&it.min<=720))return no('rara');return{ok:true};}

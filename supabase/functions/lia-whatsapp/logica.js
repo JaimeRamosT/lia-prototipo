@@ -103,10 +103,12 @@ export function intencion(texto) {
   if (/\bproxim[oa]s? (evaluacion|examen|parcial|prueba|practica|entrega|control)\b|\bcuando es mi (examen|parcial|evaluacion)\b/.test(n)) return { tipo: 'proxima' };
   return { tipo: 'otro' };
 }
-// «sí» y «no» a una propuesta. «ok, guárdalo», «dale», «no, déjalo», «cancela»…
-const SI = /^(si|dale|ok|okey|okay|ya|listo|claro|confirmo|perfecto|correcto|de una|va|guardalo|anotalo|cambialo|quitalo)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|confirmo|dale|gracias))*$/;
+// «sí» y «no» a una propuesta. «sí», «dale», «guárdalo» confirman; «ok», «ya», «listo» solo si la propuesta es de los
+// últimos 5 minutos (son respuestas a cualquier cosa). «no, déjalo», «cancela»… descartan.
+const SI_FUERTE = /^(si|dale|confirmo|guardalo|anotalo|cambialo|quitalo|de una)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|confirmo|dale|gracias))*$/;
+const SI_DEBIL = /^(ok|okey|okay|ya|listo|claro|perfecto|correcto|va)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|confirmo|dale|gracias))*$/;
 const NO = /^(no|nop|nel|cancela|cancelar|cancelalo|mejor no|olvidalo|dejalo|no lo guardes|no gracias)( (dejalo|gracias|cancela|mejor no))*$/;
-export const esSi = t => SI.test(norm(t));
+export const esSi = (t, { reciente = true } = {}) => SI_FUERTE.test(norm(t)) || (reciente && SI_DEBIL.test(norm(t)));
 export const esNo = t => NO.test(norm(t));
 export const EVALS_GRATIS = 3;  // igual que FREE_EVALS de index.html (lo revisa pruebas/whatsapp-lia.test.mjs)
 
@@ -125,24 +127,30 @@ export function textoAviso(f) {
     ? `Hola, soy Lía. A las ${a.hora} tienes ${f.titulo}. ¡Éxitos!`
     : `Hola, soy Lía. A las ${a.hora} empieza tu sesión: ${f.titulo} (hasta las ${b.hora}). Escribe «pausa» si no quieres estos avisos.`;
 }
-export const AYUDA = 'Hola, soy Lía. Por aquí puedes:\n• Anotar: «parcial de Cálculo el jueves a las 9», «hoy salgo del trabajo a las 9» o «ayer estudié 2 horas de Física».\n• Preguntar: «¿qué tengo mañana?», «semana» o «¿cuál es mi próxima evaluación?».\nAntes de guardar algo, te pregunto. Escribe «pausa» si no quieres avisos.';
-export const SIN_VINCULAR = 'Hola, soy Lía. Para usarme aquí, entra a LIA → Perfil → WhatsApp, escribe tu número y envíame el código que te doy.';
-export const CONFIRMADO = 'Listo, quedó guardado. Lo verás en LIA en unos segundos si la tienes abierta; si no, apenas la abras.';
+export const AYUDA = 'Hola, soy Lía. Por aquí puedes:\n• Anotar: «parcial de Cálculo el jueves a las 9», «hoy salgo del trabajo a las 9», «ayer estudié 2 horas de Física» o «pasaron mi parcial de Cálculo al viernes».\n• Preguntar: «¿qué tengo mañana?», «semana» o «¿cuál es mi próxima evaluación?».\nAntes de guardar algo, te pregunto. Escribe «pausa» si no quieres avisos.';
+export const SIN_VINCULAR = 'Hola, soy Lía. Para usarme aquí, entra a LIA, ve a Perfil y, en WhatsApp, escribe tu número. Luego envíame el código que te doy.';
+export const CONFIRMADO = 'Listo, lo anoté. Lo verás en LIA en unos segundos si la tienes abierta; si no, al abrirla.';
 export const DESCARTADO = 'Ok, no guardé nada.';
 export const NADA_PENDIENTE = 'No tengo nada pendiente por guardar. Cuéntame qué anoto, por ejemplo: «parcial de Cálculo el jueves a las 9».';
-export const VENCIDA = 'Eso ya venció: pasaron más de 30 minutos. Vuelve a contarme qué anoto.';
+export const VENCIDA = 'Esa propuesta ya venció: pasaron más de 30 minutos. Vuelve a contarme qué anoto.';
+export const VIEJO = 'Ese mensaje ya no vale. Responde al último que te mandé o cuéntame de nuevo qué anoto.';
+// Sin el contexto de la app, Lía no puede anotar por aquí: la persona lo activa en Perfil (consentimiento).
+export const SIN_CONTEXTO = 'Para que anote por aquí lo que me pides, actívalo en LIA: ve a Perfil y, en WhatsApp, toca «Activar Lía en WhatsApp». Mientras, pregúntame «¿qué tengo hoy?».';
 const SOLO_TEXTO = 'Por ahora solo leo mensajes de texto. Cuéntame qué anoto o pregúntame «¿qué tengo hoy?».';
 // Los mismos topes que usar_ia() y los avisos de la app (IA_AVISOS de index.html).
 const IA_AVISOS = {
-  cupo_dia: 'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te entiendo frases simples, como en LIA.',
-  cupo_mes: 'Ya usaste tus 300 mensajes con IA de este mes. Hasta el próximo mes te entiendo frases simples, como en LIA.',
+  cupo_dia: 'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te respondo con lo básico.',
+  cupo_mes: 'Ya usaste tus 300 mensajes con IA de este mes. Hasta el próximo mes te respondo con lo básico.',
 };
 const CHARLA = {
   gracias: '¡De nada! Aquí estoy para lo que necesites.', ok: 'Listo.', despedida: '¡Nos vemos!',
   quien: 'Soy Lía, tu secretaria de estudio. Anoto tus horarios y tus evaluaciones, y te armo un horario para estudiar en tus horas libres.',
   animo: 'Descansar también cuenta. Si hoy no te da, dime por ejemplo «hoy no puedo estudiar en la noche» y lo tomo en cuenta.',
 };
-const BOTONES_SI_NO = [['si', 'Sí, guárdalo'], ['no', 'No, déjalo']];
+// Cada botón lleva el id de su propuesta: tocar uno de un mensaje viejo no confirma otra cosa.
+const botonesSiNo = id => [[`si:${id}`, 'Sí, guárdalo'], [`no:${id}`, 'No, déjalo']];
+// Un título de botón de hasta 20 caracteres, cortado en un espacio.
+const titulo = t => { t = String(t); if (t.length <= 20) return t; const c = t.slice(0, 20), k = c.lastIndexOf(' '); return k > 8 ? c.slice(0, k) : c; };
 
 // ---------- Hora de Lima ----------
 // Las reglas de la app leen la hora del reloj local (getDay, getHours). El servidor corre en UTC: se les pasa una
@@ -230,15 +238,16 @@ export async function enviarCodigo(deps, numero, codigo) {
 }
 // Un texto; con botones, como mensaje interactivo (hasta 3, de 20 caracteres). Fuera de la ventana de 24 horas,
 // Meta exige una plantilla aprobada (WHATSAPP_PLANTILLA, con dos variables: la hora y lo que toca).
-export async function enviar(deps, numero, texto, { plantilla = null, botones = null } = {}) {
-  const comoTexto = { messaging_product: 'whatsapp', to: numero, type: 'text', text: { body: texto, preview_url: false } };
+export async function enviar(deps, numero, texto, { plantilla = null, botones = null, alternativa = '' } = {}) {
+  texto = texto.length > 1024 ? texto.slice(0, 1020) + '…' : texto;
+  const comoTexto = { messaging_product: 'whatsapp', to: numero, type: 'text', text: { body: alternativa ? `${texto}\n${alternativa}` : texto, preview_url: false } };
   if (plantilla && deps.env('WHATSAPP_PLANTILLA')) {
     return postMeta(deps, { messaging_product: 'whatsapp', to: numero, type: 'template', template: { name: deps.env('WHATSAPP_PLANTILLA'), language: { code: deps.env('WHATSAPP_PLANTILLA_IDIOMA') || 'es' },
       components: [{ type: 'body', parameters: plantilla.map(t => ({ type: 'text', text: String(t).slice(0, 60) })) }] } });
   }
   if (botones && botones.length) {
     const r = await postMeta(deps, { messaging_product: 'whatsapp', to: numero, type: 'interactive', interactive: { type: 'button', body: { text: texto.slice(0, 1024) },
-      action: { buttons: botones.slice(0, 3).map(([id, t]) => ({ type: 'reply', reply: { id, title: String(t).slice(0, 20) } })) } } });
+      action: { buttons: botones.slice(0, 3).map(([id, t]) => ({ type: 'reply', reply: { id, title: titulo(t) } })) } } });
     return r.ok || r.http !== 400 ? r : postMeta(deps, comoTexto);  // si Meta no acepta los botones, va como texto
   }
   return postMeta(deps, comoTexto);
@@ -288,16 +297,20 @@ async function agendaEntre(deps, numero, desde, hasta, nombre, dias, extra) {
 
 // Responde lo que se entendió: propone lo que se puede guardar, pregunta lo que falta o contesta.
 async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }) {
-  const hoy = L.ymd(n), pend = est.confirmadas > 0 ? `\nOjo: tienes ${est.confirmadas} ${est.confirmadas === 1 ? 'cambio' : 'cambios'} que guardo cuando abras LIA.` : '';
-  const room = est.pro ? Infinity : Math.max(0, EVALS_GRATIS - state.evals.filter(e => e.date >= hoy).length);
+  const hoy = L.ymd(n), pend = porGuardar(est);
+  // Como evalRoom() de la app: las próximas que cuenta la app (también las de Google) más las confirmadas por guardar.
+  const ctx = est.contexto || {}, proximas = Number.isInteger(ctx.proximas) ? ctx.proximas : state.evals.filter(e => e.date >= hoy).length;
+  const ocupadas = proximas + (Number(est.confirmadas_evals) || 0), room = est.pro ? Infinity : Math.max(0, EVALS_GRATIS - ocupadas);
   const nuevas = items => items.filter(i => i.kind === 'eval' && (!i.date || i.date >= hoy)).length;
-  const limite = { tipo: 'limite', texto: `En Gratis puedes tener hasta ${EVALS_GRATIS} evaluaciones próximas y ya tienes ${EVALS_GRATIS - room}. Con LIA Pro no hay límite.` };
+  const limite = { tipo: 'limite', texto: `En Gratis puedes tener hasta ${EVALS_GRATIS} evaluaciones próximas y ya tienes ${Math.min(ocupadas, EVALS_GRATIS)}. Con LIA Pro no hay límite.` };
   if (r.intent === 'simula') r = r.base;  // «¿y si…?»: por WhatsApp se propone sin simular
+  // Sin el contexto que publica la app (la persona no activó Lía en WhatsApp), solo agenda y avisos.
+  if (!est.contexto && ['pregunta', 'add', 'except', 'log', 'cambiaEval', 'quitaEval'].includes(r.intent)) return { tipo: 'sin_contexto', texto: SIN_CONTEXTO };
   if (r.intent === 'pregunta') {
     if (r.borrador.intent === 'add' && nuevas(r.borrador.items) > room) return limite;
-    const opciones = (r.opciones || []).filter(o => o && !o.otra && o.set).slice(0, 3).map(o => ({ t: String(o.t).slice(0, 20), set: o.set }));
-    await rpc(deps, 'guardar_propuesta_whatsapp', { p_numero: numero, p_estado: 'borrador', p_intencion: { intent: r.borrador.intent, items: r.borrador.items, i: r.borrador.i, opciones } });
-    return { tipo: 'pregunta', texto: r.texto, botones: opciones.map((o, k) => ['op' + k, o.t]) };
+    const opciones = (r.opciones || []).filter(o => o && !o.otra && o.set).slice(0, 3).map(o => ({ t: titulo(o.t), set: o.set }));
+    const id = await rpc(deps, 'guardar_propuesta_whatsapp', { p_numero: numero, p_estado: 'borrador', p_intencion: { intent: r.borrador.intent, items: r.borrador.items, i: r.borrador.i, opciones } });
+    return { tipo: 'pregunta', texto: r.texto, botones: opciones.map((o, k) => [`op${k}:${id}`, o.t]), alternativa: opciones.length ? `Responde, por ejemplo: «${opciones[0].t}».` : '' };
   }
   if (r.intent === 'charla') {
     const t = r.tipo === 'saludo' || r.tipo === 'ayuda' ? AYUDA : CHARLA[r.tipo] || 'Listo.', p = borr ? preguntaDe(borr, state, n) : null;
@@ -314,7 +327,7 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
     guardar = { intent: 'log', evalId: e.id, course: e.course, date: r.date || hoy, min: r.min };
   } else if (r.intent === 'cambiaEval' || r.intent === 'quitaEval') {
     const e = state.evals.find(x => x.id === r.evalId);
-    if (!e) return { tipo: 'sin_eval', texto: 'No encontré esa evaluación. Revísala en LIA → Evaluaciones.' };
+    if (!e) return { tipo: 'sin_eval', texto: 'No encontré esa evaluación. Revísala en LIA, en Evaluaciones.' };
     if (r.intent === 'quitaEval') guardar = { intent: 'quitaEval', evalId: e.id };
     else {
       const date = r.date || e.date, time = r.time || e.time;
@@ -323,8 +336,8 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
     }
   }
   if (guardar) {
-    await rpc(deps, 'guardar_propuesta_whatsapp', { p_numero: numero, p_estado: 'pendiente', p_intencion: guardar });
-    return { tipo: 'propuesta:' + guardar.intent, texto: propuestaTexto(guardar, state, n), botones: BOTONES_SI_NO };
+    const id = await rpc(deps, 'guardar_propuesta_whatsapp', { p_numero: numero, p_estado: 'pendiente', p_intencion: guardar });
+    return { tipo: 'propuesta:' + guardar.intent, texto: propuestaTexto(guardar, state, n), botones: botonesSiNo(id), alternativa: 'Responde «sí» o «no».' };
   }
   if (r.intent === 'agenda') {
     const f = r.date || hoy, man = L.ymd(L.addDays(n, 1)), m0 = medianoche(f);
@@ -332,23 +345,25 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
   }
   if (r.intent === 'next') {
     const e = state.evals.filter(x => x.date >= hoy).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0];
-    return { tipo: 'next', texto: e ? `Tu próxima evaluación es ${tipoEval(e.type).toLowerCase()} de ${e.course}, el ${L.fechaLarga(e.date)} a las ${e.time}.` : 'No tienes evaluaciones próximas en LIA.' };
+    return { tipo: 'next', texto: e ? `Tu próxima evaluación: ${tipoEval(e.type).toLowerCase()} de ${e.course}, el ${L.fechaLarga(e.date)} a las ${e.time}.` : 'No tienes evaluaciones próximas en LIA.' };
   }
   if (r.intent === 'progress') {
     const up = ((est.contexto && est.contexto.evals) || []).filter(e => e && e.date >= hoy);
     return { tipo: 'progress', texto: up.length ? up.map(e => `${e.course}: ${L.hrs(e.hecho || 0)} de ${L.hrs(Math.round((e.hours || 0) * 60))}${e.sinHueco > 0 ? ` (${L.hrs(e.sinHueco)} sin hueco)` : ''}`).join('\n') + pend
       : 'No tienes evaluaciones próximas. ¿Me dices cuándo es la siguiente?' };
   }
-  if (r.intent === 'replan') return { tipo: 'replan', texto: est.pro ? 'En LIA Pro tu semana se reorganiza sola: ábrela y la verás al día.' : 'Para rearmar tu semana, entra a LIA: en Gratis lo haces desde Hoy cuando te toca.' };
+  if (r.intent === 'replan') return { tipo: 'replan', texto: est.pro ? 'En LIA Pro tu semana se reorganiza sola: ábrela y la verás al día.' : 'Para rearmar tu semana, abre LIA y toca «Rearmar mi semana» en Hoy (en Gratis, una vez por semana).' };
   if (r.intent === 'aviso' && r.texto) return { tipo: 'aviso', texto: r.texto };
   return { tipo: 'ayuda', texto: aviso ? `${aviso}\n\n${AYUDA}` : AYUDA };
 }
 
 async function atender(deps, numero, entrada, ahora) {
-  const texto = String(entrada.texto || ''), boton = entrada.boton || null, q = boton ? { tipo: 'boton' } : intencion(texto);
+  const texto = String(entrada.texto || ''), q = entrada.boton ? { tipo: 'boton' } : intencion(texto);
+  // «si:<id>», «no:<id>» u «op0:<id>»: la acción y la propuesta a la que responde.
+  const bm = entrada.boton ? /^(si|no|op\d)(?::([0-9a-f-]{36}))?$/.exec(String(entrada.boton)) : null, boton = bm ? bm[1] : null;
   if (q.tipo === 'vincular') {
     const ok = await rpc(deps, 'vincular_whatsapp', { p_numero: numero, p_codigo: q.codigo });
-    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada sesión de estudio y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA → Perfil → WhatsApp.' };
+    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada sesión de estudio y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA, en Perfil, WhatsApp.' };
   }
   const est = await rpc(deps, 'whatsapp_estado', { p_numero: numero });
   if (!est || typeof est !== 'object') return { tipo: 'sin_vincular', texto: SIN_VINCULAR };
@@ -358,7 +373,10 @@ async function atender(deps, numero, entrada, ahora) {
   }
   const n = relojLima(ahora), state = estadoDesde(est.contexto), prop = est.propuesta && typeof est.propuesta === 'object' ? est.propuesta : null;
   const borr = borradorDe(prop, n), pendiente = prop && prop.estado === 'pendiente';
-  const si = boton ? boton === 'si' : esSi(texto), no = boton ? boton === 'no' : esNo(texto);
+  // Un botón de un mensaje viejo (de otra propuesta, o de una que ya no está) no hace nada.
+  if (entrada.boton && (!bm || !bm[2] || !prop || prop.id !== bm[2] || (bm[1].startsWith('op') && !borr))) return { tipo: 'boton_viejo', texto: VIEJO };
+  const reciente = !!(prop && ahora.getTime() - new Date(prop.creado).getTime() <= 5 * 60000);
+  const si = boton ? boton === 'si' : esSi(texto, { reciente }), no = boton ? boton === 'no' : esNo(texto);
   // ¿Responde a la propuesta?
   if (si && pendiente) {
     const ok = await rpc(deps, 'confirmar_propuesta_whatsapp', { p_numero: numero });
@@ -375,15 +393,23 @@ async function atender(deps, numero, entrada, ahora) {
   if (!r) r = L.interpret(texto, state, n);
   let aviso = null, ia = null;
   if (L.pideIA(r)) {
-    const q2 = intencion(texto);
-    if (q2.tipo === 'agenda') return agendaEntre(deps, numero, q2.desde === 0 ? ahora : inicioDia(ahora, q2.desde), inicioDia(ahora, q2.desde + q2.dias), q2.nombre, q2.dias,
-      est.confirmadas > 0 ? `\nOjo: tienes ${est.confirmadas} ${est.confirmadas === 1 ? 'cambio' : 'cambios'} que guardo cuando abras LIA.` : '');
+    // Los atajos «semana», «hoy», «mañana»: en una frase corta, directo; en una larga y en Pro, primero la IA
+    // («hoy salí tarde y no pude estudiar» no es la agenda de hoy).
+    const q2 = intencion(texto), corta = norm(texto).split(' ').length <= 4;
+    const agenda = () => agendaEntre(deps, numero, q2.desde === 0 ? ahora : inicioDia(ahora, q2.desde), inicioDia(ahora, q2.desde + q2.dias), q2.nombre, q2.dias, porGuardar(est));
+    if (q2.tipo === 'agenda' && (corta || !est.pro)) return agenda();
     if (q2.tipo === 'proxima') r = { intent: 'next' };
-    else if (est.pro) { ia = await conIA(deps, numero, texto, state, n, borr); aviso = ia.aviso || null; if (ia.r) r = ia.r; }
+    else if (est.pro && est.contexto) {   // la IA solo con Lía activada en WhatsApp (su aviso menciona la IA)
+      ia = await conIA(deps, numero, texto, state, n, borr); aviso = ia.aviso || null;
+      if (ia.r) r = ia.r; else if (q2.tipo === 'agenda') return agenda();
+    }
   }
   const out = await responderA(deps, numero, r, { est, state, n, ahora, borr, aviso });
   return ia && ia.proveedor ? { ...out, ia: ia.proveedor + (ia.r ? '' : ia.fallo ? `:${ia.fallo}` : ':no_entendio') } : out;
 }
+
+// Lo confirmado por WhatsApp que la app todavía no guarda (se dice al final de la agenda y del avance).
+function porGuardar(est) { const k = Number(est.confirmadas) || 0; return k ? `\nOjo: tienes ${k} ${k === 1 ? 'cambio' : 'cambios'} por guardar. ${k === 1 ? 'Se guarda' : 'Se guardan'} cuando abras LIA.` : ''; }
 
 const sha256 = async (s, crypto = globalThis.crypto) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
 
@@ -479,8 +505,12 @@ export async function manejar(req, deps) {
     let r;
     try {
       r = entrada ? await atender(deps, numero, entrada, ahora) : { tipo: 'no_texto', texto: SOLO_TEXTO };
-    } catch { r = { tipo: 'error', texto: 'Tuve un problema para revisar tu LIA. Inténtalo en un momento.' }; }
-    const env = await enviar(deps, numero, r.texto, { botones: r.botones });
+    } catch (e) {
+      // En el registro, solo el nombre de la función de la base que falló (rpc lanza «nombre: estado»).
+      const fn = /^([a-z_]+): \d+$/.exec(String((e && e.message) || ''));
+      r = { tipo: 'error' + (fn ? `:${fn[1]}` : ''), texto: 'Tuve un problema para revisar tu LIA. Inténtalo en un momento.' };
+    }
+    const env = await enviar(deps, numero, r.texto, { botones: r.botones, alternativa: r.alternativa });
     tipos.push(r.tipo + (r.ia ? `[${r.ia}]` : '') + (env.ok ? '' : `:${env.http || env.error}${env.codigo ? ':' + env.codigo : ''}`));
   }
   // A Meta siempre se le responde 200 para que no reintente; lo que falló queda en el registro (sin textos ni números).

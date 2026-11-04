@@ -33,6 +33,7 @@ create table if not exists public.whatsapp_vistos (
   hash text primary key,
   creado timestamptz not null default now()
 );
+create index if not exists whatsapp_vistos_creado on public.whatsapp_vistos (creado);
 
 alter table public.contexto_whatsapp enable row level security;
 alter table public.propuestas_whatsapp enable row level security;
@@ -134,7 +135,10 @@ begin
     'propuesta', (select jsonb_build_object('id', p.id, 'estado', p.estado, 'intencion', p.intencion, 'creado', p.creado)
                   from public.propuestas_whatsapp p where p.user_id = v_uid and p.estado in ('borrador', 'pendiente')
                   order by p.creado desc limit 1),
-    'confirmadas', (select count(*) from public.propuestas_whatsapp p where p.user_id = v_uid and p.estado = 'confirmada')
+    'confirmadas', (select count(*) from public.propuestas_whatsapp p where p.user_id = v_uid and p.estado = 'confirmada'),
+    -- Evaluaciones confirmadas que la app todavía no guarda: cuentan para el límite de Gratis.
+    'confirmadas_evals', (select count(*) from public.propuestas_whatsapp p, jsonb_array_elements(case when jsonb_typeof(p.intencion->'items') = 'array' then p.intencion->'items' else '[]'::jsonb end) i
+                          where p.user_id = v_uid and p.estado = 'confirmada' and p.intencion->>'intent' = 'add' and i->>'kind' = 'eval')
   ) into v;
   return v;
 end $$;
@@ -163,7 +167,8 @@ declare v_uid uuid := public.cuenta_whatsapp(p_numero); v_id uuid;
 begin
   if v_uid is null then return false; end if;
   update public.propuestas_whatsapp set estado = 'confirmada', vence = now() + interval '14 days'
-  where id = (select id from public.propuestas_whatsapp where user_id = v_uid and estado = 'pendiente' and vence > now() order by creado desc limit 1)
+  where estado = 'pendiente'   -- dos «sí» a la vez: solo uno la confirma
+    and id = (select id from public.propuestas_whatsapp where user_id = v_uid and estado = 'pendiente' and vence > now() order by creado desc limit 1)
   returning id into v_id;
   if v_id is null then return false; end if;
   delete from public.propuestas_whatsapp where id in (
