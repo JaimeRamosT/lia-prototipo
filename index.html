@@ -1009,8 +1009,30 @@ function charla(ns){let resto=ns,tipo=null;
   for(const [t,re] of CHARLA){const r2=resto.replace(re,' ');if(r2!==resto){tipo=tipo||t;resto=r2;}}
   if(!tipo)return null;
   return resto.replace(RELLENO,' ').replace(/[^a-z0-9]+/g,'').length?null:tipo;}
+// «¿Y si trabajo el sábado de 8 a 4?», «¿qué pasa si me quedo hasta las 10 el jueves?»: la frase sin el «y si».
+// Devuelve null si no empieza así. Un «sí» suelto (respuesta a una pregunta) no cuenta.
+function sinYSi(text){const m=String(text).match(/^\s*¿?\s*(?:y\s+)?(?:qu[eé]\s+pasa(?:r[ií]a)?\s+)?si\s+(.+?)\s*\??\s*$/i);
+  if(!m||!/^\s*¿?\s*(?:y\s|qu[eé]\s)/i.test(text))return null;return m[1];}
+// Calcula el plan con el cambio sobre una copia, sin tocar nada, y lo compara con el de hoy: cuánto falta por evaluación
+// y cuánto estudio hay en los próximos 7 días.
+function simular(state,base,now){const copia=JSON.parse(JSON.stringify(state));
+  if(base.intent==='except')for(const [i,x] of (base.exs||[]).entries())copia.exceptions.push({id:'sim'+i,...x});
+  if(base.intent==='add')for(const [i,it] of (base.items||[]).entries()){
+    if(it.kind==='eval')copia.evals.push({id:'sim'+i,type:it.type,course:it.course,date:it.date,time:it.time,hours:it.hours||(EVAL_TYPES[it.type]||EVAL_TYPES.parcial).h});
+    else copia.commitments.push({id:'sim'+i,name:it.name,type:it.type,days:it.days,start:it.start,end:it.end});}
+  const p0=plan(state,now),p1=plan(copia,now),t=ymd(now),fin=ymd(addDays(now,7));
+  const semana=p=>p.blocks.filter(b=>b.date>=t&&b.date<fin).reduce((a,b)=>a+b.e-b.s,0);
+  const evs=copia.evals.filter(e=>e.date>=t).map(e=>({e,antes:p0.unmet[e.id]||0,despues:p1.unmet[e.id]||0,nueva:String(e.id).startsWith('sim')}));
+  const mueve=p1.blocks.filter(b=>!p0.blocks.some(a=>a.evalId===b.evalId&&a.date===b.date&&a.s===b.s)).length;
+  return{peor:evs.filter(x=>x.despues>x.antes),mejor:evs.filter(x=>x.despues<x.antes),nuevas:evs.filter(x=>x.nueva),semanaAntes:semana(p0),semanaDespues:semana(p1),mueve};}
 // Lee una frase. Si dice «la próxima semana» sin el día, la pregunta por la fecha ofrece los días de esa semana.
-function interpret(text,state,now){const r=interpretFrase(text,state,now);
+function interpret(text,state,now){
+  // «¿Y si…?»: se entiende la frase sin el «y si» y, si es un cambio, se simula en vez de anotarlo.
+  const ysi=sinYSi(text);
+  if(ysi){const base=interpretFrase(ysi,state,now);
+    if(base.intent==='except'||base.intent==='add')return{intent:'simula',base,texto:ysi};
+    if(base.intent==='pregunta')return{intent:'aviso',texto:'Para probarlo, dime el día y el horario, por ejemplo: “¿y si trabajo el sábado de 8 a 4?”.'};}
+  const r=interpretFrase(text,state,now);
   const n=r.intent==='pregunta'&&r.borrador&&semanaSinDia(tokenize(text).map(t=>t.n).join(' '));
   if(!n)return r;
   const items=r.borrador.items.map(x=>'date' in x&&!x.date&&x.kind!=='rutina'?{...x,semana:n}:x);
@@ -1838,6 +1860,16 @@ function msgHTML(m,last){if(m.from==='me')return `<div class="msg me"><div class
   const ops=last&&Array.isArray(m.opciones)&&m.opciones.length&&borradorVigente(state.borrador,now())?`<div class="chips" role="group" aria-label="Respuestas rápidas" style="margin-top:8px">${m.opciones.map((o,k)=>`<button class="pill ghost" data-a="rapida" data-i="${k}">${esc(o.t)}</button>`).join('')}</div>`:'';
   return `<div class="msg">${AV(28)}<div class="bub">${esc(m.text)}${ops}${undoB||ctaB?`<div class="row-h" style="flex-wrap:wrap;gap:8px">${undoB}${ctaB}</div>`:''}</div></div>`;}
 // "Trabajo, Lun a Vie, 22:00 – 06:00 del día siguiente" o "Parcial de Cálculo, jue 29 oct a las 09:00".
+// Lo que dice Lía después de simular un cambio.
+function textoSimulacion(x,congelado){const l=[congelado?'Lo probé sin cambiar nada. En Gratis tu semana armada no se mueve sola; si la rearmas con este cambio:':'Lo probé sin cambiar nada. Si pasa eso:'];
+  const nom=e=>`${(EVAL_TYPES[e.type]||EVAL_TYPES.parcial).label.toLowerCase()} de ${e.course} (${fechaCorta(e.date)})`;
+  if(x.semanaAntes!==x.semanaDespues)l.push(`• En los próximos 7 días tendrías ${hrs(x.semanaDespues)} de estudio, en vez de ${hrs(x.semanaAntes)}.`);
+  else if(x.mueve)l.push(`• ${x.mueve===1?'Un bloque de estudio cambia':`${x.mueve} bloques de estudio cambian`} de hora o de día.`);
+  for(const y of x.peor)l.push(`• A tu ${nom(y.e)} le faltarían ${hrs(y.despues)}: no hay más huecos libres antes.`);
+  for(const y of x.mejor)l.push(`• Ganas tiempo para tu ${nom(y.e)}: ya te alcanzan las horas.`);
+  if(!x.peor.length)l.push('• Igual te alcanzan las horas para todas tus evaluaciones.');
+  if(!x.peor.length&&!x.mueve&&x.semanaAntes===x.semanaDespues)l[1]='• Tu estudio no cambia: no se cruza con nada.';
+  l.push('Si quieres, lo anoto:');return l.join('\n');}
 function resumenItem(i){return i.kind==='eval'?`${EVAL_TYPES[i.type].label} de ${i.course}, ${fechaCorta(i.date)} a las ${i.time}`:`${i.name}, ${diasTxt(i.days)}, ${horario(i)}`;}
 function itemLine(it){if(it.kind==='eval')return `${EVAL_TYPES[it.type].label} · ${it.course} — ${fechaCorta(it.date)} ${it.time} (${it.hours} h de estudio)`;
   return `${it.name} — ${diasTxt(it.days)} · ${horario(it)}`;}
@@ -2619,6 +2651,13 @@ function responder(q,from,r,n,{eco=true}={}){
   // Falta un dato: Lía lo pregunta y guarda lo entendido. En el chat, con respuestas rápidas.
   if(r.intent==='pregunta'){state.borrador={intent:r.borrador.intent,items:r.borrador.items,i:r.borrador.i,at:n.getTime()};ui.pending=null;  // la pregunta reemplaza una propuesta sin confirmar
     if(from==='chat'){liaSay(r.texto,{opciones:r.opciones||[]});render();}else{save();toast(r.texto);}return;}
+  // «¿Y si…?»: Lía lo prueba sin cambiar nada, dice qué pasaría y deja la propuesta para confirmar.
+  if(r.intent==='simula'){
+    if(from!=='chat'){responder(q,from,r.base,n,{eco});return;}
+    state.borrador=null;const t=textoSimulacion(simular(state,r.base,n),!isPro()&&!!state.frozen);
+    liaSay(t);
+    if(r.base.intent==='except'){ui.pending={exs:r.base.exs,q};render();anunciar('Si quieres anotarlo, confirma.');return;}
+    responder(q,'chat',r.base,n,{eco:false});return;}
   // Si no entendió la respuesta a su pregunta, la repite (el borrador sigue).
   const b=borradorVigente(state.borrador,n)?state.borrador:null;
   // Un «hola», «gracias» u «ok»: Lía responde y, si estaba preguntando algo, lo vuelve a preguntar.
