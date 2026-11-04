@@ -68,7 +68,8 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     await traer(pg, sb, [fila('p2', { intent: 'except', exs: [{ date: fecha(2), start: '18:00', end: '20:00', label: 'Cumpleaños', cat: 'ocio' }] }),
       fila('p3', { intent: 'log', evalId: fis.id, course: 'Física', date: fecha(0), min: 60 }),
       fila('p4', { intent: 'cambiaEval', evalId: fis.id, date: fecha(5), time: '11:00' })]);
-    await pg.getByText('Guardé 3 cambios que me pediste por WhatsApp.').waitFor();
+    // De lunes a viernes, el cumpleaños (18:00) cae en el trabajo (15:00–19:00): se guarda igual y el aviso lo dice (0.12.0).
+    await pg.getByText(/^Guardé 3 cambios que me pediste por WhatsApp(; «Cumpleaños» se cruza con «Trabajo» \([^,]+, 15:00–19:00\))?\.$/).waitFor();
     s = await guardado(pg);
     assert.ok(s.exceptions.some(x => x.label === 'Cumpleaños') && s.done.some(d => d.evalId === fis.id && d.min === 60) && s.evals.find(e => e.id === fis.id).date === fecha(5));
     await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).click();
@@ -88,6 +89,17 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     await ctx.close();
   });
 }
+
+// Iteración 3: lo confirmado por WhatsApp que se cruza con otra actividad se guarda igual, y el aviso dice con qué.
+test('Android: «Guardé X; se cruza con Y» cuando lo confirmado por WhatsApp cae en el trabajo', async () => {
+  let k = 1; while ([0, 6].includes(new Date(Date.now() + k * 864e5).getDay())) k++;   // el próximo día de lunes a viernes
+  const { ctx, pg, errores } = await preparar('Android', [fila('c1', { intent: 'except', exs: [{ date: fecha(k), start: '16:00', end: '17:00', label: 'Cita médica', cat: 'otro' }] })]);
+  await pg.evaluate(() => cargarCanales());
+  await pg.getByText(/^Guardé por WhatsApp: Cita médica, .+; se cruza con «Trabajo» \([^,]+, 15:00–19:00\)\.$/).waitFor();
+  assert.ok((await guardado(pg)).exceptions.some(x => x.label === 'Cita médica'), 'se guardó igual');
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
 
 test('si no puede revisar los canales al abrir, no da por desvinculado a nadie y deja reintentar', async () => {
   const { ctx, pg, errores, sb } = await preparar('iPhone', []);
