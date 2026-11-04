@@ -16,7 +16,7 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 ## No-objetivos
 
 - **Guardar todo el horario en la cuenta.** Los datos siguen en el navegador (ADR-006, opción B descartada por ahora). El servidor no arma el plan: solo propone.
-- **Notas de voz, fotos ni consolidados por WhatsApp.** Responde «Por ahora solo leo mensajes de texto».
+- **Fotos ni consolidados por WhatsApp.** Responde «Por ahora solo leo mensajes de texto (y audios, en LIA Pro)». Las notas de voz llegaron en la iteración 3, solo en Pro (ver «Audios»).
 - **«¿Y si…?» por WhatsApp.** La simulación necesita el plan completo; por WhatsApp, Lía propone el cambio sin simular.
 - **Cambiar ajustes** (horas de sueño, rutinas permanentes): como en la app, Lía dice que se cambian en Perfil.
 - **Número propio y plantillas de avisos (Utility).** Siguen en `docs/canales.md` como pendientes.
@@ -98,7 +98,27 @@ Los revisa `design:ux-copy` antes de programar.
 ## P2
 
 - Que WhatsApp vea el plan al día sin abrir LIA: requiere ADR C (guardar el horario en la cuenta).
-- Notas de voz con Whisper.
+- ~~Notas de voz con Whisper~~: hecho el 4-nov, solo en Pro (ver «Audios»).
+
+## Audios (iteración 3, 4-nov, solo Pro)
+
+Pedido de Coconut del 4-nov (`docs/iteracion-3.md`, sección 3): Lía escucha las notas de voz en LIA Pro. La lógica está en `supabase/functions/lia-whatsapp/audio.js`; `logica.js` decide quién puede.
+
+**Flujo** de un mensaje `type: 'audio'`:
+1. Número sin vincular: lo mismo que a un texto (`SIN_VINCULAR`).
+2. Gratis: «Los audios son de LIA Pro. Escríbeme lo mismo y lo entiendo.» Sin descargar nada ni tocar el cupo.
+3. Pro sin Lía activada en WhatsApp (`settings.waLia`, sin contexto publicado): no se manda a Groq; Lía dice cómo activarla. El aviso de esa tarjeta en Perfil es el consentimiento y debe decir que los audios los transcribe Groq y no se guardan.
+4. Pro sin cupo (`usar_ia_whatsapp`, el mismo de `usar_ia()`): «Ya usaste tus 25 mensajes con IA de hoy, y cada audio cuenta como uno…».
+5. Se piden a Meta los datos del audio (`GET https://graph.facebook.com/<versión>/<media_id>`, con `WHATSAPP_TOKEN`; la versión es la misma de los mensajes, `WHATSAPP_API_VERSION` o `v23.0`) y luego el archivo, con el mismo token y solo a direcciones de Meta. Hasta 10 segundos.
+6. Más de **5 MB** (por `file_size` antes de descargar, o por lo descargado) o más de **2 minutos** (la duración de la nota de voz Ogg/Opus, leída de su última página, sin decodificarla): «Ese audio es muy largo: mándame uno de menos de 2 minutos o escríbelo.» No se transcribe ni descuenta.
+7. Groq lo transcribe: `POST https://api.groq.com/openai/v1/audio/transcriptions`, multipart, con `GROQ_API_KEY`, `model=whisper-large-v3-turbo`, `language=es` y `response_format=json`. Hasta 15 segundos. Si falla, tarda o viene vacío: «No pude escuchar ese audio. ¿Me lo escribes?», sin descontar.
+8. Con el texto, se descuenta **1** del cupo y se atiende **exactamente como un mensaje escrito**: «sí» confirma, una evaluación se propone, y si las reglas no entienden y es Pro, va a la IA, que cuenta como cualquier mensaje escrito (un audio que además necesita la IA usa 2 del cupo).
+
+**Privacidad.** El audio y la transcripción solo viven en la memoria de esa llamada: no se guardan en la base ni en los registros. A Groq va el audio para transcribirlo. El registro de `lia-whatsapp` lleva solo el tipo: `audio:ok:<lo que respondió>` (por ejemplo `audio:ok:propuesta:add`), `audio:pro`, `audio:sin_contexto`, `audio:cupo`, `audio:largo` y `audio:error:<paso>` (`sin_clave`, `meta`, `descarga`, `groq`, `limite`, `tiempo`, `vacio`, `red`). Nunca el número, el texto ni la dirección del archivo.
+
+**Pruebas:** `pruebas/whatsapp-audio.test.mjs` (Meta y Groq simulados): Pro con cupo, «sí» por audio, audio que pasa a la IA, Gratis, sin cupo, sin activar, sin vincular, más de 5 MB, más de 2 minutos, fallas de Groq (500, 429, vacío y tiempo), fallas de Meta, sin clave, token solo a Meta y registros sin datos.
+
+**Lo que hace Coconut:** nada nuevo en Meta. `GROQ_API_KEY` ya está en los secretos de las Edge Functions (la usa la IA); hay que volver a desplegar `lia-whatsapp`. El plan gratuito de Groq limita los segundos de audio por hora y por día: con 5 personas de prueba alcanza.
 
 ## Frases de prueba (con un horario de ejemplo)
 
@@ -134,6 +154,8 @@ Los revisa `design:ux-copy` antes de programar.
 | --- | --- | --- |
 | Copias | `pruebas/whatsapp-copias.test.mjs` | `reglas.js` e `ia.js` iguales a sus originales; las reglas del servidor (módulo estricto) entienden las 105 frases igual que la app |
 | Servidor | `pruebas/whatsapp-lia.test.mjs` (Meta, Supabase y Groq simulados) | Proponer, «sí», «no», botones, borrador con respuestas rápidas, hora de Lima a las 23:30 y 00:30, límite de Gratis, IA solo Pro y cupo, mensajes repetidos, registros sin textos |
+| Audios | `pruebas/whatsapp-audio.test.mjs` (Meta, Supabase y Groq simulados) | Ver «Audios» |
+| Recordatorios | `pruebas/whatsapp-avisos.test.mjs` y `pruebas/sql/recordatorios.sql.mjs` | El texto de cada tipo, con y sin plantilla; qué se avisa y cuándo (ver `docs/canales.md`, «Recordatorios») |
 | App | `pruebas/whatsapp-app.test.mjs` | `contextoWhatsapp()` sin datos personales ni lo de Google; `revisarPropuesta()` con cada motivo |
 | Base | `pruebas/sql/whatsapp.sql.mjs` (PGlite, también en la CI) | Permisos de cada función, aplicar dos veces, reemplazar, confirmar una vez, vencer, tope de 20, evaluaciones confirmadas para el límite, mismo cupo que `usar_ia()`, `auth.uid()` vuelve a vacío, desvincular y borrar la cuenta (59 comprobaciones) |
 | Navegador | `pruebas/navegador/whatsapp.nav.mjs` (iPhone y computadora) | Guardar al abrir; sin «Activar», nada al servidor; varias juntas con un solo Deshacer (cambio de un día, estudio hecho, mover y quitar); no repetir si el servidor no borró; límite de Gratis y lo que ya no existe; sin red al abrir no ofrece vincular de nuevo |
