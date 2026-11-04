@@ -1,5 +1,7 @@
 # Recordatorios en el teléfono (LIA Pro)
 
+> **Se quitó en la 0.12.0 (4-nov-2026, iteración 3).** Por decisión de Coconut, los recordatorios llegan por WhatsApp y con la alerta de Google Calendar (`docs/iteracion-3.md`, §2). La app ya no pide permiso de notificaciones ni llama a `programar_avisos` ni a `guardar_dispositivo`; al abrirse, da de baja este dispositivo si los tenía activos (`quitar_dispositivo`, en `horario.js`). `sw.js` sigue mostrando los avisos que ya estaban programados. `lia-avisos` queda sin uso. Lo de abajo es la especificación original.
+
 Especificación de las notificaciones de LIA: avisos que llegan al teléfono, también con la app cerrada y en la pantalla bloqueada, como en cualquier app. Decidido con Coconut el 29 de octubre de 2026.
 
 ## Qué recibe cada plan
