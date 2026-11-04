@@ -17,7 +17,7 @@ Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase 
 - **Base** (`supabase/migrations/…_canales.sql`): `canales` (token del calendario y número de WhatsApp de cada cuenta) y `agenda_canales` (lo publicado). Sin permisos directos: solo funciones. Para la app: `canales_estado`, `activar_calendario`, `desactivar_calendario`, `pedir_codigo_whatsapp`, `quitar_whatsapp`, `avisos_whatsapp`, `publicar_agenda`. Para las funciones (solo `service_role`): `agenda_por_token`, `vincular_whatsapp`, `agenda_whatsapp`, `whatsapp_vinculado`, `avisos_whatsapp_numero`, `tomar_avisos_whatsapp`. `pg_cron` llama a `lia-whatsapp` cada minuto con el secreto de Vault de `lia-avisos`.
 - **`lia-calendario`** (Edge Function, `verify_jwt` apagado): `GET ?t=<token>` devuelve el calendario iCal «LIA». El token de 64 caracteres es la llave; «Dejar de compartir» lo borra. `POST {accion:'importar', url}`, con la sesión de la persona, lee la dirección secreta de su Google Calendar y se la devuelve a la app (ver `docs/calendario.md`).
 - **`lia-google`** (Edge Function, desde el 3-nov): «Conectar con Google», al instante en los dos sentidos. Ver `docs/google.md`.
-- **`lia-whatsapp`** (Edge Function, `verify_jwt` apagado): webhook de Meta firmado con `X-Hub-Signature-256`; vincula con «LIA 123456»; responde «hoy», «mañana», «semana», «pausa» y «avisos»; las preguntas libres, con Groq (solo lectura de la agenda). Avisos: 15 minutos antes de estudiar y 2 horas antes de una evaluación.
+- **`lia-whatsapp`** (Edge Function, `verify_jwt` apagado): webhook de Meta firmado con `X-Hub-Signature-256`; vincula con «LIA 123456»; «pausa» y «avisos». Desde el 4-nov (0.11.0), Lía entiende y propone igual que en la app, la persona confirma con «sí» y la app lo guarda al abrirse (ver `docs/whatsapp-lia.md`). Avisos: 15 minutos antes de estudiar y 2 horas antes de una evaluación.
 - **App** (`index.html`): Perfil → «Google Calendar y WhatsApp» (De LIA a Google Calendar, De Google Calendar a LIA y WhatsApp). La agenda se publica sola cuando cambia el plan (`publicarCanales`); el Google Calendar de la persona se lee al abrir la app, cada 6 horas (`sincronizarGcal`).
 
 ## Configurar WhatsApp (Coconut, con su cuenta de Meta)
@@ -41,6 +41,14 @@ Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase 
 7. **Plantilla del código (para vincular recibiendo el código, pedido de Coconut del 2-nov):** en WhatsApp Manager → Plantillas de mensajes → Crear plantilla → categoría **Autenticación** → nombre `lia_codigo` → idioma **Español** → entrega del código «**Copiar código**» → enviar a revisión. Cuando esté aprobada, agrega el secreto `WHATSAPP_PLANTILLA_CODIGO` = `lia_codigo` (y `WHATSAPP_PLANTILLA_CODIGO_IDIOMA` si el idioma no es `es`).
 8. En LIA (con tu cuenta) → Perfil → WhatsApp → escribe tu número → «Vincular WhatsApp». LIA te envía el código por WhatsApp y lo escribes en la app. Sin la plantilla, la app muestra el código y tú se lo envías a LIA («LIA 123456»): ese camino necesita que Meta entregue los mensajes que llegan (paso 4).
 
+## Si el código no llega por WhatsApp
+
+El registro de `lia-whatsapp` (paso `codigo`) muestra el estado HTTP y el código de error de Meta (`meta`), sin números ni textos:
+
+- **`http: 404`, `meta: 132001`**: Meta no encuentra la plantilla `lia_codigo` en ese idioma para ese número. Revisa que esté aprobada, que esté en la misma cuenta de WhatsApp Business que el número (el número de prueba tiene su propia «Test WhatsApp Business Account») y su idioma: si no es «Spanish» (`es`), pon el código en `WHATSAPP_PLANTILLA_CODIGO_IDIOMA` (por ejemplo, `es_MX`).
+- **`http: 400`, `meta: 132000`**: la plantilla no tiene las variables que se envían (el código en el cuerpo y en el botón).
+- **`http: 401`**: el token de acceso venció (el temporal dura 24 horas).
+
 ## Si LIA no recibe los mensajes que le escribes
 
 La función registra cada mensaje que llega (sin textos ni números). Si en Supabase → Edge Functions → lia-whatsapp → Logs no aparece ninguno:
@@ -49,14 +57,14 @@ La función registra cada mensaje que llega (sin textos ni números). Si en Supa
 2. Si la prueba llega pero tus mensajes reales no, la app no está suscrita a tu cuenta de WhatsApp Business: en el Graph API Explorer, con tu token, haz `POST /<WABA_ID>/subscribed_apps` (el WABA ID está en API Setup).
 3. Si sigue sin llegar, pasa la app a modo **Live** (pide una URL de política de privacidad).
 
-## Estado de WhatsApp (en pausa desde el 3-nov, a pedido de Coconut)
+## Estado de WhatsApp (retomado el 4-nov)
 
-- La plantilla `lia_codigo` (Autenticación, Español, «Copiar código») está en revisión de Meta.
-- Para retomar: cuando esté aprobada, agregar el secreto `WHATSAPP_PLANTILLA_CODIGO` = `lia_codigo` y volver a vincular en Perfil (paso 8). Si LIA no recibe los mensajes que le escriben, seguir «Si LIA no recibe los mensajes que le escribes».
+- Meta aprobó `lia_codigo` y Coconut agregó `WHATSAPP_PLANTILLA_CODIGO`. La primera prueba (4-nov, 00:19) dio `http: 404`: ver «Si el código no llega por WhatsApp».
+- Meta nunca ha entregado a `lia-whatsapp` un mensaje que le escriban (desde el 2-nov solo llegó la verificación del webhook): ver «Si LIA no recibe los mensajes que le escribes».
 
 ## Pendiente
 
 - ~~Leer Google Calendar hacia LIA sin Google Cloud~~: hecho el 3-nov (`docs/calendario.md`).
-- Que WhatsApp también cambie el horario (hoy solo lee): requiere llevar las reglas de `interpret()` al servidor.
+- ~~Que WhatsApp también cambie el horario~~: hecho el 4-nov (`docs/whatsapp-lia.md`).
 - Número propio de WhatsApp, verificación del negocio y precio por mensaje en Perú.
 - ~~Versión para escritorio de la app web~~: hecho el 3-nov (barra lateral desde 900 px).

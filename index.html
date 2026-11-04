@@ -1307,6 +1307,34 @@ function validarIA(r,state,now){
       return texto?{intent:'aviso',texto}:{intent:'help'};}
     case 'aviso':case 'fuera':return texto?{intent:'aviso',texto}:{intent:'help'};
     default:return{intent:'help'};}}
+// ---------- Lía en WhatsApp (docs/whatsapp-lia.md) ----------
+// Lo que lia-whatsapp necesita para entender igual que la app: ajustes del plan, evaluaciones desde hace 14 días (con
+// lo estudiado y lo que quedó sin hueco) y rutinas. Nunca el nombre, el correo ni lo que vino de Google Calendar.
+function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),unmet=(p&&p.unmet)||{};
+  return{settings:{wake:S.wake,sleep:S.sleep,maxDay:S.maxDay,block:S.block,minBlock:S.minBlock,...(S.cicloInicio?{cicloInicio:S.cicloInicio}:{})},
+    evals:state.evals.filter(e=>!e.gcal&&e.date>=desde).sort((x,y)=>(x.date+x.time).localeCompare(y.date+y.time)).slice(0,40)
+      .map(e=>({id:e.id,type:e.type,course:e.course,date:e.date,time:e.time,hours:e.hours,hecho:doneFor(state,e.id),sinHueco:unmet[e.id]||0})),
+    commitments:state.commitments.filter(c=>!c.gcal).slice(0,40)
+      .map(c=>({id:c.id,name:c.name,type:c.type,days:c.days,start:c.start,end:c.end,...(c.desde?{desde:c.desde}:{}),...(c.hasta?{hasta:c.hasta}:{})}))};}
+// Antes de guardar lo que la persona confirmó por WhatsApp, se revisa con el estado de ahora: pudo cambiar desde que
+// Lía lo propuso. Devuelve {ok:true} o {ok:false,motivo}. room: cuántas evaluaciones próximas caben (Gratis).
+function revisarPropuesta(state,it,now,room){const t=ymd(now),HH=/^([01]\d|2[0-3]):[0-5]\d$/,no=motivo=>({ok:false,motivo}),ev=id=>state.evals.find(e=>e.id===id);
+  if(!it||typeof it!=='object')return no('rara');
+  if(it.intent==='add'){const items=Array.isArray(it.items)?it.items:[];if(!items.length)return no('rara');
+    for(const i of items){if(i&&i.kind==='eval'){if(!EVAL_TYPES[i.type]||!i.course||!fechaIA(i.date)||!HH.test(i.time))return no('rara');if(i.date<t)return no('pasada');}
+      else if(i&&i.kind==='commit'){if(!COMMIT_TYPES[i.type]||!i.name||!Array.isArray(i.days)||!i.days.length||!HH.test(i.start)||!HH.test(i.end))return no('rara');}
+      else return no('rara');}
+    const evs=items.filter(i=>i.kind==='eval');
+    if(evs.length&&evs.every(i=>state.evals.some(e=>e.type===i.type&&norm(e.course)===norm(i.course)&&e.date===i.date&&e.time===i.time)))return no('repetida');
+    return evs.length>room?no('limite'):{ok:true};}
+  if(it.intent==='except'){const exs=Array.isArray(it.exs)?it.exs:[];if(!exs.length)return no('rara');
+    for(const x of exs){if(!x||!fechaIA(x.date)||!HH.test(x.start)||!HH.test(x.end)||!x.label)return no('rara');if(x.date<t)return no('pasada');
+      if(x.libre&&!state.commitments.some(c=>c.id===x.ref))return no('sin_rutina');}
+    return{ok:true};}
+  if(it.intent==='log'){if(!ev(it.evalId))return no('sin_eval');if(!fechaIA(it.date)||it.date>t||dayDiff(it.date,t)>14||!(it.min>=5&&it.min<=720))return no('rara');return{ok:true};}
+  if(it.intent==='cambiaEval'){if(!ev(it.evalId))return no('sin_eval');if(!fechaIA(it.date)||!HH.test(it.time))return no('rara');return it.date<t?no('pasada'):{ok:true};}
+  if(it.intent==='quitaEval')return ev(it.evalId)?{ok:true}:no('sin_eval');
+  return no('rara');}
 // ---------- Recordatorios en el teléfono (LIA Pro, docs/notificaciones.md) ----------
 // Los avisos de los próximos 8 días con su hora, su tipo, una referencia interna (lo único que va al servidor) y el
 // texto que mostrará el teléfono (se queda en el teléfono). tipos: {examen, sesion, resumen, sinMarcar} prendidos o no.
@@ -2360,11 +2388,60 @@ const KEY_CANALES_FIRMA='lia.canales.firma';
 function canalesActivos(c=ui.canales){return !!(c&&(c.calendario||(c.whatsapp&&c.whatsapp.verificado)));}
 async function cargarCanales(){if(!state.cuenta||!cuentasActivas()||ui.canalesCargando)return;ui.canalesCargando=true;
   try{ui.canales=(await sbRpc('canales_estado'))||{};}catch(e){ui.canales=ui.canales||{};}finally{ui.canalesCargando=false;}
-  if(ui.tab==='perfil')rerenderKeepScroll();if(canalesActivos())canalesLuego();}
+  if(ui.tab==='perfil')rerenderKeepScroll();if(canalesActivos())canalesLuego();alCambiarWhatsapp();}
+// Con WhatsApp vinculado, también el contexto con el que Lía entiende allá (contextoWhatsapp).
 async function publicarCanales(forzar){if(!state.cuenta||!canalesActivos())return;
-  const ev=eventosCanales(state,P(),now()),firma=JSON.stringify(ev);let previa=null;try{previa=localStorage.getItem(KEY_CANALES_FIRMA);}catch(e){}
+  const n=now(),p=P(),ev=eventosCanales(state,p,n),ctx=waVinculado()?contextoWhatsapp(state,p,n):null,firma=JSON.stringify(ctx?[ev,ctx]:ev);let previa=null;try{previa=localStorage.getItem(KEY_CANALES_FIRMA);}catch(e){}
   if(!forzar&&firma===previa)return;
-  try{await sbRpc('publicar_agenda',{p_eventos:ev});try{localStorage.setItem(KEY_CANALES_FIRMA,firma);}catch(e){}}catch(e){}}
+  try{await sbRpc('publicar_agenda',{p_eventos:ev});if(ctx)await sbRpc('publicar_contexto_whatsapp',{p_contexto:ctx});try{localStorage.setItem(KEY_CANALES_FIRMA,firma);}catch(e){}}catch(e){}}
+// ---------- Lía en WhatsApp (docs/whatsapp-lia.md): lo que la persona confirmó allá se guarda aquí ----------
+// Al abrir LIA, al volver a la pestaña y, con LIA abierta, en segundos (Realtime en whatsapp_senal). Se revisa cada
+// cosa con el estado de ahora (revisarPropuesta), todo lo que llega junto se deshace con un solo Deshacer y nada se
+// guarda dos veces: los ids ya guardados se recuerdan en este navegador aunque falle borrarlos del servidor.
+const waVinculado=()=>!!(state.cuenta&&ui.canales&&ui.canales.whatsapp&&ui.canales.whatsapp.verificado);
+const KEY_WA_HECHAS='lia.wa.hechas';
+let waHechasMem=[],waTrayendo=false,waUltima=0,waT=null;
+function waHechas(){try{const v=JSON.parse(localStorage.getItem(KEY_WA_HECHAS)||'[]');return Array.isArray(v)?v:waHechasMem;}catch(e){return waHechasMem;}}
+function anotarWaHechas(ids){waHechasMem=[...waHechas(),...ids].slice(-100);try{localStorage.setItem(KEY_WA_HECHAS,JSON.stringify(waHechasMem));}catch(e){}}
+const WA_MOTIVOS={sin_eval:'esa evaluación ya no está en LIA',sin_rutina:'esa rutina ya no está en LIA',pasada:'su fecha ya pasó',repetida:'ya estaba en LIA',
+  limite:`en Gratis ya tienes ${FREE_EVALS} evaluaciones próximas`,rara:'no la entendí bien'};
+function alCambiarWhatsapp(){if(waVinculado())suscribirWhatsapp();else soltarWhatsapp();}
+function suscribirWhatsapp(){if(ui.waCanal||!waVinculado())return;const id=state.cuenta.id;ui.waCanal='…';
+  sb().then(c=>{if(ui.waCanal!=='…')return;ui.waCanal=c.channel('lia-wa-'+id)
+    .on('postgres_changes',{event:'*',schema:'public',table:'whatsapp_senal',filter:`user_id=eq.${id}`},()=>traerWhatsappLuego()).subscribe();})
+    .catch(()=>{ui.waCanal=null;});
+  traerWhatsappLuego(0);}   // lo que se confirmó mientras LIA estaba cerrada
+function soltarWhatsapp(){const ch=ui.waCanal;ui.waCanal=null;if(ch&&ch!=='…')sb().then(c=>c.removeChannel(ch)).catch(()=>{});}
+function traerWhatsappLuego(ms=1500){clearTimeout(waT);waT=setTimeout(()=>{if(deshacerVisible()||ui.sheet){traerWhatsappLuego(3000);return;}traerWhatsapp();},ms);}
+async function traerWhatsapp(){if(!waVinculado()||waTrayendo)return;waTrayendo=true;waUltima=Date.now();
+  try{const filas=await sbRpc('propuestas_whatsapp_confirmadas');if(!Array.isArray(filas)||!filas.length)return;
+    const t=aplicarDeWhatsapp(filas);
+    try{await sbRpc('quitar_propuestas_whatsapp',{p_ids:filas.map(f=>f.id)});}catch(e){}
+    if(t.texto){rerenderKeepScroll();toast(t.texto,t.hechas>0);}}
+  catch(e){}finally{waTrayendo=false;}}
+// Una línea por cambio guardado, para el aviso.
+function waResumen(it){if(it.intent==='add')return it.items.map(resumenItem).join('; ');
+  if(it.intent==='except')return it.exs.map(x=>`${x.label}, ${fechaCorta(x.date)}`).join('; ');
+  if(it.intent==='log')return `${hrs(it.min)} de ${it.course}`;
+  const e=evById(it.evalId);return it.intent==='cambiaEval'?`${nombreEval(e).replace(/^tu /,'')} al ${fechaCorta(it.date)}`:`quitar ${nombreEval(e).replace(/^tu /,'')}`;}
+function aplicarDeWhatsapp(filas){const ya=new Set(waHechas()),n0=now(),antes=JSON.stringify(state),partes=[],fallas=[],nuevas=[],ids=[];
+  for(const f of filas){if(!f||!f.id||ya.has(f.id))continue;ids.push(f.id);const it=f.intencion,v=revisarPropuesta(state,it,n0,evalRoom());
+    if(!v.ok){fallas.push(WA_MOTIVOS[v.motivo]||WA_MOTIVOS.rara);continue;}
+    if(it.intent!=='quitaEval')partes.push(waResumen(it));
+    if(it.intent==='add')for(const i of it.items){if(i.kind==='eval'){const id=uid();nuevas.push(id);state.evals.push({id,type:i.type,course:i.course,date:i.date,time:i.time,hours:i.hours>0?i.hours:EVAL_TYPES[i.type].h});}
+      else state.commitments.push({id:uid(),name:i.name,type:i.type,days:i.days,start:i.start,end:i.end});}
+    else if(it.intent==='except')for(const x of it.exs)state.exceptions.push({id:uid(),date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{}),...(x.libre?{libre:true,ref:x.ref}:{})});
+    else if(it.intent==='log'){const hoy=it.date===ymd(n0);state.done.push({id:uid(),evalId:it.evalId,date:it.date,start:hoy?fmt(Math.max(0,n0.getHours()*60+n0.getMinutes()-it.min)):'20:00',min:it.min});}
+    else if(it.intent==='cambiaEval'){const e=evById(it.evalId);e.date=it.date;e.time=it.time;}
+    else{partes.push(waResumen(it));state.evals=state.evals.filter(e=>e.id!==it.evalId);state.done=state.done.filter(x=>x.evalId!==it.evalId);}}
+  anotarWaHechas(ids);
+  const hechas=partes.length;
+  if(hechas){undoStack=antes;undoTras=null;quitarAvisoDeshacer();if(nuevas.length)agendarNuevas(nuevas);}
+  save();
+  const no=[...new Set(fallas)],noTxt=no.length?`No pude guardar ${fallas.length===1?(hechas?'otro':'uno'):fallas.length}: ${no.join('; ')}.`:'';
+  const si=hechas>2?`Guardé ${hechas} cambios que me pediste por WhatsApp.`:hechas?`Guardé lo que me pediste por WhatsApp: ${partes.join('; ')}.`:'';
+  return{hechas,texto:[si,noTxt].filter(Boolean).join(' ')};}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&waVinculado()&&Date.now()-waUltima>30000)traerWhatsappLuego(500);});
 let canalesT=null;
 function canalesLuego(){if(!state.cuenta||!canalesActivos())return;clearTimeout(canalesT);canalesT=setTimeout(()=>{publicarCanales(false);},3000);}
 function canalesCard(){if(!cuentasActivas())return '';const tit='<h2 class="eyebrow" style="margin:0">Google Calendar y WhatsApp</h2>';
@@ -2388,8 +2465,10 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<h2 class="eyeb
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="gcal-ahora"${gl}>${ui.gcalLeyendo?'Leyendo…':'Traer cambios ahora'}</button><button class="btn sec sm" data-a="gcal-abrir"${gl}>Cambiar la dirección</button><button class="btn sec sm" data-a="gcal-dejar"${gl}>Dejar de traer</button></div></div>`
     :`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">De Google Calendar a LIA</h3><div class="small muted">Trae tus clases, evaluaciones y eventos sin escribirlos otra vez. Antes de guardar, eliges qué entra.</div>
      <button class="btn sec sm" data-a="gcal-abrir">Traer mi Google Calendar</button></div>`;
+  // Lo que guarda el servidor para que Lía entienda por WhatsApp (docs/whatsapp-lia.md).
+  const waPriv=`<p class="small muted" style="margin:0">Para entenderte allá, LIA guarda en su servidor tus evaluaciones y rutinas (sin lo que vino de Google Calendar) y lo que le pidas, hasta que LIA lo guarde. Tus mensajes no se guardan. En LIA Pro, lo que Lía no entienda sola lo lee la IA, como en el chat. Si desvinculas WhatsApp, se borra.</p>`;
   let wa;
-  if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?».</div>
+  if(w&&w.verificado)wa=`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Vinculado: +${esc(w.numero)}. ${w.avisos?'Te aviso 15 minutos antes de cada sesión y 2 horas antes de cada evaluación.':'Los avisos están en pausa.'} Escríbeme «¿qué tengo hoy?» o pídeme que anote algo, por ejemplo «parcial de Cálculo el jueves a las 9»: te pregunto antes de guardar.</div>${waPriv}
      <div class="row-h" style="flex-wrap:wrap"><button class="btn sec sm" data-a="wa-avisos" data-v="${w.avisos?'0':'1'}"${oc}>${w.avisos?'Pausar avisos':'Activar avisos'}</button><button class="btn sec sm" data-a="wa-quitar"${oc}>Desvincular</button></div></div>`;
   else if(w&&w.esperando)wa=`<form class="stack" data-form="wa-codigo" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small">Te envié un código por WhatsApp al <b>+${esc(w.numero)}</b>${WA_LIA?`, desde el número de LIA (+${esc(WA_LIA)})`:''}. Escríbelo aquí:</div>
      <label class="f">Código de 6 dígitos<input name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></label>
@@ -2399,7 +2478,7 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<h2 class="eyeb
     wa=`<div class="stack" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small">Desde el WhatsApp del <b>+${esc(w.numero)}</b>, envía este mensaje a LIA${WA_LIA?` (+${esc(WA_LIA)})`:''}:</div>
      <p style="margin:0;font-size:1.3rem;font-weight:700;letter-spacing:.06em" class="tnum">${esc(msg)}</p><p class="small muted" style="margin:0">Vence en 15 minutos.</p>
      <div class="row-h" style="flex-wrap:wrap">${WA_LIA?`<a class="btn pri sm" href="https://wa.me/${WA_LIA}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:''}<button class="btn sec sm" data-a="wa-revisar"${oc}>Ya lo envié</button><button class="btn sec sm" data-a="wa-cambiar"${oc}>Cambiar número</button></div></div>`;}
-  else wa=`<form class="stack" data-form="wa" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Lía te avisa antes de cada sesión y te responde «¿qué tengo hoy?».</div>
+  else wa=`<form class="stack" data-form="wa" style="gap:8px"><h3 style="font-size:inherit;margin:0">WhatsApp</h3><div class="small muted">Por WhatsApp, Lía te avisa antes de cada sesión, te dice qué tienes y anota lo que le pidas. Antes de guardar, te pregunta.</div>${waPriv}
      <label class="f">Tu número de WhatsApp<input type="tel" name="numero" inputmode="tel" autocomplete="tel" required placeholder="987 654 321" value="${esc(w&&w.numero||'')}"></label>
      ${ui.waErr?`<p class="ferr" role="alert">${esc(ui.waErr)}</p>`:''}<button class="btn sec sm" type="submit"${oc}>Vincular WhatsApp</button></form>`;
   const sep='<hr class="sep" style="border:0;border-top:1px solid var(--line);margin:4px 0">',gg=ui.google;
@@ -2596,13 +2675,13 @@ async function pedirCodigoWa(numero){ui.canalesOcupado=true;ui.waErr=null;rerend
   catch(e){toast(WA_ERRORES[e&&e.error]||'No pude pedir el código. Inténtalo en un momento.');}
   finally{ui.canalesOcupado=false;rerenderKeepScroll();}}
 async function confirmarCodigoWa(codigo){ui.canalesOcupado=true;rerenderKeepScroll();
-  try{const ok=await sbRpc('confirmar_codigo_whatsapp',{p_codigo:codigo});ui.canales=(await sbRpc('canales_estado'))||{};
-    if(ok){ui.waErr=null;await publicarCanales(true);toast('Listo: WhatsApp vinculado. Escríbele a LIA «¿qué tengo hoy?».');}
+  try{const ok=await sbRpc('confirmar_codigo_whatsapp',{p_codigo:codigo});ui.canales=(await sbRpc('canales_estado'))||{};alCambiarWhatsapp();
+    if(ok){ui.waErr=null;await publicarCanales(true);toast('Listo: WhatsApp vinculado. Escríbele a LIA «¿qué tengo hoy?» o pídele que anote algo.');}
     else ui.waErr=ui.canales.whatsapp&&ui.canales.whatsapp.esperando?'Ese código no coincide. Revisa el último mensaje de LIA.':'Ese código venció o ya no es válido. Pide otro.';}
   catch(e){toast(mensajeError(e));}
   finally{ui.canalesOcupado=false;rerenderKeepScroll();}}
 async function accionCanal(fn,args,ok){ui.canalesOcupado=true;rerenderKeepScroll();
-  try{await sbRpc(fn,args||{});ui.canales=(await sbRpc('canales_estado'))||{};if(canalesActivos())await publicarCanales(true);if(ok)toast(ok);}
+  try{await sbRpc(fn,args||{});ui.canales=(await sbRpc('canales_estado'))||{};alCambiarWhatsapp();if(canalesActivos())await publicarCanales(true);if(ok)toast(ok);}
   catch(e){const m=String((e&&e.message)||'');toast(/numero_invalido/.test(m)?'Ese número no parece de WhatsApp. Escríbelo con su código de país, por ejemplo 51 987 654 321.':/numero_ocupado/.test(m)?'Ese número ya está vinculado con otra cuenta de LIA.':mensajeError(e));}
   finally{ui.canalesOcupado=false;rerenderKeepScroll();}}
 function avisosCard(){if(!cuentasActivas())return '';const titulo='<span class="eyebrow">Recordatorios</span>';
@@ -3202,7 +3281,7 @@ function setCuenta(user){const nueva={id:user.id,email:user.email||''},cambio=!s
 function quitarCuenta(){const era=isPro();state.cuenta=null;state.sub=freeSub(state.sub&&state.sub.history);if(state.gcal&&state.gcal.url)delete state.gcal.url;  // la dirección secreta se olvida
   if(era&&state.onboarded)armWeek(true);save();
   // Lo de los canales es de la cuenta: se suelta, y el Deshacer pendiente ya no aplica (no devuelve la dirección secreta).
-  ui.canales=undefined;ui.google=undefined;soltarGoogle();undoStack=null;undoTras=null;quitarAvisoDeshacer();
+  ui.canales=undefined;ui.google=undefined;soltarGoogle();soltarWhatsapp();undoStack=null;undoTras=null;quitarAvisoDeshacer();
   try{localStorage.removeItem(KEY_CANALES_FIRMA);localStorage.removeItem(KEY_GOOGLE_FIRMA);}catch(e){}}
 function refrescarPlan(avisar){return sbRpc('mi_suscripcion').then(f=>{aplicarFila(f,avisar);if(calm())rerenderKeepScroll();return f;});}
 // Si la cuenta se creó desde el muro de pago, el pago sigue después de confirmar el correo, aunque la página se recargue.
@@ -3328,7 +3407,7 @@ Object.assign(A,{
 });
 
 // ---------- App instalable ----------
-const APP_VERSION='0.10.6';
+const APP_VERSION='0.11.0';
 let installEvt=null;
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
@@ -3387,6 +3466,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 iniciarCuentas();
 alVolverDeGoogle();
 if(state.cuenta&&state.gcal&&state.gcal.fuente==='google')cargarGoogle();
+if(state.cuenta)cargarCanales();   // lo que se confirmó por WhatsApp mientras LIA estaba cerrada, y la agenda al día
 setInterval(()=>{if(!ui.session&&!ui.sheet&&!ui.listen&&!document.activeElement.matches('input,select'))rerenderKeepScroll();},60000);
 </script>
 </body>
