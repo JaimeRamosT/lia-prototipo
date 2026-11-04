@@ -1,0 +1,12 @@
+{
+  "name": "lia-pruebas-sql",
+  "private": true,
+  "description": "Pruebas de las migraciones de Supabase en PGlite (Postgres en Node, sin servidor). Ver pruebas/sql/whatsapp.sql.mjs.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./*.sql.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11"
+  }
+}

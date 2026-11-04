@@ -91,13 +91,13 @@ test('whatsapp: «LIA 123456» vincula el número y responde', async () => {
 });
 
 test('whatsapp: un número sin vincular recibe cómo vincularlo', async () => {
-  const { deps, enviados } = meta({ rpc: { whatsapp_vinculado: null } });
+  const { deps, enviados } = meta({ rpc: { whatsapp_estado: null } });
   await post(deps, mensaje('¿qué tengo hoy?'));
   assert.equal(enviados[0].body.text.body, W.SIN_VINCULAR);
 });
 
 test('whatsapp: «¿qué tengo hoy?» responde con la agenda de hoy en hora de Lima', async () => {
-  const { deps, llamadas, enviados } = meta({ rpc: { whatsapp_vinculado: true, agenda_whatsapp: [
+  const { deps, llamadas, enviados } = meta({ rpc: { whatsapp_estado: { avisos: true, pro: false, contexto: null, propuesta: null, confirmadas: 0 }, agenda_whatsapp: [
     { inicio: '2026-11-02T23:00:00Z', fin: '2026-11-03T01:00:00Z', titulo: 'Estudiar Cálculo II', tipo: 'estudio' },
     { inicio: '2026-11-03T02:00:00Z', fin: '2026-11-03T03:00:00Z', titulo: 'Parcial de Física', tipo: 'evaluacion' }] } });
   await post(deps, mensaje('¿Qué tengo hoy?'));
@@ -118,23 +118,20 @@ test('whatsapp: intenciones de las reglas', () => {
 });
 
 test('whatsapp: «pausa» apaga los avisos de ese número', async () => {
-  const { deps, llamadas, enviados } = meta({ rpc: { whatsapp_vinculado: true } });
+  const { deps, llamadas, enviados } = meta({ rpc: { whatsapp_estado: { avisos: true, pro: false, contexto: null, propuesta: null, confirmadas: 0 } } });
   await post(deps, mensaje('pausa'));
   assert.deepEqual(llamadas.at(-1), { fn: 'avisos_whatsapp_numero', body: { p_numero: '51987654321', p_activos: false } });
   assert.match(enviados[0].body.text.body, /ya no te envío avisos/);
 });
 
-test('whatsapp: una pregunta libre va a Groq con la agenda; sin clave, responde la ayuda', async () => {
-  const conIA = meta({ env: { GROQ_API_KEY: 'g' }, rpc: { whatsapp_vinculado: true, agenda_whatsapp: [{ inicio: '2026-11-04T23:00:00Z', fin: '2026-11-05T01:00:00Z', titulo: 'Estudiar Física', tipo: 'estudio' }] } });
-  const f = conIA.deps.fetch;
-  let pedido = null;
-  conIA.deps.fetch = async (url, op) => url.includes('groq.com') ? (pedido = JSON.parse(op.body), new Response(JSON.stringify({ choices: [{ message: { content: 'Estudias Física el miércoles de 18:00 a 20:00.' } }] }))) : f(url, op);
-  await post(conIA.deps, mensaje('¿cuándo estudio física?'));
-  assert.match(pedido.messages[1].content, /miércoles 4 nov 18:00–20:00: Estudiar Física/);
-  assert.equal(conIA.enviados[0].body.text.body, 'Estudias Física el miércoles de 18:00 a 20:00.');
-  const sinIA = meta({ rpc: { whatsapp_vinculado: true, agenda_whatsapp: [] } });
-  await post(sinIA.deps, mensaje('¿cuándo estudio física?'));
-  assert.equal(sinIA.enviados[0].body.text.body, W.AYUDA);
+test('whatsapp: una pregunta libre ya no va a Groq sin revisar el plan (en Gratis, la ayuda)', async () => {
+  const m = meta({ env: { GROQ_API_KEY: 'g', IA_PROVEEDOR: 'groq' }, rpc: { whatsapp_estado: { avisos: true, pro: false, contexto: null, propuesta: null, confirmadas: 0 }, agenda_whatsapp: [] } });
+  const f = m.deps.fetch;
+  let groq = 0;
+  m.deps.fetch = async (url, op) => (url.includes('groq.com') ? (groq++, new Response('{}')) : f(url, op));
+  await post(m.deps, mensaje('asdfgh'));
+  assert.equal(groq, 0);
+  assert.equal(m.enviados[0].body.text.body, W.AYUDA);
 });
 
 test('whatsapp: pg_cron envía los avisos que tocan; con plantilla, como plantilla', async () => {
@@ -156,7 +153,7 @@ test('whatsapp: pg_cron envía los avisos que tocan; con plantilla, como plantil
 });
 
 test('whatsapp: los registros no llevan textos ni números', async () => {
-  const m = meta({ rpc: { whatsapp_vinculado: true, agenda_whatsapp: [{ inicio: '2026-11-02T23:00:00Z', fin: '2026-11-03T01:00:00Z', titulo: 'Estudiar Cálculo II', tipo: 'estudio' }] } });
+  const m = meta({ rpc: { whatsapp_estado: { avisos: true, pro: false, contexto: null, propuesta: null, confirmadas: 0 }, agenda_whatsapp: [{ inicio: '2026-11-02T23:00:00Z', fin: '2026-11-03T01:00:00Z', titulo: 'Estudiar Cálculo II', tipo: 'estudio' }] } });
   await post(m.deps, mensaje('¿qué tengo hoy?'));
   const t = JSON.stringify(m.logs);
   assert.ok(!t.includes('51987654321') && !t.includes('Cálculo') && !t.includes('tengo'));
