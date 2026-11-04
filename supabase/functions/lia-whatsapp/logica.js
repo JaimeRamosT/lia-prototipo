@@ -4,7 +4,10 @@
 //   - POST de Meta (firmado con WHATSAPP_APP_SECRET): mensajes que llegan. «LIA 123456» vincula el número. Después,
 //     Lía entiende igual que en la app: las reglas de index.html (reglas.js) y, en Pro y con cupo, la IA de lia-ia
 //     (ia.js). Lo que se puede guardar lo propone; con «sí» queda confirmado y la app lo guarda al abrirse.
-//   - POST de pg_cron (cabecera x-lia-cron): avisos 15 minutos antes de estudiar y 2 horas antes de una evaluación.
+//   - POST de pg_cron (cabecera x-lia-cron): avisos de toda la agenda publicada, 15 minutos antes (estudio, clases y
+//     eventos o rutinas) y 2 horas antes de una evaluación. Fuera de las 24 horas, solo con la plantilla Utility.
+//   - Audios (solo Pro, con Lía activada y el cupo de la IA): se descargan de Meta, Groq los transcribe (audio.js) y el
+//     texto sigue el mismo camino que un mensaje escrito. Ni el audio ni la transcripción se guardan ni se registran.
 //   - POST de la app (con la sesión de la persona, {accion:'codigo', numero}): pide el código y se lo envía por WhatsApp
 //     con la plantilla de autenticación WHATSAPP_PLANTILLA_CODIGO; la persona lo escribe en la app.
 // verify_jwt está apagado: Meta y pg_cron no tienen sesión; cada llamada se revisa aquí.
@@ -12,6 +15,7 @@
 // la base nunca guarda el texto de los mensajes (solo lo entendido, hasta que la app lo guarda).
 import { L } from './reglas.js';
 import * as IA from './ia.js';
+import { AUDIO, escucharAudio } from './audio.js';
 
 export const API = 'https://graph.facebook.com';
 export const VERSION_API = 'v23.0';
@@ -121,11 +125,13 @@ export function textoAgenda(filas, nombre, dias) {
   });
   return `${nombre} en LIA:\n${lineas.join('\n')}`;
 }
+// El recordatorio de cada tipo de agenda_canales (tomar_avisos_whatsapp): evaluación 2 horas antes; estudio, clase y
+// otro (eventos de un día y rutinas), 15 minutos antes. Con plantilla Utility va su texto, con la hora y el título.
 export function textoAviso(f) {
   const a = enLima(f.inicio), b = enLima(f.fin);
-  return f.tipo === 'evaluacion'
-    ? `Hola, soy Lía. A las ${a.hora} tienes ${f.titulo}. ¡Éxitos!`
-    : `Hola, soy Lía. A las ${a.hora} empieza tu sesión: ${f.titulo} (hasta las ${b.hora}). Escribe «pausa» si no quieres estos avisos.`;
+  if (f.tipo === 'evaluacion') return `Hola, soy Lía. A las ${a.hora} tienes ${f.titulo}. ¡Éxitos!`;
+  const que = f.tipo === 'estudio' ? `empieza tu sesión: ${f.titulo}` : `empieza: ${f.titulo}`;
+  return `Hola, soy Lía. A las ${a.hora} ${que} (hasta las ${b.hora}). Escribe «pausa» si no quieres estos avisos.`;
 }
 export const AYUDA = 'Hola, soy Lía. Por aquí puedes:\n• Anotar: «parcial de Cálculo el jueves a las 9», «hoy salgo del trabajo a las 9», «ayer estudié 2 horas de Física» o «pasaron mi parcial de Cálculo al viernes».\n• Preguntar: «¿qué tengo mañana?», «semana» o «¿cuál es mi próxima evaluación?».\nAntes de guardar algo, te pregunto. Escribe «pausa» si no quieres avisos.';
 export const SIN_VINCULAR = 'Hola, soy Lía. Para usarme aquí, entra a LIA, ve a Perfil y, en WhatsApp, escribe tu número. Luego envíame el código que te doy.';
@@ -136,7 +142,7 @@ export const VENCIDA = 'Esa propuesta ya venció: pasaron más de 30 minutos. Vu
 export const VIEJO = 'Ese mensaje ya no vale. Responde al último que te mandé o cuéntame de nuevo qué anoto.';
 // Sin el contexto de la app, Lía no puede anotar por aquí: la persona lo activa en Perfil (consentimiento).
 export const SIN_CONTEXTO = 'Para que anote por aquí lo que me pides, actívalo en LIA: ve a Perfil y, en WhatsApp, toca «Activar Lía en WhatsApp». Mientras, pregúntame «¿qué tengo hoy?».';
-const SOLO_TEXTO = 'Por ahora solo leo mensajes de texto. Cuéntame qué anoto o pregúntame «¿qué tengo hoy?».';
+const SOLO_TEXTO = 'Por ahora solo leo mensajes de texto (y audios, en LIA Pro). Cuéntame qué anoto o pregúntame «¿qué tengo hoy?».';
 // Los mismos topes que usar_ia() y los avisos de la app (IA_AVISOS de index.html).
 const IA_AVISOS = {
   cupo_dia: 'Ya usaste tus 25 mensajes con IA de hoy. Hasta mañana te respondo con lo básico.',
@@ -357,19 +363,20 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
   return { tipo: 'ayuda', texto: aviso ? `${aviso}\n\n${AYUDA}` : AYUDA };
 }
 
-async function atender(deps, numero, entrada, ahora) {
+// estPrevio: el estado que ya leyó atenderAudio (así no se pide dos veces).
+async function atender(deps, numero, entrada, ahora, estPrevio = null) {
   const texto = String(entrada.texto || ''), q = entrada.boton ? { tipo: 'boton' } : intencion(texto);
   // «si:<id>», «no:<id>» u «op0:<id>»: la acción y la propuesta a la que responde.
   const bm = entrada.boton ? /^(si|no|op\d)(?::([0-9a-f-]{36}))?$/.exec(String(entrada.boton)) : null, boton = bm ? bm[1] : null;
   if (q.tipo === 'vincular') {
     const ok = await rpc(deps, 'vincular_whatsapp', { p_numero: numero, p_codigo: q.codigo });
-    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada sesión de estudio y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA, en Perfil, WhatsApp.' };
+    return { tipo: q.tipo, texto: ok === true ? 'Listo, vinculé este número con tu LIA. Te aviso 15 minutos antes de cada actividad y 2 horas antes de cada evaluación. Pregúntame «¿qué tengo hoy?» o cuéntame qué anoto.' : 'Ese código no es válido o ya venció. Pide uno nuevo en LIA, en Perfil, WhatsApp.' };
   }
-  const est = await rpc(deps, 'whatsapp_estado', { p_numero: numero });
+  const est = estPrevio || await rpc(deps, 'whatsapp_estado', { p_numero: numero });
   if (!est || typeof est !== 'object') return { tipo: 'sin_vincular', texto: SIN_VINCULAR };
   if (q.tipo === 'pausa' || q.tipo === 'avisos') {
     await rpc(deps, 'avisos_whatsapp_numero', { p_numero: numero, p_activos: q.tipo === 'avisos' });
-    return { tipo: q.tipo, texto: q.tipo === 'pausa' ? 'Listo, ya no te envío avisos. Escribe «avisos» para volver a activarlos.' : 'Listo, te vuelvo a avisar antes de cada sesión y evaluación.' };
+    return { tipo: q.tipo, texto: q.tipo === 'pausa' ? 'Listo, ya no te envío avisos. Escribe «avisos» para volver a activarlos.' : 'Listo, te vuelvo a avisar antes de cada actividad y evaluación.' };
   }
   const n = relojLima(ahora), state = estadoDesde(est.contexto), prop = est.propuesta && typeof est.propuesta === 'object' ? est.propuesta : null;
   const borr = borradorDe(prop, n), pendiente = prop && prop.estado === 'pendiente';
@@ -406,6 +413,30 @@ async function atender(deps, numero, entrada, ahora) {
   }
   const out = await responderA(deps, numero, r, { est, state, n, ahora, borr, aviso });
   return ia && ia.proveedor ? { ...out, ia: ia.proveedor + (ia.r ? '' : ia.fallo ? `:${ia.fallo}` : ':no_entendio') } : out;
+}
+
+// Un audio (docs/whatsapp-lia.md, «Audios»): solo Pro, con Lía activada en WhatsApp (su aviso dice que Groq transcribe
+// los audios) y con cupo de la IA. Se transcribe y el texto se atiende como uno escrito; descuenta 1 solo si se
+// transcribió. Si ese texto también necesita la IA, cuenta como cualquier mensaje escrito. En el registro, solo el tipo.
+async function atenderAudio(deps, numero, audio, ahora) {
+  const est = await rpc(deps, 'whatsapp_estado', { p_numero: numero });
+  if (!est || typeof est !== 'object') return { tipo: 'audio:sin_vincular', texto: SIN_VINCULAR };
+  if (!est.pro) return { tipo: 'audio:pro', texto: AUDIO.pro };
+  if (!est.contexto) return { tipo: 'audio:sin_contexto', texto: AUDIO.sinContexto };
+  if (!deps.env('GROQ_API_KEY')) return { tipo: 'audio:error:sin_clave', texto: AUDIO.error };
+  let cupo = null;
+  try { cupo = await rpc(deps, 'usar_ia_whatsapp', { p_numero: numero, p_sumar: false }); } catch { cupo = null; }
+  if (!cupo || cupo.permitido !== true) {
+    const motivo = cupo && cupo.motivo;
+    if (motivo === 'cupo_dia' || motivo === 'cupo_mes') return { tipo: 'audio:cupo', texto: AUDIO[motivo] };
+    return motivo === 'solo_pro' ? { tipo: 'audio:pro', texto: AUDIO.pro } : { tipo: 'audio:error:cupo', texto: AUDIO.error };
+  }
+  const a = await escucharAudio(deps, audio, { api: API, version: deps.env('WHATSAPP_API_VERSION') || VERSION_API });
+  if (a.error === 'largo') return { tipo: 'audio:largo', texto: AUDIO.largo };
+  if (a.error) return { tipo: `audio:error:${a.error}`, texto: AUDIO.error };
+  try { await rpc(deps, 'usar_ia_whatsapp', { p_numero: numero, p_sumar: true }); } catch { /* se transcribió igual */ }
+  const r = await atender(deps, numero, { texto: a.texto }, ahora, est);
+  return { ...r, tipo: `audio:ok:${r.tipo}` };
 }
 
 // Lo confirmado por WhatsApp que la app todavía no guarda (se dice al final de la agenda y del avance).
@@ -502,9 +533,10 @@ export async function manejar(req, deps) {
     const entrada = m.type === 'text' && m.text && m.text.body ? { texto: m.text.body }
       : b ? { texto: String(b.title || ''), boton: String(b.id || '') }
       : m.type === 'button' && m.button && m.button.text ? { texto: String(m.button.text) } : null;
+    const audio = !entrada && m.type === 'audio' && m.audio && typeof m.audio.id === 'string' ? m.audio : null;
     let r;
     try {
-      r = entrada ? await atender(deps, numero, entrada, ahora) : { tipo: 'no_texto', texto: SOLO_TEXTO };
+      r = entrada ? await atender(deps, numero, entrada, ahora) : audio ? await atenderAudio(deps, numero, audio, ahora) : { tipo: 'no_texto', texto: SOLO_TEXTO };
     } catch (e) {
       // En el registro, solo el nombre de la función de la base que falló (rpc lanza «nombre: estado»).
       const fn = /^([a-z_]+): \d+$/.exec(String((e && e.message) || ''));

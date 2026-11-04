@@ -35,9 +35,9 @@ Piezas:
   - `iniciar`: crea un estado de un solo uso (10 minutos) atado a la cuenta de LIA y al hash de un nonce que guarda ese navegador, y devuelve la dirección de Google para dar permiso: `calendar.app.created` (crear y escribir el calendario «LIA») y `calendar.events.readonly` (leer los eventos).
   - `GET ?code&state` (regreso de Google): canjea el código, deja el *refresh token* pendiente en Vault y vuelve a la app con `?google=ok&e=<estado>`.
   - `confirmar`: la app, con su sesión y su nonce, cierra la conexión: crea (o reusa) el calendario «LIA», pide a Google que avise de cada cambio del calendario principal (`events.watch`) y guarda la cuenta. Así nadie puede atar su Google a la cuenta de otro ni el de otro a la suya (hallazgo del revisor: CSRF de vinculación).
-  - `POST` de Google (aviso de cambio, con `X-Goog-Channel-Token`): suma 1 a `google_senal` de esa persona. No lee ni guarda eventos.
+  - `POST` de Google (aviso de cambio, con `X-Goog-Channel-Token`): suma 1 a `google_senal` de esa persona. No lee ni guarda eventos. Un canal que todavía no está guardado o que ya no existe responde 200 sin hacer nada (ver «Los avisos de Google que no llegaban»).
   - `leer`: pide a Google los eventos del calendario principal (desde ayer hasta 120 días) y los devuelve como iCal. La app usa la misma lógica de la 0.9.0 (`leerIcs`, `deCalendario`, `fusionarGcal`).
-  - `escribir`: recibe lo de LIA de los próximos 14 días y deja el calendario «LIA» igual desde hoy: borra lo que sobra y crea lo que falta, con ids estables, de a 3 y reintentando ante los límites de Google. Si falla, la app espera 1, 2, 4… hasta 15 minutos.
+  - `escribir`: recibe lo de LIA de los próximos 14 días y deja el calendario «LIA» igual desde hoy: borra lo que sobra y crea lo que falta, con ids estables, de a 3 y reintentando ante los límites de Google. Cada evento lleva una alerta emergente de Google: 2 horas antes en evaluaciones y 15 minutos antes en lo demás (desde el 4-nov); los que ya estaban sin esa alerta se actualizan (PUT). Si falla, la app espera 1, 2, 4… hasta 15 minutos.
   - `desconectar`: deja de recibir avisos, revoca el permiso, borra el calendario «LIA» y la cuenta.
   - `pg_cron` (cada hora): renueva los avisos que vencen en menos de dos días (Google los da por 7 días).
 - **Base** (`supabase/migrations/…_google.sql`): `google_cuentas` (calendario «LIA», canal de avisos y referencia al secreto de Vault; solo `service_role`), `google_estados` (los estados del permiso y el permiso pendiente) y `google_senal` (un contador por persona, que la app lee con Realtime; cada uno ve solo el suyo). Al borrar una cuenta (también si se borra el usuario), su secreto sale de Vault.
@@ -54,6 +54,19 @@ Privacidad: el servidor no guarda eventos ni títulos; solo el permiso (en Vault
 4. **Errores.** Permiso vencido o quitado en Google → «Tu conexión con Google venció: vuelve a conectar». Sin permisos completos → lo dice y no guarda nada. Google lento → se reintenta en la siguiente lectura.
 5. **Desconectar.** Revoca el permiso, deja de recibir avisos, borra el calendario «LIA» y pregunta qué hacer con lo traído (como en la 0.9.0).
 6. **Registros.** Nunca tokens, códigos, correos, títulos ni ids de eventos.
+
+## Los avisos de Google que no llegaban (3 y 4-nov, iteración 3)
+
+**Síntoma.** Después de conectar, un cambio en Google Calendar no aparecía en LIA hasta abrirla o volver a la pestaña: Realtime nunca avisaba.
+
+**Causa (comprobada en producción).** Al pedir los avisos (`events.watch`), Google manda enseguida el primer aviso del canal, con `X-Goog-Resource-State: sync`. Llega **antes** de que `google_guardar` (o `google_actualizar_canal`, al renovar) guarde el canal en la base. `google_por_canal` no lo encontraba y `lia-google` respondía 404 (registro del 3-nov, 22:49). Para Google, un 404 es una falla del mensaje (solo reintenta los 5xx) y, en la práctica, no volvió a avisar en ese canal.
+
+**Arreglo.**
+- `lia-google` responde **200** a un aviso de un canal que no encuentra, sea `sync` o no, y no hace nada: no suma señal ni lee eventos. Lo registra como `paso: 'aviso'`, `resultado: 'desconocido'` (con el estado del recurso, sin tokens ni ids). Si el canal existe pero el secreto (`X-Goog-Channel-Token`) no coincide, sigue el 403.
+- La migración `20261104160000_iteracion3_avisos.sql` pone `canal_vence = now()` en los canales que ya existen. La renovación de cada hora (`pg_cron` `lia-google`, que toma lo que vence en menos de dos días con `google_canales_por_vencer`) los vuelve a crear y cierra los viejos. Así, como máximo una hora después de aplicarla, cada cuenta conectada tiene un canal que Google sí avisa.
+- Pruebas (`pruebas/google-funcion.test.mjs`): el `sync` que llega antes de guardar el canal da 200 y el aviso siguiente suma la señal; lo mismo al renovar; un canal desconocido da 200 sin hacer nada.
+
+**Alertas en el calendario «LIA».** Para que el recordatorio llegue aunque LIA esté cerrada, cada evento lleva `reminders: { useDefault: false, overrides: [{ method: 'popup', minutes }] }`: 120 en evaluaciones y 15 en lo demás. Los que ya estaban se actualizan en la siguiente escritura, que la app hace siempre al abrirse.
 
 ## Limitaciones conocidas
 

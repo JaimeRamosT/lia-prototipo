@@ -4,7 +4,8 @@
 // verify_jwt está apagado: llaman Meta (con firma), pg_cron (con el secreto de Vault) y la app (con su sesión).
 // Secretos: WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_APP_SECRET y WHATSAPP_VERIFY_TOKEN; WHATSAPP_PLANTILLA_CODIGO
 // (código de vinculación); opcional WHATSAPP_PLANTILLA (avisos fuera de las 24 h). La IA (solo Pro) usa los mismos
-// secretos que lia-ia: IA_PROVEEDOR, IA_RESPALDO, GROQ_API_KEY y GEMINI_API_KEY.
+// secretos que lia-ia: IA_PROVEEDOR, IA_RESPALDO, GROQ_API_KEY y GEMINI_API_KEY. Los audios (solo Pro, audio.js) se
+// transcriben con Whisper en Groq: usan GROQ_API_KEY aunque IA_PROVEEDOR sea otro.
 import { manejar } from './logica.js';
 
 Deno.serve((req: Request) =>
