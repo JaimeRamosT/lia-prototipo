@@ -9,7 +9,7 @@ Una fila por evento en `eventos_uso`, sin nada que identifique a la persona:
 | Campo | Qué es |
 | --- | --- |
 | `instalacion` | Un identificador al azar que crea la app la primera vez (`lia.instalacion` en el teléfono). «Borrar todo» lo borra. |
-| `evento` | `instalacion` (primera vez que abre), `registro` (terminó o saltó el registro) o `abre` (una vez por día). |
+| `evento` | `instalacion` (primera vez que abre), `registro` (terminó o saltó el registro), `abre` (una vez por día), `estudio` (esa noche anotó estudio) o `madrugada` (esa noche estudió después de medianoche). Desde el 4-nov-2026. |
 | `dia` | La fecha del teléfono. El servidor solo acepta de ayer a mañana, según la hora de Lima. |
 | `plataforma` | `ios`, `android` u `otro`. |
 | `instalada` | Si la abrió como app instalada. |
@@ -18,6 +18,12 @@ Una fila por evento en `eventos_uso`, sin nada que identifique a la persona:
 No se envían horarios, cursos, mensajes, nombre ni correo. La app solo puede agregar filas con `registrar_evento()`; nadie las lee desde la app. Se consultan en el editor SQL de Supabase.
 
 La persona lo puede apagar en Perfil → «Ayudar a mejorar LIA». En `localhost` no se envía nada; para probar, guarda `lia.metricas = 'forzar'` en el navegador.
+
+## Tablero (desde el 4-nov-2026)
+
+`tablero.html` (en Cloudflare: `/tablero`) muestra los totales con `metricas_resumen(p_dias)`: instalaciones, registro completo, regreso al día 1 y al día 3, noches con estudio y con amanecida, y cuántas instalaciones abren LIA cada día. La función solo devuelve totales, nunca filas por persona, y la puede llamar cualquiera con la clave publicable.
+
+Los eventos `estudio` y `madrugada` los manda la app al abrirse, por las noches de ayer y hoy, mirando lo que anotaste: el estudio que empieza entre las 00:00 y las 04:59, o que termina después de medianoche, es una amanecida de la noche anterior. En la app, la pestaña Semana muestra el mismo contador («Sin amanecidas» o «Te amaneciste» u «Ojo con la medianoche») y avisa si algún bloque de la semana termina después de medianoche.
 
 ## Consultas
 

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es-PE">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LIA · Tablero de uso</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#3D3BF3">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<style>
+@font-face{font-family:'Inter';font-style:normal;font-display:swap;font-weight:100 900;src:url(fonts/inter-latin-wght-normal.woff2) format('woff2')}
+:root{--bg:#F6F4EF;--surface:#FFFFFF;--ink:#1C1B29;--mute:#5E5D6E;--line:#E6E2D9;--pri:#3D3BF3;--pri-soft:#ECEBFF;--exam-ink:#B4271B;--ok-ink:#13703F;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#121220;--surface:#1C1B2E;--ink:#EEEDF7;--mute:#A9A8BE;--line:#2D2C44;--pri:#A3A1FF;--pri-soft:#26254A;--exam-ink:#FF8A80;--ok-ink:#6FD39C;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}
+main{max-width:960px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top,0px)) 16px 40px}
+h1{font-size:clamp(26px,5vw,34px);margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:0 0 20px}
+.fila{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+select{min-height:44px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit}
+.tiles{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px}
+.tile b{display:block;font-size:30px;line-height:1.1;color:var(--pri);font-variant-numeric:tabular-nums}
+.tile span{display:block;font-weight:600;margin-top:4px}
+.tile small{display:block;color:var(--mute);font-size:13px;margin-top:2px}
+.tile.alerta b{color:var(--exam-ink)}
+h2{font-size:20px;margin:28px 0 10px}
+.dias{display:grid;gap:6px}
+.dia{display:grid;grid-template-columns:90px 1fr 40px;gap:10px;align-items:center;font-size:14px}
+.barra{height:12px;border-radius:6px;background:var(--pri);min-width:2px}
+.dia em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
+.estado{color:var(--mute)}
+.nota{color:var(--mute);font-size:14px;margin-top:24px}
+a{color:var(--pri)}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tablero de uso</h1>
+  <p class="sub">Datos anónimos de LIA: sin nombres, correos, cursos ni horarios. Ver <a href="./">la app</a>.</p>
+  <div class="fila"><label for="dias">Período</label>
+    <select id="dias"><option value="7">Últimos 7 días</option><option value="14" selected>Últimos 14 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option></select>
+    <span class="estado" id="estado" role="status" aria-live="polite">Cargando…</span></div>
+  <div class="tiles" id="tiles"></div>
+  <h2>Instalaciones que abren LIA cada día</h2>
+  <div class="dias" id="dias-lista"></div>
+  <p class="nota">Registro: terminó o saltó el registro. Día 1 y día 3: volvió a abrir LIA uno o tres días después de instalarla (solo cuentan las instalaciones que ya llegaron a ese día). Amanecida: estudio anotado después de medianoche.</p>
+</main>
+<script src="config.js"></script>
+<script>
+(function(){
+  var cfg=window.LIA_SUPABASE||{},sel=document.getElementById('dias'),estado=document.getElementById('estado'),tiles=document.getElementById('tiles'),lista=document.getElementById('dias-lista');
+  function pct(a,b){return b?Math.round(100*a/b)+' %':'—';}
+  function tile(valor,titulo,detalle,alerta){return '<div class="tile'+(alerta?' alerta':'')+'"><b>'+valor+'</b><span>'+titulo+'</span><small>'+detalle+'</small></div>';}
+  function fecha(d){var p=d.split('-');return p[2]+'/'+p[1];}
+  function cargar(){
+    if(!cfg.url||!cfg.key){estado.textContent='Falta la configuración de Supabase.';return;}
+    estado.textContent='Cargando…';
+    fetch(cfg.url+'/rest/v1/rpc/metricas_resumen',{method:'POST',headers:{'Content-Type':'application/json',apikey:cfg.key,Authorization:'Bearer '+cfg.key},body:JSON.stringify({p_dias:+sel.value})})
+      .then(function(r){if(!r.ok)throw new Error(r.status);return r.json();})
+      .then(function(m){
+        tiles.innerHTML=
+          tile(m.instalaciones,'Instalaciones','nuevas en el período')+
+          tile(pct(m.registros,m.instalaciones),'Terminan el registro',m.registros+' de '+m.instalaciones)+
+          tile(pct(m.volvieron_d1,m.base_d1),'Vuelven al día 1',m.volvieron_d1+' de '+m.base_d1)+
+          tile(pct(m.volvieron_d3,m.base_d3),'Vuelven al día 3',m.volvieron_d3+' de '+m.base_d3)+
+          tile(m.noches_estudio,'Noches con estudio','anotado en LIA')+
+          tile(pct(m.noches_madrugada,m.noches_estudio),'Noches con amanecida',m.noches_madrugada+' de '+m.noches_estudio,m.noches_madrugada>0);
+        var max=Math.max.apply(null,[1].concat(m.abren_por_dia.map(function(x){return x.n;})));
+        lista.innerHTML=m.abren_por_dia.length?m.abren_por_dia.map(function(x){return '<div class="dia"><span>'+fecha(x.dia)+'</span><div class="barra" style="width:'+Math.round(100*x.n/max)+'%" aria-hidden="true"></div><em>'+x.n+'</em></div>';}).join(''):'<p class="estado">Nadie abrió LIA en este período.</p>';
+        estado.textContent='Actualizado hasta el '+fecha(m.hasta)+'.';})
+      .catch(function(){estado.textContent='No pude cargar los datos. Revisa tu conexión y vuelve a intentarlo.';});
+  }
+  sel.addEventListener('change',cargar);cargar();
+})();
+</script>
+</body>
+</html>
