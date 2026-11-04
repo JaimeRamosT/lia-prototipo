@@ -34,7 +34,7 @@ const falla = async p => { try { await p; return null; } catch (e) { return e; }
 const db = new PGlite();
 await db.exec(BASE);
 for (const f of fs.readdirSync(M).sort().filter(f => /cuentas_y_suscripciones|cupo_ia|_canales\.sql|canales_codigo/.test(f))) await db.exec(fs.readFileSync(M + f, 'utf8'));
-const sql = fs.readFileSync(M + '20261104120000_whatsapp_lia.sql', 'utf8');
+const sql = fs.readFileSync(M + '20261104130000_whatsapp_lia.sql', 'utf8');
 await db.exec(sql);
 const otra = await falla(db.exec(sql)); ok('Se puede aplicar dos veces', otra === null, otra && otra.message);
 const A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', NA = '51911111111', NB = '51922222222';
