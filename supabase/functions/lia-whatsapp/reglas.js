@@ -1454,7 +1454,10 @@ const nombreN=s=>norm(String(s||'')).replace(/\s+/g,' ').trim();
 function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},fuera=new Set(excluir||[]),hoy=ymd(now),ok=v=>typeof v==='string'&&HHMM.test(v);
   if(!item||typeof item!=='object')return nada;
   const semanal=item.kind==='commit',esEval=item.kind==='eval',esClase=tipoRutina(semanal?item.type:item.kind==='evento'?item.cat:'')==='clase';
-  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',cuenta=o=>esEval?!deClase(o):true,cuentaEval=!esClase;
+  // Un examen suele ser en su propia clase: una evaluación no cruza con la rutina de clases de su mismo curso (sí con la
+  // de otro curso), ni con una clase de un día (recuperación), que no dice de qué curso es.
+  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',mismoCurso=o=>o.label!==undefined||nombreN(o.name)===nombre;
+  const cuenta=o=>esEval?!(deClase(o)&&mismoCurso(o)):true,cuentaE=e=>!esClase||(item.kind!=='evento'&&nombreN(e.course)!==nombre);
   if(semanal&&!(Array.isArray(item.days)&&item.days.length&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(item.kind==='evento'&&!(fechaIA(item.date)&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(esEval&&!(fechaIA(item.date)&&ok(item.time)&&EVAL_TYPES[item.type]))return nada;
@@ -1475,7 +1478,7 @@ function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},f
       if(!duplicado&&!esEval&&comunes.length&&nombreN(c.name)===nombre&&C.s===N.s&&C.e===N.e){duplicado=deRut(c,comunes);continue;}
       const en=new Set();for(const nd of dias)for(const cd of c.days){const o=desfase(nd,cd);if(o!==null&&pisa(N,C,o))en.add(cd);}
       if(en.size)cruces.push(deRut(c,[...en]));}
-    for(const D of [...evs.filter(x=>x.date>=hoy).map(deEv),...(cuentaEval?evals.filter(e=>e.date>=hoy).map(deEval):[])]){const wd=fromYmd(D.date).getDay();
+    for(const D of [...evs.filter(x=>x.date>=hoy).map(deEv),...evals.filter(e=>e.date>=hoy&&cuentaE(e)).map(deEval)]){const wd=fromYmd(D.date).getDay();
       if(!duplicado&&D.kind==='evento'&&dias.includes(wd)&&nombreN(D.nombre)===nombre&&D.s===N.s&&D.e===N.e){duplicado=D;continue;}
       if(dias.some(nd=>{const o=desfase(nd,wd);return o!==null&&pisa(N,D,o);}))cruces.push(D);}}
   else{const f=item.date,wd=fromYmd(f).getDay(),sig=ymd(addDays(fromYmd(f),1));
@@ -1488,7 +1491,7 @@ function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},f
     for(const {b,o,dia} of ocup){if(fuera.has(b.ref)||vistos.has(b.ref)||!pisa(N,b,o))continue;vistos.add(b.ref);
       const c=state.commitments.find(y=>y.id===b.ref),x=!c&&state.exceptions.find(y=>y.id===b.ref);
       if(c&&cuenta(c))cruces.push(deRut(c,[dia]));else if(x&&cuenta(x))cruces.push(deEv(x));}
-    for(const e of cuentaEval?evals:[]){const k=dayDiff(f,e.date);if(Math.abs(k)>1||vistos.has(e.id))continue;const E=deEval(e);if(pisa(N,E,k*1440)){vistos.add(e.id);cruces.push(E);}}}
+    for(const e of evals.filter(cuentaE)){const k=dayDiff(f,e.date);if(Math.abs(k)>1||vistos.has(e.id))continue;const E=deEval(e);if(pisa(N,E,k*1440)){vistos.add(e.id);cruces.push(E);}}}
   const clave=c=>(c.date?'1'+c.date:'0')+String(c.s+10000);
   return{duplicado,cruces:cruces.filter(c=>!duplicado||c.ref!==duplicado.ref).sort((a,b)=>clave(a).localeCompare(clave(b)))};}
 // Una rutina con varios horarios: se revisa cada uno y un mismo cruce se nombra una vez, con todos sus días.

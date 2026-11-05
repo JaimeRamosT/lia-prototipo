@@ -115,8 +115,9 @@ function fabHTML() {
 // En un formulario, el aviso reemplaza «Guardar» por «Guardar igual» y «Volver»; lo escrito se queda. El texto avisado va
 // en un campo oculto: si después cambia lo escrito y el aviso ya es otro, se avisa de nuevo en vez de guardar.
 function choqueFormHTML(texto, form) {
-  return `<div class="warn choque" role="alert"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="grow small"><b id="choque-t" tabindex="-1" data-foco>${esc(texto)}</b><br>¿Lo guardo igual?</div></div>
-  <input type="hidden" name="igual" value="${esc(texto)}"><button class="btn pri" type="submit">Guardar igual</button><button class="btn sec" type="button" data-a="choque-volver" data-v="${form}">Volver</button>`;
+  // Lo seguro (Volver) es la acción principal; el foco en el aviso basta para que el lector lo lea una vez.
+  return `<div class="warn choque"><span class="ico" style="color:var(--exam-ink)">${I.alert}</span><div class="grow small"><b id="choque-t" tabindex="-1" data-foco>${esc(texto)}</b><br>¿Lo guardo igual?</div></div>
+  <input type="hidden" name="igual" value="${esc(texto)}"><button class="btn pri" type="button" data-a="choque-volver" data-v="${form}">Volver</button><button class="btn sec" type="submit">Guardar igual</button>`;
 }
 const pedirConfirmacion = (texto, fd) => !!texto && texto !== String(fd.get('igual') || '');
 function mostrarChoque() { const w = document.getElementById('choque-t'); if (w) { w.scrollIntoView({ block: 'center' }); w.focus({ preventScroll: true }); } }
@@ -144,14 +145,14 @@ function textoChoqueLista(lista) {
 // En el chat, la propuesta con aviso lleva «Guardar igual» y «Volver» en vez de «Confirmar» y «Corregir».
 function botonesPropuesta(pe, normales) {
   if (!pe.choque) return normales;
-  return `<p class="small choque-chat" style="margin:0"><b>${esc(pe.choque)}</b> ¿Lo guardo igual?</p><div class="row-h"><button class="pill solid" data-a="confirm">Guardar igual</button><button class="pill ghost" data-a="volver-chat">Volver</button></div>`;
+  return `<p class="small choque-chat" style="margin:0"><b>${esc(pe.choque)}</b> ¿Lo guardo igual?</p><div class="row-h"><button class="pill solid" data-a="volver-chat">Volver</button><button class="pill ghost" data-a="confirm">Guardar igual</button></div>`;
 }
 // Al escribir en Evaluaciones o en el registro, lo entendido se guarda al toque; con un aviso, primero esta hoja.
 function sheetChoqueDictar() {
   const c = ui.choqueDictar;
   return `<div class="grab"></div><span class="eyebrow">Antes de guardar</span><h2>¿Lo guardo igual?</h2><p style="margin:0">${esc(c.texto)}</p>
    <div class="stack small muted">${c.items.map(i => `<span>${esc(resumenItem(i))}</span>`).join('')}</div>
-   <button class="btn pri" data-a="dictar-igual">Guardar igual</button><button class="btn sec" data-a="dictar-volver">Volver</button>`;
+   <button class="btn pri" data-a="dictar-volver">Volver</button><button class="btn sec" data-a="dictar-igual">Guardar igual</button>`;
 }
 // Por WhatsApp ya dijo «sí»: se guarda igual y el aviso dice con qué se cruza («Guardé X; se cruza con Y»).
 function crucesWhatsapp(it) {

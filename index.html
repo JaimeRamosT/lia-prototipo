@@ -1838,7 +1838,10 @@ const nombreN=s=>norm(String(s||'')).replace(/\s+/g,' ').trim();
 function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},fuera=new Set(excluir||[]),hoy=ymd(now),ok=v=>typeof v==='string'&&HHMM.test(v);
   if(!item||typeof item!=='object')return nada;
   const semanal=item.kind==='commit',esEval=item.kind==='eval',esClase=tipoRutina(semanal?item.type:item.kind==='evento'?item.cat:'')==='clase';
-  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',cuenta=o=>esEval?!deClase(o):true,cuentaEval=!esClase;
+  // Un examen suele ser en su propia clase: una evaluación no cruza con la rutina de clases de su mismo curso (sí con la
+  // de otro curso), ni con una clase de un día (recuperación), que no dice de qué curso es.
+  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',mismoCurso=o=>o.label!==undefined||nombreN(o.name)===nombre;
+  const cuenta=o=>esEval?!(deClase(o)&&mismoCurso(o)):true,cuentaE=e=>!esClase||(item.kind!=='evento'&&nombreN(e.course)!==nombre);
   if(semanal&&!(Array.isArray(item.days)&&item.days.length&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(item.kind==='evento'&&!(fechaIA(item.date)&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(esEval&&!(fechaIA(item.date)&&ok(item.time)&&EVAL_TYPES[item.type]))return nada;
@@ -1859,7 +1862,7 @@ function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},f
       if(!duplicado&&!esEval&&comunes.length&&nombreN(c.name)===nombre&&C.s===N.s&&C.e===N.e){duplicado=deRut(c,comunes);continue;}
       const en=new Set();for(const nd of dias)for(const cd of c.days){const o=desfase(nd,cd);if(o!==null&&pisa(N,C,o))en.add(cd);}
       if(en.size)cruces.push(deRut(c,[...en]));}
-    for(const D of [...evs.filter(x=>x.date>=hoy).map(deEv),...(cuentaEval?evals.filter(e=>e.date>=hoy).map(deEval):[])]){const wd=fromYmd(D.date).getDay();
+    for(const D of [...evs.filter(x=>x.date>=hoy).map(deEv),...evals.filter(e=>e.date>=hoy&&cuentaE(e)).map(deEval)]){const wd=fromYmd(D.date).getDay();
       if(!duplicado&&D.kind==='evento'&&dias.includes(wd)&&nombreN(D.nombre)===nombre&&D.s===N.s&&D.e===N.e){duplicado=D;continue;}
       if(dias.some(nd=>{const o=desfase(nd,wd);return o!==null&&pisa(N,D,o);}))cruces.push(D);}}
   else{const f=item.date,wd=fromYmd(f).getDay(),sig=ymd(addDays(fromYmd(f),1));
@@ -1872,7 +1875,7 @@ function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},f
     for(const {b,o,dia} of ocup){if(fuera.has(b.ref)||vistos.has(b.ref)||!pisa(N,b,o))continue;vistos.add(b.ref);
       const c=state.commitments.find(y=>y.id===b.ref),x=!c&&state.exceptions.find(y=>y.id===b.ref);
       if(c&&cuenta(c))cruces.push(deRut(c,[dia]));else if(x&&cuenta(x))cruces.push(deEv(x));}
-    for(const e of cuentaEval?evals:[]){const k=dayDiff(f,e.date);if(Math.abs(k)>1||vistos.has(e.id))continue;const E=deEval(e);if(pisa(N,E,k*1440)){vistos.add(e.id);cruces.push(E);}}}
+    for(const e of evals.filter(cuentaE)){const k=dayDiff(f,e.date);if(Math.abs(k)>1||vistos.has(e.id))continue;const E=deEval(e);if(pisa(N,E,k*1440)){vistos.add(e.id);cruces.push(E);}}}
   const clave=c=>(c.date?'1'+c.date:'0')+String(c.s+10000);
   return{duplicado,cruces:cruces.filter(c=>!duplicado||c.ref!==duplicado.ref).sort((a,b)=>clave(a).localeCompare(clave(b)))};}
 // Una rutina con varios horarios: se revisa cada uno y un mismo cruce se nombra una vez, con todos sus días.
@@ -2422,7 +2425,7 @@ function sheetRutina(){const r=ui.rutina;
   <label class="f">Nombre (opcional)<input id="c-name" name="nombre" maxlength="40" value="${esc(r.name)}" placeholder="${r.type?esc(COMMIT_TYPES[r.type]):'Clases en la U, Trabajo, Gimnasio…'}"></label>
   ${r.tramos.map((t,i)=>tramoHTML(r,i)).join('')}
   <button type="button" class="dashed" data-a="tramo-mas">${I.plus.replace('<svg','<svg class="ico" aria-hidden="true"')}<span class="grow">Agregar otro horario</span></button>
-  ${r.choque?choqueFormHTML(r.choque,'rutina'):`<button class="btn pri" type="submit">Guardar</button>${r.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${r.id}">Eliminar rutina</button>`:''}`}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+  ${r.choque?choqueFormHTML(r.choque,'rutina'):`<button class="btn pri" type="submit">Guardar</button>${r.id?`<button class="btn danger" type="button" data-a="del-commit" data-id="${r.id}">Eliminar rutina</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button>`}</form>`;}
 // Lee el formulario abierto (lo escrito manda sobre ui.rutina).
 function leerRutina(){const r=ui.rutina,f=document.querySelector('form[data-form="rutina"]');if(!r||!f)return r;const fd=new FormData(f);
   r.type=String(fd.get('ru-tipo')||r.type||'');r.name=String(fd.get('nombre')||'');
@@ -2475,17 +2478,17 @@ function sheetEvento(){const v=ui.evento,noche=v.start&&v.end&&toMin(v.end)<toMi
   <div class="two"><label class="f">Desde<input type="time" id="ev-start" name="start" required value="${v.start}"></label><label class="f">Hasta<input type="time" id="ev-end" name="end" required value="${v.end}" aria-describedby="ev-noche"></label></div>
   <p class="small muted" id="ev-noche" style="margin:-6px 0 0"${noche?'':' hidden'}>Termina al día siguiente.</p>
   ${v.err?`<p class="ferr" role="alert">${esc(v.err)}</p>`:''}
-  ${v.choque?choqueFormHTML(v.choque,'evento'):`<button class="btn pri" type="submit">Guardar</button>${v.id?`<button class="btn danger" type="button" data-a="del-ex" data-id="${v.id}">Eliminar</button>`:''}`}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+  ${v.choque?choqueFormHTML(v.choque,'evento'):`<button class="btn pri" type="submit">Guardar</button>${v.id?`<button class="btn danger" type="button" data-a="del-ex" data-id="${v.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button>`}</form>`;}
 
 // ---------- Agregar: un solo botón con las tres opciones ----------
 // Desde un hueco libre de «Tu día», la fecha y las horas vienen llenas (ui.agregarPre).
-function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaCorta(p.date)}${p.start?`, de ${p.start} a ${p.end}`:''}`:'';
+function sheetAgregar(){const p=ui.agregarPre,cuando=p&&p.date?` el ${fechaLarga(p.date)}${p.start?`, de ${p.start} a ${p.end}`:''}`:'';
   const op=(a,ic,t,d)=>`<button class="item" data-a="${a}" style="text-align:left"><span class="sw" style="background:var(--pri-soft);color:var(--pri)">${ic.replace('<svg','<svg width="22" height="22" aria-hidden="true"')}</span><span class="grow"><b>${t}</b><br><span class="small muted">${d}</span></span></button>`;
   return `<div class="grab"></div><h2>¿Qué quieres agregar${esc(cuando)}?</h2><div class="stack">
    ${op('add-commit',I.repeat,'Rutina semanal','Clases, trabajo, gimnasio: lo que se repite cada semana.')}
    ${op('add-evento',I.cal,'Evento de un día','Un cumpleaños, una cita, un turno extra.')}
    ${op('add-eval',I.list,'Evaluación','Un examen, una práctica o una entrega.')}
-   ${op('consolidado',I.doc,'Importar consolidado','Sube el PDF de tu matrícula y agrego tus clases.')}
+   ${op('consolidado',I.doc,'Importar consolidado','Sube el PDF de tu matrícula y Lía arma tus clases.')}
    ${state.cuenta&&cuentasActivas()?op(googleActivo()?'google-leer':'gcal-abrir',I.cal,'Desde Google Calendar','Traigo tus clases, evaluaciones y eventos.'):''}</div>
    <button class="btn sec" data-a="close">Cancelar</button>`;}
 // ---------- Consolidado de matrícula (PDF) ----------
@@ -2542,7 +2545,7 @@ function sheetEval(id,pre,choque){const base={id:'',type:'parcial',course:'',dat
   <label class="f">Curso<input id="e-course" name="course" required value="${esc(e.course)}" placeholder="Cálculo II" autocomplete="off"${cursosClase(state).length?' aria-describedby="e-cursos-ayuda"':''}></label>
   ${cursosChipsHTML(e.course)}
   <div class="two"><label class="f">Fecha<input type="date" id="e-date" name="date" required value="${e.date}"${e.id?'':` min="${ymd(now())}"`}></label><label class="f">Hora<input type="time" id="e-time" name="time" required value="${e.time}"></label></div>
-  ${choque?choqueFormHTML(choque,'eval'):`<button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}`}<button class="btn sec" type="button" data-a="close">Cancelar</button></form>`;}
+  ${choque?choqueFormHTML(choque,'eval'):`<button class="btn pri" type="submit">Guardar</button>${e.id?`<button class="btn danger" type="button" data-a="del-eval" data-id="${e.id}">Eliminar</button>`:''}<button class="btn sec" type="button" data-a="close">Cancelar</button>`}</form>`;}
 function sheetBlock(d){const e=evById(d.ev),n=now(),t=ymd(n),f=finBloque({date:d.d,e:+d.e}),paso=f.date<t||(f.date===t&&f.min<=n.getHours()*60+n.getMinutes());
   const head=`<div class="grab"></div><span class="eyebrow">${paso?'Bloque que ya pasó':'Bloque de estudio'}</span><h2>${esc(e?e.course:'')} · ${fmt(+d.s)} – ${fmt(+d.e)}</h2><p class="muted" style="margin:0">${cap(fechaLarga(d.d))} · para tu ${e?EVAL_TYPES[e.type].label.toLowerCase():''} del ${e?fechaCorta(e.date):''}</p>`;
   if(paso)return `${head}<button class="btn pri" data-a="done-block" data-ev="${d.ev}" data-d="${d.d}" data-s="${d.s}" data-e="${d.e}">Sí, lo estudié</button>
@@ -2776,7 +2779,7 @@ function canalesCard(){if(!cuentasActivas())return '';const tit='<h2 class="eyeb
      <button class="btn sec sm" data-a="gcal-abrir">Traer mi Google Calendar</button></div>`;
   // Lo que guarda el servidor para que Lía entienda por WhatsApp (docs/whatsapp-lia.md).
   // Al vincular (o al activar, si ya estaba vinculado), la persona acepta este aviso (settings.waLia).
-  const waPrivTxt='Para entenderte, LIA guarda en su servidor tus evaluaciones y rutinas (sin lo de Google Calendar). Tus mensajes no se guardan: solo lo que Lía entendió, hasta que lo veas en LIA. En LIA Pro, si Lía no te entiende sola, tu mensaje pasa por la IA (Groq o Gemini), como en el chat, y tus audios los transcribe Groq; ni el audio ni el texto se guardan. WhatsApp es de Meta, que también procesa tus mensajes. Al desvincular, se borra todo.';
+  const waPrivTxt='Para entenderte, LIA guarda tus evaluaciones y rutinas (sin lo de Google Calendar). Tus mensajes y audios no se guardan: solo lo que Lía entendió, hasta que lo veas en LIA. En LIA Pro, si Lía no te entiende sola, tu mensaje pasa por una IA (Groq o, si falla, Gemini) y tus audios los transcribe Groq. WhatsApp es de Meta, que también procesa tus mensajes. Al desvincular, se borra todo.';
   // Los recordatorios llegan por WhatsApp de todo lo que hay en la agenda (iteración 3): una línea en la tarjeta.
   const waAvisa='Tus recordatorios llegan por aquí: 15 minutos antes de estudiar, de tus clases y de tus eventos, y 2 horas antes de cada evaluación.';
   const waPriv=`<p class="small muted" style="margin:0">${waPrivTxt}</p>`;
@@ -2823,7 +2826,7 @@ async function cargarGoogle(){if(!state.cuenta||ui.googleCargando)return;ui.goog
 const googleActivo=()=>!!(state.cuenta&&ui.google&&ui.google.conectado&&ui.google.estado==='activa');
 // aria-disabled (no disabled): el botón ocupado no pierde el foco del teclado.
 // Los recordatorios llegan también con la alerta de Google (iteración 3): una línea en cada estado de la tarjeta.
-const ALERTA_GOOGLE='Todo lo del calendario «LIA» trae la alerta de Google: tu estudio, tus clases y tus eventos, 15 minutos antes; tus evaluaciones, 2 horas antes.';
+const ALERTA_GOOGLE='Los eventos del calendario «LIA» llevan alerta de Google: 15 minutos antes (estudio, clases y eventos) y 2 horas antes (evaluaciones).';
 function googleBloque(gg){const oc=ui.googleOcupado||ui.googleLeyendo?' aria-disabled="true"':'',head='<h3 style="font-size:inherit;margin:0">Google Calendar</h3>',alerta=`<p class="small muted" style="margin:0">${ALERTA_GOOGLE}</p>`;
   if(!gg.conectado)return `<div class="stack" style="gap:8px">${head}<div class="small muted">Conecta tu cuenta de Google y LIA queda unida a tu Google Calendar: lo que anotas allá aparece aquí en segundos, y tu estudio, tus evaluaciones, tus eventos y tus rutinas aparecen allá, en un calendario «LIA».</div>${alerta}
      ${ui.googleMsg?`<p class="ferr" id="google-msg" style="margin:0">${esc(ui.googleMsg)}</p>`:''}

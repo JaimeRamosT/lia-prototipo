@@ -9,6 +9,7 @@
 .cruce-cols{display:grid;gap:6px}
 .cruce-col{display:flex;flex-direction:column;gap:6px;min-width:0}
 .cruce-col .blk{width:100%;text-align:left;min-height:44px}
+.cruce-col .blk b{font-size:15px}
 .blk.pasado{background:var(--surface);color:var(--mute);border:1px dashed var(--line)}
 .blk.pasado small{opacity:1}
 /* «+N»: abre la lista de lo que pasa a la vez */
@@ -33,13 +34,13 @@ details.antes .agenda{padding:10px}
 .g-cab.hoy span{color:var(--pri);font-weight:600}
 .g-cab.hoy b{background:var(--pri-fill);color:var(--pri-ink)}
 .g-horas{position:relative}
-.g-horas span{position:absolute;right:8px;transform:translateY(-50%);font-size:11px;color:var(--mute)}
+.g-horas span{position:absolute;right:8px;transform:translateY(-50%);font-size:12px;color:var(--mute)}
 .g-dia{min-width:0;border-left:1px solid var(--line)}
 .g-cuerpo{position:relative;background-image:repeating-linear-gradient(to bottom,var(--line) 0 1px,transparent 1px var(--hora))}
 .g-blk{position:absolute;padding:4px 6px;border-radius:8px;gap:1px;overflow:hidden;text-align:left;justify-content:flex-start;box-shadow:0 0 0 1px var(--bg)}
 .g-blk b{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex-shrink:0}
 .g-blk b .ki{width:13px;height:13px;margin-right:4px;vertical-align:-2px}
-.g-blk small{font-size:11px;line-height:1.2;overflow:hidden;min-height:0}
+.g-blk small{font-size:12px;line-height:1.2;overflow:hidden;min-height:0;white-space:nowrap;text-overflow:ellipsis}
 .g-blk.ev-clase{box-shadow:inset 3px 0 0 var(--exam),0 0 0 1px var(--bg)}
 .g-blk.k-mas{align-items:center;justify-content:flex-start;padding-top:6px}
 .g-blk:focus-visible{z-index:4}
@@ -52,6 +53,7 @@ details.antes .agenda{padding:10px}
 .choque-chat b{color:var(--exam-ink)}
 
 /* Cursos de una evaluación: el elegido, relleno y con ✓ (no solo por el color) */
+.cursos .pill{min-height:44px}
 .cursos .pill[aria-pressed="true"]{background:var(--pri-fill);color:var(--pri-ink)}
 .cursos .pill[aria-pressed="true"]::after{content:"✓";font-weight:700}
 
