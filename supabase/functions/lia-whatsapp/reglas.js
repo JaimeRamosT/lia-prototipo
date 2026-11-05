@@ -1169,14 +1169,20 @@ function validarIA(r,state,now){
     default:return{intent:'help'};}}
 // ---------- Lía en WhatsApp (docs/whatsapp-lia.md) ----------
 // Lo que lia-whatsapp necesita para entender igual que la app: ajustes del plan, evaluaciones desde hace 14 días (con
-// lo estudiado y lo que quedó sin hueco) y rutinas. Nunca el nombre, el correo ni lo que vino de Google Calendar.
-function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),unmet=(p&&p.unmet)||{};
+// lo estudiado y lo que quedó sin hueco), rutinas y eventos de un día desde ayer, con su id para quitarlos (iteración 3;
+// lo liberado de una rutina o de un evento va con su ref). Nunca el nombre, el correo ni lo que vino de Google Calendar.
+function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),ayer=ymd(addDays(now,-1)),unmet=(p&&p.unmet)||{};
+  const commitments=state.commitments.filter(c=>!c.gcal).slice(0,40)
+    .map(c=>({id:c.id,name:c.name,type:c.type,days:c.days,start:c.start,end:c.end,...(c.desde?{desde:c.desde}:{}),...(c.hasta?{hasta:c.hasta}:{})}));
+  const xs=state.exceptions.filter(x=>!x.gcal&&x.date>=ayer).sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)),eventos=xs.filter(x=>!x.libre).slice(0,60);
+  const refs=new Set([...commitments,...eventos].map(o=>o.id)),libres=xs.filter(x=>x.libre&&refs.has(x.ref));
+  const exceptions=[...eventos,...libres].sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)).slice(0,60)
+    .map(x=>({id:x.id,date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{}),...(x.libre?{libre:true,ref:x.ref}:{})}));
   return{proximas:state.evals.filter(e=>e.date>=ymd(now)).length,   // como upcomingEvals(): también las de Google (para el límite de Gratis)
     settings:{wake:S.wake,sleep:S.sleep,maxDay:S.maxDay,block:S.block,minBlock:S.minBlock,...(S.cicloInicio?{cicloInicio:S.cicloInicio}:{})},
     evals:state.evals.filter(e=>!e.gcal&&e.date>=desde).sort((x,y)=>(x.date+x.time).localeCompare(y.date+y.time)).slice(0,40)
       .map(e=>({id:e.id,type:e.type,course:e.course,date:e.date,time:e.time,hours:e.hours,hecho:doneFor(state,e.id),sinHueco:unmet[e.id]||0})),
-    commitments:state.commitments.filter(c=>!c.gcal).slice(0,40)
-      .map(c=>({id:c.id,name:c.name,type:c.type,days:c.days,start:c.start,end:c.end,...(c.desde?{desde:c.desde}:{}),...(c.hasta?{hasta:c.hasta}:{})}))};}
+    commitments,exceptions};}
 // Antes de guardar lo que la persona confirmó por WhatsApp, se revisa con el estado de ahora: pudo cambiar desde que
 // Lía lo propuso. Devuelve {ok:true} o {ok:false,motivo}. room: cuántas evaluaciones próximas caben (Gratis).
 function revisarPropuesta(state,it,now,room){const t=ymd(now),HH=/^([01]\d|2[0-3]):[0-5]\d$/,no=motivo=>({ok:false,motivo}),ev=id=>state.evals.find(e=>e.id===id);

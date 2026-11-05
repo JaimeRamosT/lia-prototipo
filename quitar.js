@@ -56,3 +56,6 @@ function textoMantener(r) {
   const x = eventoDe(r), c = rutinasDe(r)[0];
   return x ? `Ok, «${x.label}» sigue en tu horario.` : c ? `Ok, la rutina «${c.name}» sigue en tu horario.` : 'Ok, no quité nada.';
 }
+
+// Por WhatsApp: lo que la persona confirmó, ya revisado con revisarPropuesta (aplicarDeWhatsapp).
+function quitarDeWhatsapp(it) { const q = sinLoQuitado(state, it); state.commitments = q.commitments; state.exceptions = q.exceptions; }

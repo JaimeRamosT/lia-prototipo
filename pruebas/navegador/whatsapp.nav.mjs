@@ -101,6 +101,42 @@ test('Android: «Guardé X; se cruza con Y» cuando lo confirmado por WhatsApp c
   await ctx.close();
 });
 
+// Iteración 3: quitar un evento o una rutina por WhatsApp. Al abrir LIA se quita con el mismo Deshacer; si ya no está,
+// el aviso lo explica. El contexto que se publica lleva los eventos de un día (con su id) para poder quitarlos.
+test('Android: quita lo que se confirmó por WhatsApp (evento y rutina) con un solo Deshacer; lo que ya no está se explica', async () => {
+  const { ctx, pg, errores, sb } = await preparar('Android', []);
+  await pg.evaluate(f => { state.exceptions.push({ id: 'x1', date: f, start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' }); state.settings.waLia = true; save(); }, fecha(3));
+  await pg.evaluate(() => cargarCanales());
+  // Lo que Lía necesita por WhatsApp para quitar un evento: su id, su nombre, su día y sus horas.
+  await pg.evaluate(() => publicarCanales(true));
+  const ctx0 = sb.contextos.at(-1);
+  assert.deepEqual(ctx0.exceptions, [{ id: 'x1', date: fecha(3), start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' }]);
+  let s = await guardado(pg);
+  const clases = s.commitments.find(c => /clase/i.test(c.name));
+  assert.ok(clases, 'el registro tiene clases');
+  await traer(pg, sb, [fila('q1', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' }),
+    fila('q2', { intent: 'quitaRutina', ids: [clases.id], name: clases.name })]);
+  await pg.getByText('Guardé 2 cambios que me pediste por WhatsApp.').waitFor();
+  s = await guardado(pg);
+  assert.ok(!s.exceptions.some(x => x.id === 'x1') && !s.commitments.some(c => c.id === clases.id), 'se quitaron los dos');
+  assert.deepEqual(sb.quitadas, ['q1', 'q2']);
+  await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).click();
+  await pg.getByText('Listo, lo dejé como estaba.').waitFor();
+  s = await guardado(pg);
+  assert.ok(s.exceptions.some(x => x.id === 'x1') && s.commitments.some(c => c.id === clases.id), 'Deshacer devuelve los dos');
+  // Uno solo: «Guardé por WhatsApp: quitar…».
+  await traer(pg, sb, [fila('q3', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' })]);
+  await pg.getByText(/^Guardé por WhatsApp: quitar «Reunión» del .+ \(13:00–14:00\)\.$/).waitFor();
+  // Si ya no está (se quitó en la app o en otro dispositivo), lo explica y no se ofrece Deshacer.
+  await traer(pg, sb, [fila('q4', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' }),
+    fila('q5', { intent: 'quitaRutina', ids: ['no-existe'], name: 'Gimnasio' })]);
+  await pg.getByText('No quité «Reunión»: ya no estaba en LIA. No quité la rutina «Gimnasio»: ya no estaba en LIA.').waitFor();
+  assert.equal(await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).count(), 0);
+  assert.ok((await guardado(pg)).commitments.some(c => c.id === clases.id), 'lo demás sigue igual');
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
+
 test('si no puede revisar los canales al abrir, no da por desvinculado a nadie y deja reintentar', async () => {
   const { ctx, pg, errores, sb } = await preparar('iPhone', []);
   sb.falla = true;
