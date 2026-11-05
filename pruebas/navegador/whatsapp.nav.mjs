@@ -50,7 +50,7 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     await new Promise(r => setTimeout(r, 3500));
     assert.equal(sb.contextos.length, 0, 'sin «Activar», nada de evaluaciones ni rutinas en el servidor');
     await pestana(pg, 'Perfil');
-    await pg.getByText(/Tus mensajes no se guardan/).first().waitFor();
+    await pg.getByText(/Tus mensajes y audios no se guardan/).first().waitFor();
     await pg.getByRole('button', { name: 'Activar Lía en WhatsApp' }).click();
     await pg.getByText('Listo: ya puedes pedirle a Lía por WhatsApp que anote algo.').waitFor();
     const ctx0 = sb.contextos.at(-1);

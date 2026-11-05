@@ -89,12 +89,12 @@ for (const disp of Object.keys(DISPOSITIVOS)) {
     const llenar = async (ini, fin) => { await pg.fill('#ev-label', 'Cita médica'); await pg.fill('#ev-date', LUNES); await pg.fill('#ev-start', ini); await pg.fill('#ev-end', fin); };
     await llenar('10:00', '11:00');
     await hoja.getByRole('button', { name: 'Guardar', exact: true }).click();
-    await hoja.getByRole('alert').filter({ hasText: 'Se cruza con «Trabajo» (lunes, 9:00–18:00).' }).waitFor();
+    await hoja.locator('.warn.choque').filter({ hasText: 'Se cruza con «Trabajo» (lunes, 9:00–18:00).' }).waitFor();
     assert.equal((await guardado(pg)).exceptions.length, 0, 'todavía no se guarda');
     // «Volver»: el formulario sigue con lo escrito.
     await hoja.getByRole('button', { name: 'Volver' }).click();
     assert.equal(await pg.inputValue('#ev-label'), 'Cita médica');
-    assert.equal(await hoja.getByRole('alert').count(), 0);
+    assert.equal(await hoja.locator('.warn.choque').count(), 0);
     await hoja.getByRole('button', { name: 'Guardar', exact: true }).click();
     await hoja.getByRole('button', { name: 'Guardar igual' }).click();
     await pg.getByRole('dialog').waitFor({ state: 'detached' });
@@ -104,7 +104,7 @@ for (const disp of Object.keys(DISPOSITIVOS)) {
     await pg.getByRole('dialog').getByRole('button', { name: /^Evento de un día/ }).click();
     await llenar('10:00', '11:00');
     await pg.getByRole('dialog').getByRole('button', { name: 'Guardar', exact: true }).click();
-    await pg.getByRole('alert').filter({ hasText: 'Ya tienes «Cita médica» el lunes 9 de noviembre de 10:00 a 11:00.' }).waitFor();
+    await pg.locator('.warn.choque').filter({ hasText: 'Ya tienes «Cita médica» el lunes 9 de noviembre de 10:00 a 11:00.' }).waitFor();
     assert.equal(await anchoDeMas(pg), false, 'el aviso no se sale de la pantalla');
     await pg.getByRole('button', { name: 'Volver' }).click();
     await pg.fill('#ev-start', '19:00'); await pg.fill('#ev-end', '20:00');
@@ -116,7 +116,7 @@ for (const disp of Object.keys(DISPOSITIVOS)) {
     await pg.getByRole('dialog').getByRole('button', { name: /^Evaluación/ }).click();
     await pg.fill('#e-course', 'cálculo'); await pg.fill('#e-date', '2026-11-13'); await pg.fill('#e-time', '19:00');
     await pg.getByRole('dialog').getByRole('button', { name: 'Guardar', exact: true }).click();
-    await pg.getByRole('alert').filter({ hasText: 'Ya tienes «Examen de Cálculo» el viernes 13 de noviembre a las 19:00.' }).waitFor();
+    await pg.locator('.warn.choque').filter({ hasText: 'Ya tienes «Examen de Cálculo» el viernes 13 de noviembre a las 19:00.' }).waitFor();
     await pg.getByRole('button', { name: 'Volver' }).click();
     assert.equal(await pg.inputValue('#e-course'), 'cálculo', 'lo escrito se queda');
     assert.equal((await guardado(pg)).evals.length, 1);
