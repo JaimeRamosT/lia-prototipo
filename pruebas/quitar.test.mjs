@@ -208,6 +208,35 @@ test('textoQuitar() y sinLoQuitado(): lo que la app muestra y guarda al confirma
   assert.equal(JSON.stringify(s), antes, 'no cambia el estado');
 });
 
+test('fraseQuitar(): lo que dice Lía en el chat antes de quitar, con el día y la hora como se dicen', () => {
+  const s = base({ eventos: [...EVENTOS, { id: 'x3', date: '2026-11-02', start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' },
+    { id: 'x4', date: '2026-11-20', start: '08:30', end: '09:00', label: 'Trámite', cat: 'casa' },
+    { id: 'x5', date: '2026-10-26', start: '00:30', end: '01:00', label: 'Llamada', cat: 'otro' }] });
+  const antes = JSON.stringify(s), f = r => L.fraseQuitar(s, r, ahora());
+  assert.equal(f({ intent: 'quitaEvento', exId: 'x3', date: '2026-11-02' }), 'Quito «Reunión» del lunes 2 a la 1:00 p. m.');
+  assert.equal(f({ intent: 'quitaEvento', exId: 'x1' }), 'Quito «Reunión de grupo» del jueves 29 a las 10:00 a. m.');
+  assert.equal(f({ intent: 'quitaEvento', exId: 'x2' }), 'Quito «Cita con el dentista» de mañana a las 8:00 p. m.');
+  assert.equal(f({ intent: 'quitaEvento', exId: 'x5' }), 'Quito «Llamada» de hoy a las 12:30 a. m.');
+  // Más allá de dos semanas, con el mes.
+  assert.equal(f({ intent: 'quitaEvento', exId: 'x4' }), 'Quito «Trámite» del viernes 20 de noviembre a las 8:30 a. m.');
+  assert.equal(f({ intent: 'quitaRutina', ids: ['c3'], name: 'Almuerzo' }), 'Quito la rutina «Almuerzo» completa.');
+  // Lo que ya no está: nada que decir (la app avisa aparte).
+  assert.equal(f({ intent: 'quitaEvento', exId: 'nada' }), '');
+  assert.equal(f({ intent: 'quitaRutina', ids: ['c9'], name: 'Gimnasio' }), '');
+  assert.equal(f({ intent: 'quitaEval', evalId: 'e1' }), '');
+  assert.equal(JSON.stringify(s), antes, 'no cambia el estado');
+});
+
+test('noQuitado(): por WhatsApp, lo que ya no se pudo quitar se explica', () => {
+  const s = base();
+  assert.equal(L.noQuitado(s, { intent: 'quitaEvento', exId: 'x9', label: 'Reunión' }), 'No quité «Reunión»: ya no estaba en LIA.');
+  assert.equal(L.noQuitado(s, { intent: 'quitaEvento', exId: 'x9' }), 'No quité ese evento: ya no estaba en LIA.');
+  assert.equal(L.noQuitado(s, { intent: 'quitaRutina', ids: ['c9'], name: 'Gimnasio' }), 'No quité la rutina «Gimnasio»: ya no estaba en LIA.');
+  // Si queda una parte (se editó en la app), no se quita a ciegas.
+  assert.equal(L.noQuitado(s, { intent: 'quitaRutina', ids: ['c3', 'c9'], name: 'Almuerzo' }),
+    'No quité la rutina «Almuerzo»: cambió desde que me lo pediste. Si quieres, quítala en Perfil, en «Tus rutinas».');
+});
+
 test('revisarPropuesta(): WhatsApp revisa lo que se va a quitar con el estado de ahora', () => {
   const s = base();
   assert.deepEqual(L.revisarPropuesta(s, { intent: 'quitaEvento', exId: 'x1' }, ahora(), 0), { ok: true });

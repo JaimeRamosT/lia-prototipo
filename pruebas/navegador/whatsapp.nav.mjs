@@ -101,6 +101,42 @@ test('Android: «Guardé X; se cruza con Y» cuando lo confirmado por WhatsApp c
   await ctx.close();
 });
 
+// Iteración 3: quitar un evento o una rutina por WhatsApp. Al abrir LIA se quita con el mismo Deshacer; si ya no está,
+// el aviso lo explica. El contexto que se publica lleva los eventos de un día (con su id) para poder quitarlos.
+test('Android: quita lo que se confirmó por WhatsApp (evento y rutina) con un solo Deshacer; lo que ya no está se explica', async () => {
+  const { ctx, pg, errores, sb } = await preparar('Android', []);
+  await pg.evaluate(f => { state.exceptions.push({ id: 'x1', date: f, start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' }); state.settings.waLia = 2; save(); }, fecha(3));
+  await pg.evaluate(() => cargarCanales());
+  // Lo que Lía necesita por WhatsApp para quitar un evento: su id, su nombre, su día y sus horas.
+  await pg.evaluate(() => publicarCanales(true));
+  const ctx0 = sb.contextos.at(-1);
+  assert.deepEqual(ctx0.exceptions, [{ id: 'x1', date: fecha(3), start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' }]);
+  let s = await guardado(pg);
+  const clases = s.commitments.find(c => /clase/i.test(c.name));
+  assert.ok(clases, 'el registro tiene clases');
+  await traer(pg, sb, [fila('q1', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' }),
+    fila('q2', { intent: 'quitaRutina', ids: [clases.id], name: clases.name })]);
+  await pg.getByText('Guardé 2 cambios que me pediste por WhatsApp.').waitFor();
+  s = await guardado(pg);
+  assert.ok(!s.exceptions.some(x => x.id === 'x1') && !s.commitments.some(c => c.id === clases.id), 'se quitaron los dos');
+  assert.deepEqual(sb.quitadas, ['q1', 'q2']);
+  await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).click();
+  await pg.getByText('Listo, lo dejé como estaba.').waitFor();
+  s = await guardado(pg);
+  assert.ok(s.exceptions.some(x => x.id === 'x1') && s.commitments.some(c => c.id === clases.id), 'Deshacer devuelve los dos');
+  // Uno solo: «Guardé por WhatsApp: quitar…».
+  await traer(pg, sb, [fila('q3', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' })]);
+  await pg.getByText(/^Guardé por WhatsApp: quitar «Reunión» del .+ \(13:00–14:00\)\.$/).waitFor();
+  // Si ya no está (se quitó en la app o en otro dispositivo), lo explica y no se ofrece Deshacer.
+  await traer(pg, sb, [fila('q4', { intent: 'quitaEvento', exId: 'x1', date: fecha(3), label: 'Reunión' }),
+    fila('q5', { intent: 'quitaRutina', ids: ['no-existe'], name: 'Gimnasio' })]);
+  await pg.getByText('No quité «Reunión»: ya no estaba en LIA. No quité la rutina «Gimnasio»: ya no estaba en LIA.').waitFor();
+  assert.equal(await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).count(), 0);
+  assert.ok((await guardado(pg)).commitments.some(c => c.id === clases.id), 'lo demás sigue igual');
+  assert.deepEqual(errores, []);
+  await ctx.close();
+});
+
 test('si no puede revisar los canales al abrir, no da por desvinculado a nadie y deja reintentar', async () => {
   const { ctx, pg, errores, sb } = await preparar('iPhone', []);
   sb.falla = true;
@@ -112,5 +148,23 @@ test('si no puede revisar los canales al abrir, no da por desvinculado a nadie y
   await pg.getByRole('button', { name: 'Reintentar' }).click();
   await pg.getByText(/Vinculado: \+51987654321/).waitFor();
   assert.deepEqual(errores.filter(e => !/503/.test(e)), []);
+  await ctx.close();
+});
+
+// Quien aceptó el aviso anterior (settings.waLia = true) no comparte los eventos de un día hasta aceptar el aviso nuevo
+// (iteración 3, versión 2): vuelve a ver «Activar Lía en WhatsApp» y no se publica su contexto.
+test('Android: con el aviso anterior aceptado, pide aceptar el nuevo antes de publicar los eventos de un día', async () => {
+  const { ctx, pg, errores, sb } = await preparar('Android', []);
+  await pg.evaluate(f => { state.exceptions.push({ id: 'x9', date: f, start: '13:00', end: '14:00', label: 'Reunión', cat: 'otro' }); state.settings.waLia = true; save(); }, fecha(1));
+  await pg.evaluate(() => cargarCanales());
+  await new Promise(r => setTimeout(r, 3500));
+  assert.equal(sb.contextos.length, 0, 'con el aviso viejo no se publica nada nuevo');
+  await pestana(pg, 'Perfil');
+  await pg.getByText(/tus eventos de un día/).first().waitFor();
+  await pg.getByRole('button', { name: 'Activar Lía en WhatsApp' }).click();
+  await pg.getByText('Listo: ya puedes pedirle a Lía por WhatsApp que anote algo.').waitFor();
+  assert.equal(await pg.evaluate(() => state.settings.waLia), 2);
+  assert.ok(JSON.stringify(sb.contextos.at(-1)).includes('Reunión'), 'con el aviso nuevo, los eventos de un día van al contexto');
+  assert.deepEqual(errores, []);
   await ctx.close();
 });

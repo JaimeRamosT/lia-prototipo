@@ -107,10 +107,10 @@ export function intencion(texto) {
   if (/\bproxim[oa]s? (evaluacion|examen|parcial|prueba|practica|entrega|control)\b|\bcuando es mi (examen|parcial|evaluacion)\b/.test(n)) return { tipo: 'proxima' };
   return { tipo: 'otro' };
 }
-// «sí» y «no» a una propuesta. «sí», «dale», «guárdalo» confirman; «ok», «ya», «listo» solo si la propuesta es de los
-// últimos 5 minutos (son respuestas a cualquier cosa). «no, déjalo», «cancela»… descartan.
-const SI_FUERTE = /^(si|dale|confirmo|guardalo|anotalo|cambialo|quitalo|de una)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|confirmo|dale|gracias))*$/;
-const SI_DEBIL = /^(ok|okey|okay|ya|listo|claro|perfecto|correcto|va)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|confirmo|dale|gracias))*$/;
+// «sí» y «no» a una propuesta. «sí», «dale», «guárdalo», «quítala» confirman; «ok», «ya», «listo» solo si la propuesta es
+// de los últimos 5 minutos (son respuestas a cualquier cosa). «no, déjalo», «cancela»… descartan.
+const SI_FUERTE = /^(si|dale|confirmo|guardalo|anotalo|cambialo|quitalo|quitala|de una)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|quitala|confirmo|dale|gracias))*$/;
+const SI_DEBIL = /^(ok|okey|okay|ya|listo|claro|perfecto|correcto|va)( (porfa|por favor|guardalo|anotalo|cambialo|quitalo|quitala|confirmo|dale|gracias))*$/;
 const NO = /^(no|nop|nel|cancela|cancelar|cancelalo|mejor no|olvidalo|dejalo|no lo guardes|no gracias)( (dejalo|gracias|cancela|mejor no))*$/;
 export const esSi = (t, { reciente = true } = {}) => SI_FUERTE.test(norm(t)) || (reciente && SI_DEBIL.test(norm(t)));
 export const esNo = t => NO.test(norm(t));
@@ -137,6 +137,10 @@ export const AYUDA = 'Hola, soy Lía. Por aquí puedes:\n• Anotar: «parcial d
 export const SIN_VINCULAR = 'Hola, soy Lía. Para usarme aquí, entra a LIA, ve a Perfil y, en WhatsApp, escribe tu número. Luego envíame el código que te doy.';
 export const CONFIRMADO = 'Listo, lo anoté. Lo verás en LIA en unos segundos si la tienes abierta; si no, al abrirla.';
 export const DESCARTADO = 'Ok, no guardé nada.';
+// Lo que se quita (una evaluación, un evento o una rutina) se confirma y se descarta con sus propias palabras.
+export const QUITADO = 'Listo, lo quito de tu LIA en unos segundos si la tienes abierta; si no, al abrirla.';
+export const NO_QUITADO = 'Ok, no quité nada.';
+const QUITAR = ['quitaEval', 'quitaEvento', 'quitaRutina'];
 export const NADA_PENDIENTE = 'No tengo nada pendiente por guardar. Cuéntame qué anoto, por ejemplo: «parcial de Cálculo el jueves a las 9».';
 export const VENCIDA = 'Esa propuesta ya venció: pasaron más de 30 minutos. Vuelve a contarme qué anoto.';
 export const VIEJO = 'Ese mensaje ya no vale. Responde al último que te mandé o cuéntame de nuevo qué anoto.';
@@ -153,8 +157,10 @@ const CHARLA = {
   quien: 'Soy Lía, tu secretaria de estudio. Anoto tus horarios y tus evaluaciones, y te armo un horario para estudiar en tus horas libres.',
   animo: 'Descansar también cuenta. Si hoy no te da, dime por ejemplo «hoy no puedo estudiar en la noche» y lo tomo en cuenta.',
 };
-// Cada botón lleva el id de su propuesta: tocar uno de un mensaje viejo no confirma otra cosa.
+// Cada botón lleva el id de su propuesta: tocar uno de un mensaje viejo no confirma otra cosa. Para quitar, «Sí, quítalo»
+// (o «quítala», si es una rutina) y «No».
 const botonesSiNo = id => [[`si:${id}`, 'Sí, guárdalo'], [`no:${id}`, 'No, déjalo']];
+const botonesQuitar = (id, rutina) => [[`si:${id}`, rutina ? 'Sí, quítala' : 'Sí, quítalo'], [`no:${id}`, 'No']];
 // Un título de botón de hasta 20 caracteres, cortado en un espacio.
 const titulo = t => { t = String(t); if (t.length <= 20) return t; const c = t.slice(0, 20), k = c.lastIndexOf(' '); return k > 8 ? c.slice(0, k) : c; };
 
@@ -175,7 +181,8 @@ export function estadoDesde(ctx) {
   return {
     v: 1,
     settings: { wake: '07:00', sleep: '23:00', maxDay: 180, block: 60, minBlock: 30, autonomy: 'auto', name: '', ...(c.settings && typeof c.settings === 'object' ? c.settings : {}) },
-    evals: lista(c.evals).map(({ hecho, sinHueco, ...e }) => e), commitments: lista(c.commitments), done: [], exceptions: [],
+    // Los eventos de un día llegan desde la iteración 3; un contexto publicado antes no los trae.
+    evals: lista(c.evals).map(({ hecho, sinHueco, ...e }) => e), commitments: lista(c.commitments), done: [], exceptions: lista(c.exceptions),
   };
 }
 
@@ -211,6 +218,9 @@ export function propuestaTexto(p, state, n) {
   if (p.intent === 'except') return `Entendí: ${p.exs.map(x => cambioTexto(x, n)).join('; ')}. ¿Lo guardo en tu LIA?`;
   if (p.intent === 'log') return `Entendí: estudiaste ${L.hrs(p.min)} de ${p.course} ${cuando(p.date, n)}. ¿Lo anoto en tu LIA?`;
   if (p.intent === 'cambiaEval') return `Entendí: ${L.nombreEval(ev(p.evalId))} pasa al ${L.fechaCorta(p.date)} a las ${p.time}. ¿Lo cambio en tu LIA?`;
+  // «quitar «Reunión de grupo» del jue 29 oct (13:00–14:00)», «quitar la rutina «Trabajo» (de lunes a viernes, 15:00–19:00)».
+  if (p.intent === 'quitaEvento') return `Entendí: ${L.textoQuitar(state, p)}. ¿Lo quito de tu LIA?`;
+  if (p.intent === 'quitaRutina') return `Entendí: ${L.textoQuitar(state, p)}. ¿La quito de tu LIA?`;
   const e = ev(p.evalId);
   return `Entendí: quitar ${L.nombreEval(e)} del ${L.fechaCorta(e.date)}. ¿Lo quito de tu LIA?`;
 }
@@ -311,7 +321,7 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
   const limite = { tipo: 'limite', texto: `En Gratis puedes tener hasta ${EVALS_GRATIS} evaluaciones próximas y ya tienes ${Math.min(ocupadas, EVALS_GRATIS)}. Con LIA Pro no hay límite.` };
   if (r.intent === 'simula') r = r.base;  // «¿y si…?»: por WhatsApp se propone sin simular
   // Sin el contexto que publica la app (la persona no activó Lía en WhatsApp), solo agenda y avisos.
-  if (!est.contexto && ['pregunta', 'add', 'except', 'log', 'cambiaEval', 'quitaEval'].includes(r.intent)) return { tipo: 'sin_contexto', texto: SIN_CONTEXTO };
+  if (!est.contexto && ['pregunta', 'add', 'except', 'log', 'cambiaEval', ...QUITAR].includes(r.intent)) return { tipo: 'sin_contexto', texto: SIN_CONTEXTO };
   if (r.intent === 'pregunta') {
     if (r.borrador.intent === 'add' && nuevas(r.borrador.items) > room) return limite;
     const opciones = (r.opciones || []).filter(o => o && !o.otra && o.set).slice(0, 3).map(o => ({ t: titulo(o.t), set: o.set }));
@@ -340,10 +350,20 @@ async function responderA(deps, numero, r, { est, state, n, ahora, borr, aviso }
       if (date === e.date && time === e.time) return { tipo: 'igual', texto: `${L.cap(L.nombreEval(e))} ya es el ${L.fechaCorta(e.date)} a las ${e.time}.` };
       guardar = { intent: 'cambiaEval', evalId: e.id, date, time };
     }
+  } else if (r.intent === 'quitaEvento') {
+    // Con su nombre: si al abrir la app ya no está, el aviso dice cuál era (noQuitado).
+    const x = state.exceptions.find(y => y.id === r.exId && !y.libre);
+    if (!x) return { tipo: 'sin_evento', texto: 'No encontré ese evento en tu LIA. Revísalo en la app.' };
+    guardar = { intent: 'quitaEvento', exId: x.id, date: x.date, label: x.label };
+  } else if (r.intent === 'quitaRutina') {
+    const ids = (r.ids || []).filter(id => state.commitments.some(c => c.id === id));
+    if (!ids.length) return { tipo: 'sin_rutina', texto: 'No encontré esa rutina en tu LIA. Revísala en Perfil, en «Tus rutinas».' };
+    guardar = { intent: 'quitaRutina', ids, name: r.name };
   }
   if (guardar) {
     const id = await rpc(deps, 'guardar_propuesta_whatsapp', { p_numero: numero, p_estado: 'pendiente', p_intencion: guardar });
-    return { tipo: 'propuesta:' + guardar.intent, texto: propuestaTexto(guardar, state, n), botones: botonesSiNo(id), alternativa: 'Responde «sí» o «no».' };
+    const botones = QUITAR.includes(guardar.intent) ? botonesQuitar(id, guardar.intent === 'quitaRutina') : botonesSiNo(id);
+    return { tipo: 'propuesta:' + guardar.intent, texto: propuestaTexto(guardar, state, n), botones, alternativa: 'Responde «sí» o «no».' };
   }
   if (r.intent === 'agenda') {
     const f = r.date || hoy, man = L.ymd(L.addDays(n, 1)), m0 = medianoche(f);
@@ -384,12 +404,13 @@ async function atender(deps, numero, entrada, ahora, estPrevio = null) {
   if (entrada.boton && (!bm || !bm[2] || !prop || prop.id !== bm[2] || (bm[1].startsWith('op') && !borr))) return { tipo: 'boton_viejo', texto: VIEJO };
   const reciente = !!(prop && ahora.getTime() - new Date(prop.creado).getTime() <= 5 * 60000);
   const si = boton ? boton === 'si' : esSi(texto, { reciente }), no = boton ? boton === 'no' : esNo(texto);
+  const quita = !!(prop && prop.intencion && (QUITAR.includes(prop.intencion.intent) || prop.intencion.intent === 'quitar'));
   // ¿Responde a la propuesta?
   if (si && pendiente) {
     const ok = await rpc(deps, 'confirmar_propuesta_whatsapp', { p_numero: numero });
-    return ok === true ? { tipo: 'confirmada', texto: CONFIRMADO + (est.pro ? ' Ahí reacomodo tu estudio.' : '') } : { tipo: 'vencida', texto: VENCIDA };
+    return ok === true ? { tipo: 'confirmada', texto: (quita ? QUITADO : CONFIRMADO) + (est.pro ? ' Ahí reacomodo tu estudio.' : '') } : { tipo: 'vencida', texto: VENCIDA };
   }
-  if (no && (pendiente || borr)) { await rpc(deps, 'descartar_propuesta_whatsapp', { p_numero: numero }); return { tipo: 'descartada', texto: DESCARTADO }; }
+  if (no && (pendiente || borr)) { await rpc(deps, 'descartar_propuesta_whatsapp', { p_numero: numero }); return { tipo: 'descartada', texto: quita ? NO_QUITADO : DESCARTADO }; }
   if (si && !borr) return { tipo: 'nada', texto: NADA_PENDIENTE };
   // ¿Responde a lo que Lía preguntó? Un botón completa el borrador como una respuesta rápida de la app.
   let r = null;

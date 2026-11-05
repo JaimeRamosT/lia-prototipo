@@ -769,6 +769,20 @@ function textoQuitar(state,r){
   return'';}
 function sinLoQuitado(state,r){const fuera=new Set(r.intent==='quitaEvento'?[r.exId]:r.intent==='quitaRutina'?(r.ids||[]):[]);
   return{commitments:state.commitments.filter(c=>!fuera.has(c.id)),exceptions:state.exceptions.filter(x=>!fuera.has(x.id)&&!(x.libre&&fuera.has(x.ref)))};}
+// Lo que dice Lía en el chat antes de quitar: «Quito «Reunión» del lunes 9 a la 1:00 p. m.», «Quito la rutina «Clases»
+// completa.». '' si ya no está. El día: «de hoy», «de mañana», «del lunes 9» (dos semanas) o «del viernes 20 de noviembre».
+function fraseQuitar(state,r,now){
+  if(r.intent==='quitaEvento'){const x=state.exceptions.find(y=>y.id===r.exId&&!y.libre);if(!x)return'';
+    const k=dayDiff(ymd(now),x.date),d=fromYmd(x.date),dia=`${DIAS[d.getDay()]} ${d.getDate()}`;
+    return conPunto(`Quito «${x.label}» ${k===0?'de hoy':k===1?'de mañana':k>1&&k<14?'del '+dia:`del ${dia} de ${MESES[d.getMonth()]}`} ${aLa(toMin(x.start))}`);}
+  if(r.intent==='quitaRutina'){const c=state.commitments.find(y=>(r.ids||[]).includes(y.id));return c?`Quito la rutina «${c.name}» completa.`:'';}
+  return'';}
+// Por WhatsApp, lo que ya no se pudo quitar al abrir la app (revisarPropuesta: sin_evento o sin_rutina). Si de la rutina
+// queda una parte (se editó en la app), no se quita a ciegas.
+function noQuitado(state,it){
+  if(it.intent==='quitaEvento')return`No quité ${it.label?`«${it.label}»`:'ese evento'}: ya no estaba en LIA.`;
+  const n=it.name?`la rutina «${it.name}»`:'esa rutina',ids=Array.isArray(it.ids)?it.ids:[];
+  return ids.some(id=>state.commitments.some(c=>c.id===id))?`No quité ${n}: cambió desde que me lo pediste. Si quieres, quítala en Perfil, en «Tus rutinas».`:`No quité ${n}: ya no estaba en LIA.`;}
 // ---------- Lía pide lo que falta (iteración 2) ----------
 // Lo que necesita cada cosa para guardarse; nada se guarda sin hora (decisión 4). Si falta algo, Lía lo pregunta, una
 // cosa a la vez y con respuestas rápidas, y guarda lo entendido como borrador por 10 minutos (state.borrador).
@@ -1155,14 +1169,20 @@ function validarIA(r,state,now){
     default:return{intent:'help'};}}
 // ---------- Lía en WhatsApp (docs/whatsapp-lia.md) ----------
 // Lo que lia-whatsapp necesita para entender igual que la app: ajustes del plan, evaluaciones desde hace 14 días (con
-// lo estudiado y lo que quedó sin hueco) y rutinas. Nunca el nombre, el correo ni lo que vino de Google Calendar.
-function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),unmet=(p&&p.unmet)||{};
+// lo estudiado y lo que quedó sin hueco), rutinas y eventos de un día desde ayer, con su id para quitarlos (iteración 3;
+// lo liberado de una rutina o de un evento va con su ref). Nunca el nombre, el correo ni lo que vino de Google Calendar.
+function contextoWhatsapp(state,p,now){const S=state.settings,desde=ymd(addDays(now,-14)),ayer=ymd(addDays(now,-1)),unmet=(p&&p.unmet)||{};
+  const commitments=state.commitments.filter(c=>!c.gcal).slice(0,40)
+    .map(c=>({id:c.id,name:c.name,type:c.type,days:c.days,start:c.start,end:c.end,...(c.desde?{desde:c.desde}:{}),...(c.hasta?{hasta:c.hasta}:{})}));
+  const xs=state.exceptions.filter(x=>!x.gcal&&x.date>=ayer).sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)),eventos=xs.filter(x=>!x.libre).slice(0,60);
+  const refs=new Set([...commitments,...eventos].map(o=>o.id)),libres=xs.filter(x=>x.libre&&refs.has(x.ref));
+  const exceptions=[...eventos,...libres].sort((a,b)=>(a.date+a.start).localeCompare(b.date+b.start)).slice(0,60)
+    .map(x=>({id:x.id,date:x.date,start:x.start,end:x.end,label:x.label,...(x.cat?{cat:x.cat}:{}),...(x.libre?{libre:true,ref:x.ref}:{})}));
   return{proximas:state.evals.filter(e=>e.date>=ymd(now)).length,   // como upcomingEvals(): también las de Google (para el límite de Gratis)
     settings:{wake:S.wake,sleep:S.sleep,maxDay:S.maxDay,block:S.block,minBlock:S.minBlock,...(S.cicloInicio?{cicloInicio:S.cicloInicio}:{})},
     evals:state.evals.filter(e=>!e.gcal&&e.date>=desde).sort((x,y)=>(x.date+x.time).localeCompare(y.date+y.time)).slice(0,40)
       .map(e=>({id:e.id,type:e.type,course:e.course,date:e.date,time:e.time,hours:e.hours,hecho:doneFor(state,e.id),sinHueco:unmet[e.id]||0})),
-    commitments:state.commitments.filter(c=>!c.gcal).slice(0,40)
-      .map(c=>({id:c.id,name:c.name,type:c.type,days:c.days,start:c.start,end:c.end,...(c.desde?{desde:c.desde}:{}),...(c.hasta?{hasta:c.hasta}:{})}))};}
+    commitments,exceptions};}
 // Antes de guardar lo que la persona confirmó por WhatsApp, se revisa con el estado de ahora: pudo cambiar desde que
 // Lía lo propuso. Devuelve {ok:true} o {ok:false,motivo}. room: cuántas evaluaciones próximas caben (Gratis).
 function revisarPropuesta(state,it,now,room){const t=ymd(now),HH=/^([01]\d|2[0-3]):[0-5]\d$/,no=motivo=>({ok:false,motivo}),ev=id=>state.evals.find(e=>e.id===id);
@@ -1524,6 +1544,6 @@ function cursosClase(state){const out=[],vistos=new Set();
 function claseDeEval(state,e){const k=nombreN(e&&e.course);if(!k||esGenerico(k))return null;
   return (state.commitments||[]).find(c=>tipoRutina(c.type)==='clase'&&nombreN(c.name)===k)||null;}
 
-return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, ROMANOS, palCurso, cursosConocidos, cursoParecido, parseClause, rutinaDicha, EVENTO, nombreEvento, REPITE, RANGO_DIAS, frasePropia, rutinaSemanal, NO_VA, ESTUDIE, AVANCE_SUST, estudie, QUITAR_RUT, ENTRO, EN_VEZ, CAMBIA_RUT, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, cuandoEsEval, QUITAR, YA_NO_HAY, NO_NOMBRE, esNombreQuitar, nombreQuitar, nombreQuitarTexto, puntosNombre, cosasDelDia, elDia, aLa, conPunto, diasRutina, avisoQuitarRutina, quitarAlgo, propuestaQuitar, cosaQuitar, cualQuitar, alcanceDicho, finQuitar, textoQuitar, sinLoQuitado, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal, columnasCruces, gruposCruce, SIGUE_DE_NOCHE, itemsCalendario, DUR_EVAL, nombreN, choques, choquesTramos, horaC, diasFrase, cuandoChoque, textoChoques, esGenerico, cursosClase, claseDeEval };
+return { pad, toMin, fmt, ymd, fromYmd, addDays, dayDiff, DIAS, DIAS_C, MESES, EVAL_TYPES, COMMIT_TYPES, tipoRutina, uid, hrs, fechaLarga, fechaCorta, subtract, MARGEN_DESPERTAR, finDelDia, intervalo, vigente, busyFor, reacomodar, resumenSemana, mondayDe, agruparRutinas, crucesTramo, ocupadoMarco, evalDeadline, MADRUGADA, nochesDeEstudio, doneFor, plan, claveBloque, estudiado, finBloque, planCongelado, bloquesQueChocan, sumarAlCongelado, SEMANAS_CICLO, lunesDe, inicioCiclo, cargaCiclo, semanaPesada, agendaFor, esEstudio, tramosDia, resumenDia, huecosDia, esOcio, ocioParaEstudio, reubicarCongelado, norm, DAYW, EVAL_KW, COMMIT_KW, NUMW, MESN, TIMECTX, tokenize, H, partOf, Q, HQ, adj, horasPosibles, rangoProbable, parseTimes, nextWeekday, NUM_REL, RE_REL, semanaSinDia, diaEnSemanas, fechaRelativa, parseDate, unSoloDia, finDespues, diaDelMes, diaConNumero, parseDays, STOPW, SKIPW, cap, extractCourse, hasTime, splitClauses, ENTREGA_N, TRABAJO_ENTREGA, evalDe, NOMBRE_KW, nombreRutina, tipoPorNombre, ROMANOS, palCurso, cursosConocidos, cursoParecido, parseClause, rutinaDicha, EVENTO, nombreEvento, REPITE, RANGO_DIAS, frasePropia, rutinaSemanal, NO_VA, ESTUDIE, AVANCE_SUST, estudie, QUITAR_RUT, ENTRO, EN_VEZ, CAMBIA_RUT, AGENDAR, rutinasNombradas, queAgendar, minutosDichos, fechaPasada, evalMencionada, MUEVE_FIRME, MUEVE_DEBIL, QUITA_EVAL, JUNTO_PASA, JUNTO_CORTA, esEvalTok, evalJunto, disparadores, fechaHoraNueva, evalesAludidas, cambioDeEval, cuandoEsEval, QUITAR, YA_NO_HAY, NO_NOMBRE, esNombreQuitar, nombreQuitar, nombreQuitarTexto, puntosNombre, cosasDelDia, elDia, aLa, conPunto, diasRutina, avisoQuitarRutina, quitarAlgo, propuestaQuitar, cosaQuitar, cualQuitar, alcanceDicho, finQuitar, textoQuitar, sinLoQuitado, fraseQuitar, noQuitado, BORRADOR_MS, FRANJA_RUTINA, FRANJA_EVENTO, CAT_EVENTO, faltaDe, minus, nombreEval, conArticulo, delDia, otra, preguntaPara, borradorVigente, continuarBorrador, preguntaSemana, respuestaBorrador, cualDeEstas, preguntaAgenda, CHARLA, RELLENO, charla, sinYSi, simular, interpret, interpretFrase, pideIA, contextoIA, historialIA, HHMM, fechaIA, textoIA, validarIA, contextoWhatsapp, revisarPropuesta, catEvento, DIA_CONS, leerConsolidado, rutinaDeCurso, iso, eventosCanales, eventosGoogle, GC, ICS_DIA, TZ_WINDOWS, diaN, sumarDias, desfaseTz, horaLima, duracionIcs, textoIcs, lineaIcs, leerIcs, cerrarVevento, ocurrencias, GC_EVAL, GC_RELLENO, palabrasIcs, normPal, evalDeTitulo, catDeTitulo, deCalendario, yaEnLia, huellaGcal, fusionarGcal, columnasCruces, gruposCruce, SIGUE_DE_NOCHE, itemsCalendario, DUR_EVAL, nombreN, choques, choquesTramos, horaC, diasFrase, cuandoChoque, textoChoques, esGenerico, cursosClase, claseDeEval };
 }
 export const L = crear();
