@@ -6,6 +6,7 @@ import { createHmac, webcrypto } from 'node:crypto';
 import * as W from '../supabase/functions/lia-whatsapp/logica.js';
 import { readFileSync } from 'node:fs';
 import { estadoEval } from './ia/evaluar.mjs';
+import { L } from './logica.mjs';
 
 const SECRETO = 'secreto-de-la-app', NUM = '51987654321';
 const P1 = '11111111-1111-4111-8111-111111111111', P2 = '22222222-2222-4222-8222-222222222222';  // ids de propuestas
@@ -142,10 +143,15 @@ test('si la base ya no tiene la propuesta (venció), «sí» lo dice', async () 
   assert.equal(cuerpo(e), W.VENCIDA);
 });
 
-test('un audio o una foto reciben que por ahora solo lee texto', async () => {
-  const m = lia();
-  const e = await llega(m, { from: NUM, type: 'audio', audio: { id: 'x' } });
-  assert.match(cuerpo(e), /^Por ahora solo leo mensajes de texto\./);
+// Los audios (solo Pro) están en pruebas/whatsapp-audio.test.mjs.
+test('una foto o un sticker reciben que por ahora solo lee texto (y audios en Pro)', async () => {
+  for (const msj of [{ from: NUM, type: 'image', image: { id: 'x' } }, { from: NUM, type: 'sticker', sticker: { id: 'y' } }]) {
+    const m = lia();
+    const e = await llega(m, msj);
+    assert.equal(cuerpo(e), 'Por ahora solo leo mensajes de texto (y audios, en LIA Pro). Cuéntame qué anoto o pregúntame «¿qué tengo hoy?».');
+  }
+  const m = lia({ estado: estadoWa({ pro: false }) });
+  assert.match(cuerpo(await llega(m, { from: NUM, type: 'audio', audio: { id: 'x' } })), /^Los audios son de LIA Pro\./);
 });
 
 // ---------- Lo que falta ----------
@@ -199,6 +205,94 @@ test('estudio hecho, cambio de un día y mover una evaluación también se propo
   e = await llega(m, texto('pasaron mi parcial de cálculo al viernes'));
   assert.deepEqual(m.fn('guardar_propuesta_whatsapp')[0].body.p_intencion, { intent: 'cambiaEval', evalId: 'e1', date: '2026-10-30', time: '09:00' });
   assert.match(cuerpo(e), /^Entendí: tu parcial de Cálculo II pasa al vie 30 oct a las 09:00\. ¿Lo cambio en tu LIA\?$/);
+});
+
+// ---------- Quitar un evento o una rutina (iteración 3) ----------
+// El contexto que publica la app trae los eventos de un día con su id (contextoWhatsapp).
+const CON_EVENTOS = { ...CONTEXTO, exceptions: estadoEval().exceptions };
+const conEventos = (x = {}) => estadoWa({ contexto: CON_EVENTOS, ...x });
+
+test('estadoDesde: los eventos de un día del contexto; un contexto de antes (sin eventos) sigue sirviendo', () => {
+  assert.deepEqual(W.estadoDesde(CON_EVENTOS).exceptions, estadoEval().exceptions);
+  assert.deepEqual(W.estadoDesde(CONTEXTO).exceptions, []);
+  assert.deepEqual(W.estadoDesde({ exceptions: [null, 3, { id: 'x' }] }).exceptions, [{ id: 'x' }]);
+});
+
+test('quitar un evento: propone «¿Lo quito?» con «Sí, quítalo» y «No», y la deja pendiente', async () => {
+  for (const frase of ['cancelaron la reunión del jueves', 'elimina el evento del jueves a la 1 pm']) {
+    const m = lia({ estado: conEventos() });
+    const e = await llega(m, texto(frase));
+    assert.equal(cuerpo(e), 'Entendí: quitar «Reunión de grupo» del jue 29 oct (13:00–14:00). ¿Lo quito de tu LIA?', frase);
+    assert.deepEqual(botones(e), [[`si:${P1}`, 'Sí, quítalo'], [`no:${P1}`, 'No']]);
+    const g = m.fn('guardar_propuesta_whatsapp')[0].body;
+    assert.equal(g.p_estado, 'pendiente');
+    assert.deepEqual(g.p_intencion, { intent: 'quitaEvento', exId: 'x1', date: '2026-10-29', label: 'Reunión de grupo' });
+    assert.equal(m.logs.at(-1).tipos[0], 'propuesta:quitaEvento');
+  }
+});
+
+test('con el contexto que publica la app, «elimina el evento del jueves a la 1 pm» encuentra la reunión', async () => {
+  const s = estadoEval(), n = new Date(2026, 9, 26, 10), ctx = L.contextoWhatsapp(s, L.plan(s, n), n);
+  const m = lia({ estado: estadoWa({ contexto: ctx }) });
+  await llega(m, texto('elimina el evento del jueves a la 1 pm'));
+  assert.deepEqual(m.fn('guardar_propuesta_whatsapp')[0].body.p_intencion, { intent: 'quitaEvento', exId: 'x1', date: '2026-10-29', label: 'Reunión de grupo' });
+});
+
+test('quitar una rutina: pregunta si solo ese día o toda; «Toda la rutina» propone quitarla con «¿La quito?»', async () => {
+  const m = lia({ estado: conEventos() });
+  const e = await llega(m, texto('borra lo del martes a las 3'));
+  assert.equal(cuerpo(e), '«Trabajo» es una rutina de lunes a viernes, de 15:00 a 19:00. ¿La quito solo mañana o toda la rutina?');
+  assert.deepEqual(botones(e).map(b => b[1]), ['Solo mañana', 'Toda la rutina', 'Dejarlo así']);
+  const g = m.fn('guardar_propuesta_whatsapp')[0].body;
+  assert.equal(g.p_estado, 'borrador');
+  const borr = conEventos({ propuesta: { id: P2, estado: 'borrador', intencion: g.p_intencion, creado: '2026-10-26T14:59:00Z' } });
+  for (const msj of [boton(`op1:${P2}`, 'Toda la rutina'), texto('toda la rutina')]) {
+    const m2 = lia({ estado: borr });
+    const e2 = await llega(m2, msj);
+    const g2 = m2.fn('guardar_propuesta_whatsapp')[0].body;
+    assert.equal(g2.p_estado, 'pendiente');
+    assert.deepEqual(g2.p_intencion, { intent: 'quitaRutina', ids: ['c1'], name: 'Trabajo' });
+    assert.equal(cuerpo(e2), 'Entendí: quitar la rutina «Trabajo» (de lunes a viernes, 15:00–19:00). ¿La quito de tu LIA?');
+    assert.deepEqual(botones(e2), [[`si:${P1}`, 'Sí, quítala'], [`no:${P1}`, 'No']]);
+  }
+  // «Solo mañana» libera ese día, como «mañana no tengo trabajo».
+  const m3 = lia({ estado: borr });
+  await llega(m3, boton(`op0:${P2}`, 'Solo mañana'));
+  assert.deepEqual(m3.fn('guardar_propuesta_whatsapp')[0].body.p_intencion,
+    { intent: 'except', exs: [{ date: '2026-10-27', start: '15:00', end: '19:00', label: 'Sin Trabajo', libre: true, ref: 'c1' }] });
+});
+
+test('«sí», «sí, quítala» o el botón confirman lo que se quita; «No» lo deja', async () => {
+  for (const intencion of [{ intent: 'quitaRutina', ids: ['c1'], name: 'Trabajo' }, { intent: 'quitaEvento', exId: 'x1', date: '2026-10-29', label: 'Reunión de grupo' }]) {
+    const pend = conEventos({ propuesta: { id: P1, estado: 'pendiente', intencion, creado: LUNES_10 } });
+    for (const msj of [texto('sí'), texto('sí, quítala'), texto('quítalo'), boton(`si:${P1}`, 'Sí, quítalo')]) {
+      const m = lia({ estado: pend });
+      const e = await llega(m, msj);
+      assert.equal(m.fn('confirmar_propuesta_whatsapp').length, 1, JSON.stringify(msj));
+      assert.equal(cuerpo(e), W.QUITADO + ' Ahí reacomodo tu estudio.');
+    }
+    const m = lia({ estado: { ...pend, pro: false } });
+    assert.equal(cuerpo(await llega(m, texto('sí'))), W.QUITADO, 'en Gratis no promete reacomodar');
+    for (const msj of [texto('no'), boton(`no:${P1}`, 'No')]) {
+      const m2 = lia({ estado: pend });
+      assert.equal(cuerpo(await llega(m2, msj)), 'Ok, no quité nada.');
+      assert.equal(m2.fn('descartar_propuesta_whatsapp').length, 1);
+    }
+  }
+});
+
+test('quitar una evaluación también se confirma con «Sí, quítalo» y «No»', async () => {
+  const m = lia({ estado: conEventos() });
+  const e = await llega(m, texto('borra el parcial de cálculo'));
+  assert.equal(cuerpo(e), 'Entendí: quitar tu parcial de Cálculo II del jue 29 oct. ¿Lo quito de tu LIA?');
+  assert.deepEqual(botones(e), [[`si:${P1}`, 'Sí, quítalo'], [`no:${P1}`, 'No']]);
+});
+
+test('los registros de quitar no llevan nombres', async () => {
+  const m = lia({ estado: conEventos() });
+  await llega(m, texto('cancelaron la reunión del jueves'));
+  const t = JSON.stringify(m.logs);
+  assert.ok(!/reuni[oó]n/i.test(t) && !t.includes('x1'), t);
 });
 
 test('«¿y si…?» por WhatsApp propone el cambio sin simular', async () => {

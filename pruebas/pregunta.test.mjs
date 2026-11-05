@@ -22,7 +22,8 @@ const fin = pasos => pasos[pasos.length - 1];
 const PREGUNTAS = [
   ['tengo examen el viernes', '¿De qué curso es tu examen del viernes?', ''],
   ['tengo examen de inglés', '¿Qué día es tu examen de Inglés?', 'Mar 27|Mié 28|Jue 29|Otra fecha'],
-  ['parcial de cálculo el jueves', '¿A qué hora es tu parcial de Cálculo del jueves?', '08:00|14:00|19:00|Otra hora'],
+  // Se liga al curso que ya existe (iteración 3): «cálculo» → «Cálculo II».
+  ['parcial de cálculo el jueves', '¿A qué hora es tu parcial de Cálculo II del jueves?', '08:00|14:00|19:00|Otra hora'],
   ['informe de química para el viernes', '¿A qué hora vence tu informe de Química?', '23:59|Otra hora'],
   ['tengo una tarea de algoritmos', '¿Para qué día es tu tarea de Algoritmos?', 'Mar 27|Mié 28|Jue 29|Otra fecha'],
   ['voy al gimnasio de 7 a 9', '¿Qué días tienes gimnasio?', 'Lun a Vie|Fines de semana|Otros días'],

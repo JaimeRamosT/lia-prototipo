@@ -109,23 +109,24 @@ Funciona:
 - **Planes.** Sin cuenta, Gratis: hasta 3 evaluaciones próximas y una semana que se arma una vez; las evaluaciones nuevas entran solas en las horas libres, sin mover lo ya armado. Con una cuenta Pro: sin límites, voz, modo sesión y reorganización automática.
 - **Horario automático.** Bloques de estudio en tus horas libres, que se reorganizan cuando algo cambia.
 - **Categorías.** Clases, trabajo, traslado, comidas, curso o taller, deporte, ocio y descanso, familia y casa, y otro, cada una con su color, su ícono y su nombre. Lía sugiere una vez la categoría de lo que quedó en «Otro».
-- **Rutinas y cosas de un solo día.** Un botón «Agregar» en Hoy y en Semana para una rutina semanal, algo de un solo día (un cumpleaños, una cita) o una evaluación. Una rutina puede tener varios horarios (por ejemplo, clases en la mañana unos días y en la tarde otros) y avisa si se cruza con otra. Nada se guarda sin hora. En Gratis, lo que no choca con el estudio ya armado no obliga a rearmar la semana.
-- **Tu día completo.** De la hora de despertar a la de dormir: rutinas, estudio y huecos libres, con un resumen («Ocupado · Estudio · Libre») y una barra del día. Un hueco libre se toca para agregar algo justo ahí.
+- **Rutinas y cosas de un solo día.** Un solo botón «+» (abajo a la derecha en el celular; «Agregar» en la barra lateral de la computadora) para una rutina semanal, un evento de un día (un cumpleaños, una cita), una evaluación o importar el consolidado de matrícula (también en Perfil). Antes de guardar, LIA avisa si ya tienes algo igual o si se cruza con otra actividad («Guardar igual» o «Volver»). Una rutina puede tener varios horarios (por ejemplo, clases en la mañana unos días y en la tarde otros) y avisa si se cruza con otra. Nada se guarda sin hora. En Gratis, lo que no choca con el estudio ya armado no obliga a rearmar la semana.
+- **Tu día completo.** Hoy es una agenda: lo que sigue va arriba (lo de más temprano se pliega), con rutinas, estudio y huecos libres, un resumen («Ocupado · Estudio · Libre») y una barra del día. Lo que pasa a la vez va lado a lado; desde 3 a la vez, «+N» abre la lista. Un hueco libre se toca para agregar algo justo ahí.
+- **Semana en cuadrícula.** Una cuadrícula de horas: los 7 días en la computadora y el día elegido en el celular, con los cruces lado a lado. Una evaluación de un curso que ya existe se ve con el color de su clase.
 - **Lía pide lo que falta.** Si a algo le falta un dato (la hora de un examen, los días de una rutina, la hora de un cumpleaños), Lía lo pregunta, una cosa a la vez y con respuestas rápidas, y recuerda lo que ya entendió por 10 minutos. Nada se guarda sin hora. Vale con IA y sin IA.
 - **Cambiar o quitar una evaluación desde el chat.** «Me cambiaron el examen de cálculo al viernes a las 8» o «ya no tengo el parcial de física»: Lía muestra qué cambia y la persona confirma («Confirmar» o «Quitar»). Si falta la fecha nueva o hay dos evaluaciones posibles, la pregunta. Lo resuelven las reglas, también en Pro.
 - **El ocio está protegido.** Lía no pone estudio en tu ocio. Si no alcanza el tiempo, «Casi listo» propone usar un rato de ocio (solo si dices que sí) u otras formas de hacer espacio. En Gratis, el ocio nuevo que cae sobre estudio ya armado lo mueve a otro hueco libre y te avisa.
 - **Pantallas.** Hoy, Semana, Evaluaciones, chat con Lía (entiende frases simples; con IA, solo en pruebas) y modo sesión con temporizador.
 - **Dictado por voz.** Solo en navegadores con reconocimiento de voz, como Chrome. En los demás, la app pide usar el micrófono del teclado.
-- **App instalable.** Se agrega a la pantalla de inicio y abre sin internet.
-- **Recordatorios en el teléfono (Pro).** Avisos en la pantalla bloqueada, aunque la app esté cerrada: la noche antes y 2 horas antes de cada evaluación, 15 minutos antes de cada bloque de estudio, un resumen al despertar y, antes de dormir, si quedó estudio sin marcar. Se activan en Perfil; cada tipo se puede apagar. El servidor solo guarda la hora y el tipo de cada aviso, nunca el nombre del curso (ver [docs/notificaciones.md](docs/notificaciones.md)).
+- **Abre sin internet.** Desde la 0.12.0 la app ya no ofrece instalarse; quien ya la instaló la sigue usando igual.
+- **Recordatorios por WhatsApp y Google Calendar.** Desde la 0.12.0 llegan por WhatsApp y con la alerta de Google en el calendario «LIA» (ver [docs/canales.md](docs/canales.md) y [docs/google.md](docs/google.md)). Las notificaciones del navegador se quitaron ([docs/notificaciones.md](docs/notificaciones.md) queda como historia).
 
 Límites de esta versión:
 
 - **Datos solo en el dispositivo.** Viven en el navegador de cada dispositivo, no se sincronizan entre dispositivos y se pierden si se borran los datos del sitio.
-- **iPhone sin instalar.** Si LIA no está instalada, Safari borra los datos de un sitio que no se abre en 7 días de uso. Instalada en la pantalla de inicio, eso no pasa.
+- **iPhone sin instalar.** Si LIA no está instalada, Safari borra los datos de un sitio que no se abre en 7 días de uso. Instalada en la pantalla de inicio, eso no pasa (la app ya no lo sugiere).
 - **La cuenta solo lleva el plan.** Los horarios todavía no viajan entre dispositivos.
 - **Sin cobro real.** El pago es una simulación.
-- **Recordatorios solo en Pro.** En iPhone, solo con LIA instalada en la pantalla de inicio (iOS 16.4 o más nuevo).
+- **Recordatorios con cuenta.** Por WhatsApp (número de prueba de Meta: fuera de las 24 horas, solo con la plantilla aprobada) o con Google conectado.
 
 ## Créditos
 

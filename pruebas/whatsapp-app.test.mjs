@@ -26,6 +26,35 @@ test('contextoWhatsapp: ajustes, evaluaciones recientes con avance y rutinas; si
   assert.ok(t.length < 60000);
 });
 
+// Iteración 3: para quitar un evento por WhatsApp («cancelaron la reunión del jueves»), Lía necesita los eventos de un
+// día con su id. Desde ayer (una rutina de anoche se libera desde el día en que empezó), sin los de Google.
+test('contextoWhatsapp: también los eventos de un día desde ayer, con su id; sin los de Google', () => {
+  const s = base();
+  s.exceptions = [
+    { id: 'x0', date: '2026-10-20', start: '10:00', end: '11:00', label: 'Antigua', cat: 'otro' },
+    { id: 'x1', date: '2026-10-25', start: '22:00', end: '23:00', label: 'Ayer', cat: 'ocio' },
+    { id: 'x2', date: '2026-10-29', start: '13:00', end: '14:00', label: 'Reunión de grupo', cat: 'otro' },
+    { id: 'l1', date: '2026-10-27', start: '15:00', end: '19:00', label: 'Sin Trabajo', libre: true, ref: 'c1' },
+    { id: 'l2', date: '2026-10-27', start: '08:00', end: '10:00', label: 'Sin Clase de Google', libre: true, ref: 'g1' },
+    { id: 'l3', date: '2026-10-29', start: '13:00', end: '13:30', label: 'Sin Reunión de grupo', libre: true, ref: 'x2' },
+    { id: 'g3', date: '2026-10-28', start: '09:00', end: '10:00', label: 'Evento de Google', cat: 'otro', gcal: 'e:1' },
+  ];
+  const n = ahora(), c = L.contextoWhatsapp(s, L.plan(s, n), n);
+  assert.deepEqual(c.exceptions, [
+    { id: 'x1', date: '2026-10-25', start: '22:00', end: '23:00', label: 'Ayer', cat: 'ocio' },
+    { id: 'l1', date: '2026-10-27', start: '15:00', end: '19:00', label: 'Sin Trabajo', libre: true, ref: 'c1' },
+    { id: 'x2', date: '2026-10-29', start: '13:00', end: '14:00', label: 'Reunión de grupo', cat: 'otro' },
+    { id: 'l3', date: '2026-10-29', start: '13:00', end: '13:30', label: 'Sin Reunión de grupo', libre: true, ref: 'x2' },
+  ], 'sin lo pasado, sin lo de Google ni lo liberado de una rutina de Google');
+  const t = JSON.stringify(c);
+  assert.ok(!t.includes('Google') && !t.includes('gcal'), t);
+  // Muchos eventos no pasan el tope de la base (60 000 caracteres).
+  s.exceptions = Array.from({ length: 300 }, (_, k) => ({ id: 'y' + k, date: '2026-11-0' + (1 + (k % 9)), start: '10:00', end: '11:00', label: 'x'.repeat(60), cat: 'otro' }));
+  const c2 = L.contextoWhatsapp(s, L.plan(s, n), n);
+  assert.equal(c2.exceptions.length, 60);
+  assert.ok(JSON.stringify(c2).length < 60000);
+});
+
 test('revisarPropuesta: guarda lo que sigue valiendo y explica lo que no', () => {
   const s = base(), n = ahora(), rev = (it, room = Infinity) => L.revisarPropuesta(s, it, n, room);
   const ev = (x = {}) => ({ kind: 'eval', type: 'parcial', course: 'Física', date: '2026-10-30', time: '10:00', hours: 5, ...x });

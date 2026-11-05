@@ -52,8 +52,9 @@ test('quitar una rutina: Lía indica dónde, sin crear una rutina nueva', () => 
   assert.match(r.texto, /«Inglés»/);
   assert.match(leer('quita mi rutina de trabajo').texto, /«Trabajo»/);
   assert.match(leer('elimina mi rutina de natación').texto, /No encontré esa rutina/);
-  // Con fecha es otra cosa (un solo día): lo ve la IA.
-  assert.equal(leer('borra la clase de mañana').intent, 'help');
+  // Con fecha es otra cosa (un solo día). Desde la iteración 3, Lía busca lo de ese día (pruebas/quitar.test.mjs);
+  // aquí mañana no hay clases, así que lo dice en vez de pasar a la IA.
+  assert.deepEqual(leer('borra la clase de mañana'), { intent: 'aviso', texto: 'No encontré «clase» mañana.' });
 });
 
 test('cambiar la hora de entrada de un día: más temprano ocupa, más tarde libera', () => {

@@ -33,7 +33,11 @@ export function estadoEval() {
       { id: 'c1', name: 'Trabajo', type: 'trabajo', days: [1, 2, 3, 4, 5], start: '15:00', end: '19:00' },
       { id: 'c2', name: 'Clases', type: 'clase', days: [1, 2, 3, 4, 5], start: '08:00', end: '12:00' },
       { id: 'c3', name: 'Inglés', type: 'otro', days: [6], start: '09:00', end: '11:00' },
+      // Iteración 3: un curso para ligar evaluaciones («pc3 de emprendimiento» → «Emprendimiento»).
+      { id: 'c4', name: 'Emprendimiento', type: 'clase', days: [6], start: '14:00', end: '17:00' },
     ],
+    // Iteración 3: un evento de un día para quitar («quita la reunión del jueves»). La IA no ve los eventos de un día.
+    excepciones: [{ id: 'x1', date: '2026-10-29', start: '13:00', end: '14:00', label: 'Reunión de grupo', cat: 'otro' }],
     evaluaciones: [
       { id: 'e1', type: 'parcial', course: 'Cálculo II', date: '2026-10-29', time: '09:00', hours: 5 },
       { id: 'e2', type: 'entrega', course: 'Informe de Química', date: '2026-10-30', time: '23:59', hours: 4 },
@@ -91,7 +95,12 @@ export function revisar(espera, { r, origen, ia, faltaIA = null }) {
       case 'pregunta': return (r.intent === 'pregunta' && vale(e.falta, faltaDe(r))) || (origen === 'ia' && ia === 'pregunta' && vale(e.falta, faltaIA));
       case 'aviso': return origen === 'ia' ? ia === 'aviso' : r.intent === 'aviso';
       case 'fuera': return origen === 'ia' ? ia === 'fuera' : r.intent === 'help';
-      case 'sin_cambios': return !['add', 'except', 'log', 'replan'].includes(r.intent);
+      // Cambiar o quitar lo que ya está (solo las reglas lo proponen; la app pide confirmar).
+      case 'cambiaEval': return r.intent === 'cambiaEval' && r.evalId === e.evalId && vale(e.date, r.date) && vale(e.time, r.time);
+      case 'quitaEval': return r.intent === 'quitaEval' && r.evalId === e.evalId;
+      case 'quitaEvento': return r.intent === 'quitaEvento' && r.exId === e.exId;
+      case 'quitaRutina': return r.intent === 'quitaRutina' && mismosDias(e.ids, r.ids);
+      case 'sin_cambios': return !['add', 'except', 'log', 'replan', 'cambiaEval', 'quitaEval', 'quitaEvento', 'quitaRutina'].includes(r.intent);
       default: return false;
     }
   });
@@ -107,6 +116,10 @@ export function resumir(r) {
     case 'log': return `anota ${r.min} min de ${r.evalId} el ${r.date}`;
     case 'agenda': return `agenda del ${r.date}`;
     case 'aviso': return `dice: «${r.texto}»`;
+    case 'cambiaEval': return `cambia ${r.evalId} al ${r.date || '(misma fecha)'} ${r.time || '(misma hora)'}`;
+    case 'quitaEval': return `quita la evaluación ${r.evalId}`;
+    case 'quitaEvento': return `quita el evento ${r.exId} del ${r.date}`;
+    case 'quitaRutina': return `quita la rutina ${r.ids.join(', ')}`;
     default: return r.intent;
   }
 }

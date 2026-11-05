@@ -13,7 +13,7 @@ const ENV = { SUPABASE_URL: SB, SUPABASE_ANON_KEY: 'anon', SUPABASE_SERVICE_ROLE
 // Google y la base, en memoria.
 function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExiste = true, refreshVencido = false, alcances = G.ALCANCES } = {}) {
   const db = { estados: {}, cuentas: cuenta ? { u1: { ...cuenta } } : {}, senal: {}, llamadas: [] };
-  const g = { primario, lia: [...lia], calLiaExiste, creados: [], borrados: [], calendariosCreados: 0, calendariosBorrados: 0, watch: [], stop: [], revocados: [], tokens: [] };
+  const g = { primario, lia: [...lia], calLiaExiste, creados: [], borrados: [], actualizados: [], calendariosCreados: 0, calendariosBorrados: 0, watch: [], stop: [], revocados: [], tokens: [], alWatch: null, putFalla: 0 };
   const logs = [];
   const rpc = {
     google_nuevo_estado: ({ p_user, p_origen, p_nonce }) => { const e = 'estado' + (Object.keys(db.estados).length + 1); db.estados[e] = { user_id: p_user, origen: p_origen, nonce: p_nonce }; return e; },
@@ -54,7 +54,11 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
       const ruta = url.slice(CAL.length).split('?')[0], q = new URL(url).searchParams;
       if (g.limite && g.limite-- > 0) return json({ error: { code: 403, errors: [{ reason: 'rateLimitExceeded' }] } }, 403);
       if (ruta === '/calendars' && metodo === 'POST') { g.calendariosCreados++; g.calLiaExiste = true; g.nuevoCal = JSON.parse(cuerpo); return json({ id: 'lia-nuevo@group.calendar.google.com' }); }
-      if (ruta === '/calendars/primary/events/watch') { const b = JSON.parse(cuerpo); g.watch.push(b); return json({ id: b.id, resourceId: 'recurso-' + b.id, expiration: String(AHORA.getTime() + 7 * 864e5) }); }
+      if (ruta === '/calendars/primary/events/watch') {
+        const b = JSON.parse(cuerpo); g.watch.push(b);
+        if (g.alWatch) await g.alWatch(b);   // Google manda el «sync» del canal antes de responder (y de que LIA lo guarde)
+        return json({ id: b.id, resourceId: 'recurso-' + b.id, expiration: String(AHORA.getTime() + 7 * 864e5) });
+      }
       if (ruta === '/channels/stop') { g.stop.push(JSON.parse(cuerpo)); return new Response(null, { status: 204 }); }
       if (ruta === '/calendars/primary/events') {
         g.consulta = Object.fromEntries(q);
@@ -67,6 +71,10 @@ function simular({ env = ENV, cuenta = null, primario = [], lia = [], calLiaExis
         if (!m[2] && metodo === 'DELETE') { g.calendariosBorrados++; return new Response(null, { status: 204 }); }
         if (!m[2]) return json({ id: decodeURIComponent(m[1]) });
         if (m[3] && metodo === 'DELETE') { g.borrados.push(m[3]); g.lia = g.lia.filter(e => e.id !== m[3]); return new Response(null, { status: 204 }); }
+        if (m[3] && metodo === 'PUT') {
+          if (g.putFalla && g.putFalla-- > 0) return json({ error: { code: 400 } }, 400);
+          const b = JSON.parse(cuerpo); g.actualizados.push(b); g.lia = g.lia.map(e => (e.id === m[3] ? b : e)); return json(b);
+        }
         if (metodo === 'POST') { const b = JSON.parse(cuerpo); g.creados.push(b); g.lia.push(b); return json(b); }
         g.consultaLia = Object.fromEntries(q);
         return json({ items: g.lia });
@@ -171,18 +179,63 @@ test('regreso de Google: errores vuelven a la app sin guardar nada', async () =>
   assert.equal((await leerJson(await iniciar(o.deps, { origen: 'https://otra.pe' })))[0], 403);
 });
 
+const aviso = (estado, token = 'secreto-canal', canal = 'canal1') => new Request(FN, { method: 'POST', headers: { 'X-Goog-Channel-ID': canal, 'X-Goog-Channel-Token': token, 'X-Goog-Resource-State': estado, 'X-Goog-Resource-ID': 'recurso1' } });
+
 test('aviso de Google: con el secreto del canal suma una señal; sin él, nada', async () => {
   const s = simular({ cuenta: CUENTA });
-  const aviso = (estado, token = 'secreto-canal', canal = 'canal1') => new Request(FN, { method: 'POST', headers: { 'X-Goog-Channel-ID': canal, 'X-Goog-Channel-Token': token, 'X-Goog-Resource-State': estado, 'X-Goog-Resource-ID': 'recurso1' } });
   assert.equal((await G.manejar(aviso('sync'), s.deps)).status, 200);
   assert.equal(s.db.senal.u1, undefined, 'el primer aviso solo confirma el canal');
   assert.equal((await G.manejar(aviso('exists'), s.deps)).status, 200);
   assert.equal(s.db.senal.u1, 1);
-  assert.equal((await G.manejar(aviso('exists', 'otro'), s.deps)).status, 403);
-  assert.equal((await G.manejar(aviso('exists', 'secreto-canal', 'desconocido'), s.deps)).status, 404);
+  assert.equal((await G.manejar(aviso('exists', 'otro'), s.deps)).status, 403, 'con otro secreto, 403');
   assert.equal(s.db.senal.u1, 1);
   assert.ok(!s.db.llamadas.some(l => l.url.startsWith(CAL)), 'no lee eventos al recibir el aviso');
   sinSecretos(s.logs);
+});
+
+// Causa del 3-nov (22:49): Google manda el «sync» antes de que google_guardar guarde el canal; con un 404, Google no
+// volvió a avisar. Un canal desconocido responde 200 y no hace nada.
+test('aviso de Google: un canal desconocido responde 200 sin hacer nada, sea sync o no', async () => {
+  const s = simular({ cuenta: CUENTA });
+  for (const estado of ['sync', 'exists', 'not_exists']) {
+    const [st, r] = await leerJson(await G.manejar(aviso(estado, 'cualquiera', 'canal-nuevo'), s.deps));
+    assert.deepEqual([st, r], [200, { ok: true }], estado);
+  }
+  assert.deepEqual(s.db.senal, {}, 'no suma señales');
+  assert.equal(s.db.llamadas.filter(l => l.url.endsWith('/google_avisar')).length, 0);
+  const desc = s.logs.filter(l => l.paso === 'aviso');
+  assert.deepEqual(desc.map(l => [l.estado, l.resultado, l.recurso]), [[200, 'desconocido', 'sync'], [200, 'desconocido', 'exists'], [200, 'desconocido', 'not_exists']]);
+  sinSecretos(s.logs);
+});
+
+test('conectar: el «sync» que llega antes de guardar el canal da 200, y el aviso siguiente suma la señal', async () => {
+  const s = simular();
+  const respuestas = [];
+  s.g.alWatch = async b => { respuestas.push((await G.manejar(aviso('sync', b.token, b.id), s.deps)).status); };
+  await iniciar(s.deps);
+  await G.manejar(new Request(`${FN}?code=c1&state=estado1`), s.deps);
+  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'confirmar', estado: 'estado1', nonce: NONCE }), s.deps)))[1], { ok: true, avisos: true });
+  assert.deepEqual(respuestas, [200], 'el sync llegó antes de google_guardar y no fue un error');
+  const w = s.g.watch[0];
+  assert.equal((await G.manejar(aviso('exists', w.token, w.id), s.deps)).status, 200);
+  assert.equal(s.db.senal.u1, 1, 'ya guardado, el aviso suma la señal');
+  sinSecretos(s.logs);
+});
+
+test('renovar: con canal_vence = now() (migración del 4-nov) recrea el canal; su sync antes de guardarlo da 200', async () => {
+  const s = simular({ cuenta: { ...CUENTA, canal_vence: AHORA.toISOString() } });
+  const respuestas = [];
+  s.g.alWatch = async b => { respuestas.push((await G.manejar(aviso('sync', b.token, b.id), s.deps)).status); };
+  const cron = new Request(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-lia-cron': 'cron-bueno' }, body: '{"accion":"renovar"}' });
+  assert.deepEqual(await leerJson(await G.manejar(cron, s.deps)), [200, { ok: true, renovados: 1 }]);
+  assert.deepEqual(respuestas, [200]);
+  assert.deepEqual(s.g.stop, [{ id: 'canal1', resourceId: 'recurso1' }], 'el canal viejo se cierra');
+  const nuevo = s.db.cuentas.u1;
+  assert.equal(nuevo.canal_id, s.g.watch[0].id);
+  assert.equal((await G.manejar(aviso('exists', nuevo.canal_token, nuevo.canal_id), s.deps)).status, 200);
+  assert.equal(s.db.senal.u1, 1);
+  assert.equal((await G.manejar(aviso('exists', 'secreto-canal', 'canal1'), s.deps)).status, 200, 'el viejo ya no existe: 200 y nada');
+  assert.equal(s.db.senal.u1, 1);
 });
 
 // Eventos como los devuelve la API (singleEvents=false): una serie con excepción y una instancia cancelada.
@@ -244,19 +297,56 @@ test('escribir: el calendario «LIA» queda igual a lo de LIA, por diferencia y 
   const quiero = [evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'Estudiar Cálculo II'), evLia('2026-11-05T09:00:00-05:00', '2026-11-05T10:00:00-05:00', 'Parcial de Física', 'evaluacion')];
   const ya = { id: G.idEvento(quiero[0]), summary: 'Estudiar Cálculo II', start: { dateTime: '2026-10-28T00:00:00Z' }, end: { dateTime: '2026-10-28T02:00:00Z' } };
   const sobra = { id: G.idEvento(evLia('2026-10-28T19:00:00-05:00', '2026-10-28T20:00:00-05:00', 'Estudiar Química')), summary: 'Estudiar Química', start: { dateTime: '2026-10-29T00:00:00Z' }, end: { dateTime: '2026-10-29T01:00:00Z' } };
-  const s = simular({ cuenta: CUENTA, lia: [ya, sobra] });
+  const s = simular({ cuenta: CUENTA, lia: [{ ...ya, reminders: G.alertasGoogle('estudio') }, sobra] });
   const [st, r] = await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps));
-  assert.deepEqual([st, r], [200, { ok: true, creados: 1, borrados: 1 }]);
+  assert.deepEqual([st, r], [200, { ok: true, creados: 1, borrados: 1, actualizados: 0 }]);
   assert.deepEqual(s.g.borrados, [sobra.id]);
   const c = s.g.creados[0];
   assert.equal(c.id, G.idEvento(quiero[1]));
   assert.match(c.id, /^[a-v0-9]{5,1024}$/, 'formato de id de Google');
   assert.deepEqual([c.summary, c.start.dateTime, c.end.dateTime, c.start.timeZone], ['Parcial de Física', '2026-11-05T09:00:00-05:00', '2026-11-05T10:00:00-05:00', 'America/Lima']);
   assert.match(c.description, /Evaluación anotada en LIA/);
+  assert.deepEqual(c.reminders, { useDefault: false, overrides: [{ method: 'popup', minutes: 120 }] }, 'lo nuevo nace con su alerta');
   assert.equal(s.g.consultaLia.timeMin, '2026-10-26T05:00:00.000Z', 'desde hoy: lo que ya pasó se queda en el calendario');
   // Una segunda escritura igual no cambia nada.
-  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps)))[1], { ok: true, creados: 0, borrados: 0 });
+  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps)))[1], { ok: true, creados: 0, borrados: 0, actualizados: 0 });
   sinSecretos(s.logs);
+});
+
+// Recordatorios (iteración 3): la alerta de Google avisa aunque LIA esté cerrada.
+test('eventoGoogle: alerta emergente 2 horas antes de una evaluación y 15 minutos antes de lo demás', () => {
+  const alerta = tipo => G.eventoGoogle(evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'Algo', tipo)).reminders;
+  assert.deepEqual(alerta('evaluacion'), { useDefault: false, overrides: [{ method: 'popup', minutes: 120 }] });
+  for (const tipo of ['estudio', 'clase', 'otro']) assert.deepEqual(alerta(tipo), { useDefault: false, overrides: [{ method: 'popup', minutes: 15 }] }, tipo);
+  assert.deepEqual(G.eventoGoogle({ inicio: '2026-10-27T19:00:00-05:00', fin: '2026-10-27T20:00:00-05:00', titulo: 'Sin tipo' }).reminders.overrides, [{ method: 'popup', minutes: 15 }]);
+});
+
+test('escribir: los eventos que ya estaban sin la alerta se actualizan con PUT; los que la tienen, no', async () => {
+  const quiero = [evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'Estudiar Cálculo II'), evLia('2026-11-05T09:00:00-05:00', '2026-11-05T10:00:00-05:00', 'Parcial de Física', 'evaluacion'),
+    evLia('2026-10-28T13:00:00-05:00', '2026-10-28T14:30:00-05:00', 'Almuerzo', 'otro')];
+  const viejo = (e, extra = {}) => ({ id: G.idEvento(e), summary: e.titulo, start: { dateTime: e.inicio }, end: { dateTime: e.fin }, ...extra });
+  const s = simular({ cuenta: CUENTA, lia: [
+    viejo(quiero[0]),                                                                   // de antes: sin alerta (la del calendario)
+    viejo(quiero[1], { reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 15 }] } }),   // alerta equivocada
+    viejo(quiero[2], { reminders: G.alertasGoogle('otro') }),                           // ya al día
+  ] });
+  const [st, r] = await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps));
+  assert.deepEqual([st, r], [200, { ok: true, creados: 0, borrados: 0, actualizados: 2 }]);
+  assert.deepEqual(s.g.actualizados.map(e => [e.id, e.reminders.overrides[0].minutes]).sort(), [[G.idEvento(quiero[0]), 15], [G.idEvento(quiero[1]), 120]].sort());
+  assert.ok(s.g.actualizados.every(e => e.summary && e.start.dateTime && e.extendedProperties.private.lia === '1'), 'el PUT lleva el evento completo');
+  assert.equal(s.g.creados.length + s.g.borrados.length, 0);
+  // La siguiente escritura ya no actualiza nada.
+  assert.deepEqual((await leerJson(await G.manejar(app({ accion: 'escribir', eventos: quiero }), s.deps)))[1], { ok: true, creados: 0, borrados: 0, actualizados: 0 });
+  sinSecretos(s.logs);
+});
+
+test('escribir: si Google no acepta la actualización, cuenta el error como los demás', async () => {
+  const e = evLia('2026-10-27T19:00:00-05:00', '2026-10-27T21:00:00-05:00', 'Estudiar Cálculo II');
+  const s = simular({ cuenta: CUENTA, lia: [{ id: G.idEvento(e), summary: e.titulo, start: { dateTime: e.inicio }, end: { dateTime: e.fin } }] });
+  s.g.putFalla = 1;
+  const [st, r] = await leerJson(await G.manejar(app({ accion: 'escribir', eventos: [e] }), s.deps));
+  assert.deepEqual([st, r], [502, { ok: false, error: 'google', creados: 0, borrados: 0, actualizados: 1 }]);
+  assert.equal(s.logs.at(-1).errores, 1);
 });
 
 test('escribir: si la persona borró el calendario «LIA», se vuelve a crear; los datos raros no pasan', async () => {

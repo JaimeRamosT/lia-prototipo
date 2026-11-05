@@ -1,9 +1,9 @@
-// Importar el consolidado de matrícula (PDF) desde el registro, en un iPhone y un Android simulados.
+// Importar el consolidado de matrícula (PDF) en el registro y después, desde el «+», en un iPhone y un Android simulados.
 // Usa pruebas/consolidado/consolidado-ejemplo.pdf (sin datos reales) y pdf.js de vendor/pdfjs, como en producción.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { servir, lanzar, abrir, anchoDeMas, CELULARES } from './ayuda.mjs';
+import { servir, lanzar, abrir, registrar, pestana, anchoDeMas, CELULARES } from './ayuda.mjs';
 
 const PDF = fileURLToPath(new URL('../consolidado/consolidado-ejemplo.pdf', import.meta.url));
 let srv, nav;
@@ -37,6 +37,23 @@ for (const celular of Object.keys(CELULARES)) {
     await pg.setInputFiles('#cons-file', PDF);
     await pg.locator('.sheet').getByText(/Encontré 3 cursos/).waitFor({ timeout: 15000 });
     assert.match(await pg.locator('.sheet').innerText(), /ya está en tus rutinas/);
+    assert.deepEqual(errores, []);
+    await ctx.close();
+  });
+
+  // Iteración 3: también después del registro, desde el «+» (y desde Perfil, ver horario.nav.mjs).
+  test(`${celular}: después del registro, importa el consolidado desde el «+»`, async () => {
+    const { ctx, pg, errores } = await abrir(nav, srv.url, celular);
+    await registrar(pg);
+    await pestana(pg, 'Hoy');
+    await pg.getByRole('button', { name: 'Agregar', exact: true }).click();
+    await pg.getByRole('dialog').getByRole('button', { name: /^Importar consolidado/ }).click();
+    await pg.setInputFiles('#cons-file', PDF);
+    await pg.locator('.sheet').getByText(/Encontré 3 cursos/).waitFor({ timeout: 15000 });
+    await pg.getByRole('button', { name: 'Agregar cursos' }).click();
+    await pg.getByText(/^Agregué 3 cursos a tus rutinas\./).waitFor();
+    const cs = await pg.evaluate(() => JSON.parse(localStorage.getItem('lia.app.v1')).commitments);
+    for (const n of ['Cálculo Diferencial e Integral', 'Estadística Aplicada', 'Comunicación Oral']) assert.ok(cs.some(c => c.name.startsWith(n) && c.type === 'clase'), n);
     assert.deepEqual(errores, []);
     await ctx.close();
   });

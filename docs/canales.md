@@ -17,7 +17,7 @@ Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase 
 - **Base** (`supabase/migrations/…_canales.sql`): `canales` (token del calendario y número de WhatsApp de cada cuenta) y `agenda_canales` (lo publicado). Sin permisos directos: solo funciones. Para la app: `canales_estado`, `activar_calendario`, `desactivar_calendario`, `pedir_codigo_whatsapp`, `quitar_whatsapp`, `avisos_whatsapp`, `publicar_agenda`. Para las funciones (solo `service_role`): `agenda_por_token`, `vincular_whatsapp`, `agenda_whatsapp`, `whatsapp_vinculado`, `avisos_whatsapp_numero`, `tomar_avisos_whatsapp`. `pg_cron` llama a `lia-whatsapp` cada minuto con el secreto de Vault de `lia-avisos`.
 - **`lia-calendario`** (Edge Function, `verify_jwt` apagado): `GET ?t=<token>` devuelve el calendario iCal «LIA». El token de 64 caracteres es la llave; «Dejar de compartir» lo borra. `POST {accion:'importar', url}`, con la sesión de la persona, lee la dirección secreta de su Google Calendar y se la devuelve a la app (ver `docs/calendario.md`).
 - **`lia-google`** (Edge Function, desde el 3-nov): «Conectar con Google», al instante en los dos sentidos. Ver `docs/google.md`.
-- **`lia-whatsapp`** (Edge Function, `verify_jwt` apagado): webhook de Meta firmado con `X-Hub-Signature-256`; vincula con «LIA 123456»; «pausa» y «avisos». Desde el 4-nov (0.11.0), Lía entiende y propone igual que en la app, la persona confirma con «sí» y la app lo guarda al abrirse (ver `docs/whatsapp-lia.md`). Avisos: 15 minutos antes de estudiar y 2 horas antes de una evaluación.
+- **`lia-whatsapp`** (Edge Function, `verify_jwt` apagado): webhook de Meta firmado con `X-Hub-Signature-256`; vincula con «LIA 123456»; «pausa» y «avisos». Desde el 4-nov (0.11.0), Lía entiende y propone igual que en la app, la persona confirma con «sí» y la app lo guarda al abrirse (ver `docs/whatsapp-lia.md`). Avisos de toda la agenda publicada: 15 minutos antes y 2 horas antes de una evaluación (ver «Recordatorios»).
 - **App** (`index.html`): Perfil → «Google Calendar y WhatsApp» (De LIA a Google Calendar, De Google Calendar a LIA y WhatsApp). La agenda se publica sola cuando cambia el plan (`publicarCanales`); el Google Calendar de la persona se lee al abrir la app, cada 6 horas (`sincronizarGcal`).
 
 ## Configurar WhatsApp (Coconut, con su cuenta de Meta)
@@ -36,10 +36,24 @@ Lo que cambia en la privacidad: al activar un canal, la app publica en Supabase 
    | `WHATSAPP_PLANTILLA_CODIGO` | El nombre de la plantilla de autenticación del paso 7 |
 
 4. En WhatsApp → **Configuration → Webhook**: URL `https://lvtthltugrpbqjezwnsd.supabase.co/functions/v1/lia-whatsapp`, «Verify token» = `WHATSAPP_VERIFY_TOKEN`. Luego suscríbete al campo **messages**.
-5. Opcional, para avisos fuera de las 24 horas: en WhatsApp Manager crea una plantilla de categoría **Utility**, idioma español (`es`), con el cuerpo «Hola, soy Lía. A las {{1}} empieza: {{2}}. Escribe «pausa» si no quieres estos avisos.» y pon su nombre en `WHATSAPP_PLANTILLA`. Sin plantilla, los avisos llegan solo si la persona le escribió a LIA en las últimas 24 horas.
+5. **Plantilla de recordatorios, para avisar fuera de las 24 horas** (hace falta para la prueba del 6-nov): en WhatsApp Manager crea una plantilla de categoría **Utility**, idioma español (`es`), con el cuerpo «Hola, soy Lía. A las {{1}} empieza: {{2}}. Escribe «pausa» si no quieres estos avisos.» (ejemplos: `13:00` y `Almuerzo`) y, cuando Meta la apruebe, pon su nombre en `WHATSAPP_PLANTILLA` (y `WHATSAPP_PLANTILLA_IDIOMA` si no es `es`). Sin plantilla, los avisos llegan solo si la persona le escribió a LIA en las últimas 24 horas.
 6. El número de LIA (el de prueba, con código de país y sin «+») va en `WA_LIA` de `index.html` (hoy `15551404567`).
 7. **Plantilla del código (para vincular recibiendo el código, pedido de Coconut del 2-nov):** en WhatsApp Manager → Plantillas de mensajes → Crear plantilla → categoría **Autenticación** → nombre `lia_codigo` → idioma **Español** → entrega del código «**Copiar código**» → enviar a revisión. Cuando esté aprobada, agrega el secreto `WHATSAPP_PLANTILLA_CODIGO` = `lia_codigo` (y `WHATSAPP_PLANTILLA_CODIGO_IDIOMA` si el idioma no es `es`).
 8. En LIA (con tu cuenta) → Perfil → WhatsApp → escribe tu número → «Vincular WhatsApp». LIA te envía el código por WhatsApp y lo escribes en la app. Sin la plantilla, la app muestra el código y tú se lo envías a LIA («LIA 123456»): ese camino necesita que Meta entregue los mensajes que llegan (paso 4).
+
+## Recordatorios (iteración 3, 4-nov)
+
+Desde la migración `20261104160000_iteracion3_avisos.sql`, `tomar_avisos_whatsapp()` avisa de **todo** lo que la app publica en `agenda_canales`, no solo del estudio y las evaluaciones:
+
+| Tipo | Qué es | Cuándo | Texto (sin plantilla) |
+| --- | --- | --- | --- |
+| `estudio` | Sesiones que arma LIA | 15 minutos antes | «Hola, soy Lía. A las 18:00 empieza tu sesión: Estudiar Cálculo II (hasta las 20:00). Escribe «pausa» si no quieres estos avisos.» |
+| `evaluacion` | Parciales, prácticas, entregas… | 2 horas antes | «Hola, soy Lía. A las 09:00 tienes Parcial de Física. ¡Éxitos!» |
+| `clase` y `otro` | Clases, eventos de un día y rutinas (solo si la persona eligió publicarlos, `settings.calTodo`) | 15 minutos antes | «Hola, soy Lía. A las 13:00 empieza: Almuerzo (hasta las 14:30). Escribe «pausa» si no quieres estos avisos.» |
+
+- Solo para números verificados (`wa_verificado`) con avisos activos (`wa_avisos`: «pausa» los apaga y «avisos» los vuelve a activar). Cada aviso se marca `avisado` al tomarlo y no se repite, aunque la app vuelva a publicar la agenda.
+- **Fuera de las 24 horas.** Meta solo entrega un mensaje libre si la persona le escribió a LIA en las últimas 24 horas. Para los demás avisos hace falta la plantilla **Utility** del paso 5 (`WHATSAPP_PLANTILLA`): con ella, todos los tipos van como plantilla con la hora y el título. Sin ella, Meta rechaza esos avisos y el registro de `lia-whatsapp` los cuenta en `errores` (estado HTTP, sin números ni títulos).
+- Google Calendar también avisa: cada evento del calendario «LIA» lleva una alerta emergente con los mismos tiempos (`docs/google.md`).
 
 ## Si el código no llega por WhatsApp
 

@@ -35,6 +35,13 @@ for (const celular of Object.keys(CELULARES)) {
     assert.match(q, /¿Hasta qué hora es\?/);
     await pg.getByRole('button', { name: 'Hasta las 18:00' }).last().click();
     await pg.waitForTimeout(400);
+    // De lunes a viernes, la clase cae en el trabajo (15:00–19:00): desde la 0.12.0 Lía avisa del cruce antes de guardar.
+    const igual = pg.getByRole('button', { name: 'Guardar igual' });
+    if (await igual.count()) {
+      assert.match(await pg.locator('.msg').last().innerText(), /Se cruza con «Trabajo» \([^,]+, 15:00–19:00\)\. ¿Lo guardo igual\?/);
+      await igual.last().click();
+      await pg.waitForTimeout(400);
+    }
     const ex = await pg.evaluate(() => JSON.parse(localStorage.getItem('lia.app.v1')).exceptions.filter(e => e.label === 'Clase'));
     assert.deepEqual(ex.map(e => [e.start, e.end]), [['16:00', '18:00']]);
     assert.match(await decir(pg, 'recuérdame si tengo algo mañana'), /de \w+:|libre/);

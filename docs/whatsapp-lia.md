@@ -16,7 +16,7 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 ## No-objetivos
 
 - **Guardar todo el horario en la cuenta.** Los datos siguen en el navegador (ADR-006, opción B descartada por ahora). El servidor no arma el plan: solo propone.
-- **Notas de voz, fotos ni consolidados por WhatsApp.** Responde «Por ahora solo leo mensajes de texto».
+- **Fotos ni consolidados por WhatsApp.** Responde «Por ahora solo leo mensajes de texto (y audios, en LIA Pro)». Las notas de voz llegaron en la iteración 3, solo en Pro (ver «Audios»).
 - **«¿Y si…?» por WhatsApp.** La simulación necesita el plan completo; por WhatsApp, Lía propone el cambio sin simular.
 - **Cambiar ajustes** (horas de sueño, rutinas permanentes): como en la app, Lía dice que se cambian en Perfil.
 - **Número propio y plantillas de avisos (Utility).** Siguen en `docs/canales.md` como pendientes.
@@ -37,7 +37,7 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 
 - **Reglas en el servidor.** `supabase/functions/lia-whatsapp/reglas.js` se **genera** a partir del bloque `LOGIC` de `index.html` (`node supabase/functions/lia-whatsapp/copiar.mjs`). Lo mismo con la lógica de la IA: `ia.js` es una copia exacta de `lia-ia/logica.js`. Una prueba falla si alguna de las dos copias se desactualiza. Así hay una sola fuente de verdad y las 365 pruebas de las reglas valen para WhatsApp.
 - **Consentimiento.** La tarjeta de WhatsApp en Perfil dice qué se guarda en el servidor y que, en Pro, el mensaje puede pasar por la IA. Quien vincula su número desde la app lo acepta en el mismo formulario. Quien ya estaba vinculado ve «Activar Lía en WhatsApp». Sin aceptar (`settings.waLia`), la app no publica el contexto y WhatsApp sigue como antes: agenda y avisos. Para anotar, Lía dice cómo activarlo. Lo que se confirmó se guarda en cualquier dispositivo con la cuenta, porque no envía nada al servidor.
-- **Contexto publicado.** Con Lía activada en WhatsApp, la app publica lo que Lía necesita para entender: horas de despertar y de dormir, evaluaciones desde hace 14 días (curso, tipo, fecha, hora, horas, lo estudiado y lo que quedó sin hueco) y rutinas (nombre, tipo, días y horas). Es lo mismo que ya va a la IA en cada mensaje (`contextoIA`), más el avance y cuántas evaluaciones próximas cuenta la app (para el límite de Gratis). Se reemplaza cuando cambia y se borra al desvincular WhatsApp. Sin nombre, correo ni lo que vino de Google Calendar.
+- **Contexto publicado.** Con Lía activada en WhatsApp, la app publica lo que Lía necesita para entender: horas de despertar y de dormir, evaluaciones desde hace 14 días (curso, tipo, fecha, hora, horas, lo estudiado y lo que quedó sin hueco) rutinas (nombre, tipo, días y horas) y, desde la iteración 3, eventos de un día desde ayer (id, nombre, categoría, fecha y horas, y lo liberado de una rutina o de un evento), hasta 60, para poder quitarlos. Es lo que ya va a la IA en cada mensaje (`contextoIA`), más el avance, los eventos de un día y cuántas evaluaciones próximas cuenta la app (para el límite de Gratis). El aviso de la tarjeta de WhatsApp dice que se guardan los eventos de un día con sus nombres. Se reemplaza cuando cambia y se borra al desvincular WhatsApp. Sin nombre, correo ni lo que vino de Google Calendar.
 - **Propuestas** (tabla `propuestas_whatsapp`, solo mediante funciones):
   - `borrador`: Lía preguntó un dato (vence a los 10 minutos, como en la app).
   - `pendiente`: Lía mostró el cambio y espera el «sí» (vence a los 30 minutos; una nueva reemplaza a la anterior).
@@ -56,13 +56,14 @@ Hoy, por WhatsApp, Lía solo dice qué hay en la agenda y envía avisos. Para an
 5. Si no, entienden las reglas (`interpret`). Si no entienden (`pideIA`) y la cuenta es Pro con cupo, la IA (`lia-ia`: Groq y, si no responde, Gemini), revisada con `validarIA`. Se descuenta 1 del cupo solo si la IA respondió. Los atajos «hoy», «mañana» y «semana» responden la agenda directo en una frase de hasta 4 palabras; en una más larga, en Pro, va primero la IA («hoy salí tarde y no pude estudiar» no es la agenda).
 6. Según lo entendido:
    - **Agregar** (evaluación o rutina), **un cambio de un día**, **estudio hecho**, **mover o quitar una evaluación**: Lía resume lo que entendió y pregunta «¿Lo guardo?», con los botones «Sí, guárdalo» y «No».
+   - **Quitar un evento de un día o una rutina** (iteración 3): «Entendí: quitar «Reunión de grupo» del jue 29 oct (13:00–14:00). ¿Lo quito de tu LIA?» (o «quitar la rutina «Trabajo» (…). ¿La quito de tu LIA?»), con los botones «Sí, quítalo» (o «Sí, quítala») y «No». Quitar una evaluación usa los mismos botones. Si es una rutina, antes pregunta si solo ese día (se libera, como «mañana no tengo trabajo») o toda la rutina. Al confirmar: «Listo, lo quito de tu LIA…»; al descartar: «Ok, no quité nada.».
    - **Falta un dato**: Lía pregunta ese dato y guarda el borrador.
    - **Próxima evaluación** y **avance**: responde con el contexto publicado.
    - **Agenda de un día**: como «hoy» o «mañana», con `agenda_canales`.
    - **Reorganizar**: «Eso lo hago en LIA: ábrela y toca Rearmar» (Gratis) o «Reorganizo tu semana apenas abras LIA» (Pro).
    - **Charla**: lo mismo que en la app, sin botones.
    - **No entendió**: la ayuda de WhatsApp con ejemplos. En Gratis no se usa la IA.
-7. La app, al abrirse, al volver a la pestaña o con el aviso de Realtime, lee las confirmadas, las vuelve a revisar con el estado real (la evaluación todavía existe, en Gratis hay espacio para otra…), las guarda con un solo Deshacer y avisa «Guardé 2 cambios que me pediste por WhatsApp». Lo que ya no se puede guardar lo explica. Después publica la agenda y el contexto, y WhatsApp queda al día.
+7. La app, al abrirse, al volver a la pestaña o con el aviso de Realtime, lee las confirmadas, las vuelve a revisar con el estado real (la evaluación todavía existe, en Gratis hay espacio para otra…), las guarda con un solo Deshacer y avisa «Guardé 2 cambios que me pediste por WhatsApp». Lo que ya no se puede guardar lo explica; si lo que había que quitar ya no está, dice «No quité «Reunión»: ya no estaba en LIA» (`noQuitado`). Después publica la agenda y el contexto, y WhatsApp queda al día.
 
 ## Textos de Lía (WhatsApp)
 
@@ -98,7 +99,27 @@ Los revisa `design:ux-copy` antes de programar.
 ## P2
 
 - Que WhatsApp vea el plan al día sin abrir LIA: requiere ADR C (guardar el horario en la cuenta).
-- Notas de voz con Whisper.
+- ~~Notas de voz con Whisper~~: hecho el 4-nov, solo en Pro (ver «Audios»).
+
+## Audios (iteración 3, 4-nov, solo Pro)
+
+Pedido de Coconut del 4-nov (`docs/iteracion-3.md`, sección 3): Lía escucha las notas de voz en LIA Pro. La lógica está en `supabase/functions/lia-whatsapp/audio.js`; `logica.js` decide quién puede.
+
+**Flujo** de un mensaje `type: 'audio'`:
+1. Número sin vincular: lo mismo que a un texto (`SIN_VINCULAR`).
+2. Gratis: «Los audios son de LIA Pro. Escríbeme lo mismo y lo entiendo.» Sin descargar nada ni tocar el cupo.
+3. Pro sin Lía activada en WhatsApp (`settings.waLia`, sin contexto publicado): no se manda a Groq; Lía dice cómo activarla. El aviso de esa tarjeta en Perfil es el consentimiento y debe decir que los audios los transcribe Groq y no se guardan.
+4. Pro sin cupo (`usar_ia_whatsapp`, el mismo de `usar_ia()`): «Ya usaste tus 25 mensajes con IA de hoy, y cada audio cuenta como uno…».
+5. Se piden a Meta los datos del audio (`GET https://graph.facebook.com/<versión>/<media_id>`, con `WHATSAPP_TOKEN`; la versión es la misma de los mensajes, `WHATSAPP_API_VERSION` o `v23.0`) y luego el archivo, con el mismo token y solo a direcciones de Meta. Hasta 10 segundos.
+6. Más de **5 MB** (por `file_size` antes de descargar, o por lo descargado) o más de **2 minutos** (la duración de la nota de voz Ogg/Opus, leída de su última página, sin decodificarla): «Ese audio es muy largo: mándame uno de menos de 2 minutos o escríbelo.» No se transcribe ni descuenta.
+7. Groq lo transcribe: `POST https://api.groq.com/openai/v1/audio/transcriptions`, multipart, con `GROQ_API_KEY`, `model=whisper-large-v3-turbo`, `language=es` y `response_format=json`. Hasta 15 segundos. Si falla, tarda o viene vacío: «No pude escuchar ese audio. ¿Me lo escribes?», sin descontar.
+8. Con el texto, se descuenta **1** del cupo y se atiende **exactamente como un mensaje escrito**: «sí» confirma, una evaluación se propone, y si las reglas no entienden y es Pro, va a la IA, que cuenta como cualquier mensaje escrito (un audio que además necesita la IA usa 2 del cupo).
+
+**Privacidad.** El audio y la transcripción solo viven en la memoria de esa llamada: no se guardan en la base ni en los registros. A Groq va el audio para transcribirlo. El registro de `lia-whatsapp` lleva solo el tipo: `audio:ok:<lo que respondió>` (por ejemplo `audio:ok:propuesta:add`), `audio:pro`, `audio:sin_contexto`, `audio:cupo`, `audio:largo` y `audio:error:<paso>` (`sin_clave`, `meta`, `descarga`, `groq`, `limite`, `tiempo`, `vacio`, `red`). Nunca el número, el texto ni la dirección del archivo.
+
+**Pruebas:** `pruebas/whatsapp-audio.test.mjs` (Meta y Groq simulados): Pro con cupo, «sí» por audio, audio que pasa a la IA, Gratis, sin cupo, sin activar, sin vincular, más de 5 MB, más de 2 minutos, fallas de Groq (500, 429, vacío y tiempo), fallas de Meta, sin clave, token solo a Meta y registros sin datos.
+
+**Lo que hace Coconut:** nada nuevo en Meta. `GROQ_API_KEY` ya está en los secretos de las Edge Functions (la usa la IA); hay que volver a desplegar `lia-whatsapp`. El plan gratuito de Groq limita los segundos de audio por hora y por día: con 5 personas de prueba alcanza.
 
 ## Frases de prueba (con un horario de ejemplo)
 
@@ -111,6 +132,8 @@ Los revisa `design:ux-copy` antes de programar.
 | «hoy salgo del trabajo a las 9» | Propone el cambio de un día |
 | «ayer estudié 2 horas de cálculo» | Propone el estudio hecho |
 | «pasaron mi parcial de cálculo al viernes» | Propone mover la evaluación |
+| «cancelaron la reunión del jueves» | Propone quitar el evento con «¿Lo quito?» |
+| «borra lo del martes a las 3» → «Toda la rutina» | Pregunta si solo ese día; propone quitar la rutina con «¿La quito?» |
 | «¿cuál es mi próxima evaluación?» | Responde con el contexto |
 | «¿cómo voy?» | Responde el avance |
 | «me pidió quedarme toda la tarde el jueves» (Pro) | Va a la IA y pregunta el horario |
@@ -133,10 +156,12 @@ Los revisa `design:ux-copy` antes de programar.
 | Capa | Dónde | Qué cubre |
 | --- | --- | --- |
 | Copias | `pruebas/whatsapp-copias.test.mjs` | `reglas.js` e `ia.js` iguales a sus originales; las reglas del servidor (módulo estricto) entienden las 105 frases igual que la app |
-| Servidor | `pruebas/whatsapp-lia.test.mjs` (Meta, Supabase y Groq simulados) | Proponer, «sí», «no», botones, borrador con respuestas rápidas, hora de Lima a las 23:30 y 00:30, límite de Gratis, IA solo Pro y cupo, mensajes repetidos, registros sin textos |
-| App | `pruebas/whatsapp-app.test.mjs` | `contextoWhatsapp()` sin datos personales ni lo de Google; `revisarPropuesta()` con cada motivo |
+| Servidor | `pruebas/whatsapp-lia.test.mjs` (Meta, Supabase y Groq simulados) | Proponer, «sí», «no», botones, borrador con respuestas rápidas, quitar un evento o una rutina, hora de Lima a las 23:30 y 00:30, límite de Gratis, IA solo Pro y cupo, mensajes repetidos, registros sin textos |
+| Audios | `pruebas/whatsapp-audio.test.mjs` (Meta, Supabase y Groq simulados) | Ver «Audios» |
+| Recordatorios | `pruebas/whatsapp-avisos.test.mjs` y `pruebas/sql/recordatorios.sql.mjs` | El texto de cada tipo, con y sin plantilla; qué se avisa y cuándo (ver `docs/canales.md`, «Recordatorios») |
+| App | `pruebas/whatsapp-app.test.mjs` | `contextoWhatsapp()` sin datos personales ni lo de Google, con los eventos de un día desde ayer; `revisarPropuesta()` con cada motivo; `noQuitado()` en `pruebas/quitar.test.mjs` |
 | Base | `pruebas/sql/whatsapp.sql.mjs` (PGlite, también en la CI) | Permisos de cada función, aplicar dos veces, reemplazar, confirmar una vez, vencer, tope de 20, evaluaciones confirmadas para el límite, mismo cupo que `usar_ia()`, `auth.uid()` vuelve a vacío, desvincular y borrar la cuenta (59 comprobaciones) |
-| Navegador | `pruebas/navegador/whatsapp.nav.mjs` (iPhone y computadora) | Guardar al abrir; sin «Activar», nada al servidor; varias juntas con un solo Deshacer (cambio de un día, estudio hecho, mover y quitar); no repetir si el servidor no borró; límite de Gratis y lo que ya no existe; sin red al abrir no ofrece vincular de nuevo |
+| Navegador | `pruebas/navegador/whatsapp.nav.mjs` (iPhone y computadora) | Guardar al abrir; sin «Activar», nada al servidor; varias juntas con un solo Deshacer (cambio de un día, estudio hecho, mover y quitar); no repetir si el servidor no borró; límite de Gratis y lo que ya no existe; quitar un evento y una rutina con un solo Deshacer y explicar lo que ya no está (Android); sin red al abrir no ofrece vincular de nuevo |
 
 Revisión de la fábrica (4-nov): el agente `revisor` (otro modelo) encontró 1 punto bloqueante (botones viejos que confirmaban otra propuesta) y 4 importantes (consentimiento de quien ya estaba vinculado, prueba de la base en el repositorio, atajos de agenda antes de la IA y el límite de Gratis contado distinto que la app), además de 8 menores; el agente `ux` encontró 2 altos (privacidad honesta y cómo responder sin botones) y varios textos. Todos corregidos antes de publicar, salvo lo que queda en «Limitaciones conocidas».
 
@@ -146,6 +171,8 @@ Lo que queda para la prueba con Meta real: botones interactivos en el celular, R
 
 - Lo que vino de Google Calendar no se publica en el contexto (la base nunca guarda eventos ni títulos de Google). Por WhatsApp, «mañana no tengo clases» no libera una clase traída de Google; en la app sí.
 - El consentimiento vive en el dispositivo (`settings.waLia`): en otro navegador, o en la app instalada en iPhone, Perfil vuelve a ofrecer «Activar». Hasta activarlo ahí, ese dispositivo no actualiza el contexto.
+- Quien activó Lía en WhatsApp antes de la 0.12.1 aceptó el aviso sin los eventos de un día. Desde esa versión, su app los publica y la tarjeta muestra el aviso nuevo, pero no lo vuelve a pedir. Si el equipo prefiere pedirlo otra vez, hay que versionar `settings.waLia`.
+- Por WhatsApp no se quita lo que vino de Google Calendar (no está en el contexto): Lía dice que no lo encuentra. En la app sí se puede.
 - `whatsapp_visto` marca el mensaje antes de atenderlo: si la función se cae a mitad, Meta lo reenvía y no se responde. La persona vuelve a escribir.
 - La agenda de WhatsApp se ve al día cuando la app publica. Lo confirmado por WhatsApp aparece en la agenda después de abrir LIA (Lía lo avisa: «Ojo: tienes 1 cambio…»).
 
