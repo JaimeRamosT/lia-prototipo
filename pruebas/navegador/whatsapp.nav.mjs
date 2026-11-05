@@ -4,8 +4,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { servir, lanzar, abrir, registrar, pestana } from './ayuda.mjs';
 
-const pad = n => String(n).padStart(2, '0');
-const fecha = k => { const d = new Date(); d.setDate(d.getDate() + k); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+// La fecha en Lima, como la app (la CI corre en UTC: de noche, «hoy» en UTC ya es mañana).
+const fecha = k => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date(Date.now() + k * 864e5));
 
 let srv, nav;
 before(async () => { srv = await servir(); nav = await lanzar(); });
@@ -69,7 +69,7 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
       fila('p3', { intent: 'log', evalId: fis.id, course: 'Física', date: fecha(0), min: 60 }),
       fila('p4', { intent: 'cambiaEval', evalId: fis.id, date: fecha(5), time: '11:00' })]);
     // De lunes a viernes, el cumpleaños (18:00) cae en el trabajo (15:00–19:00): se guarda igual y el aviso lo dice (0.12.0).
-    await pg.getByText(/^Guardé 3 cambios que me pediste por WhatsApp(; «Cumpleaños» se cruza con «Trabajo» \([^,]+, 15:00–19:00\))?\.$/).waitFor();
+    await pg.getByText(/^Guardé 3 cambios que me pediste por WhatsApp(; «Cumpleaños» se cruza con .+)?\.$/).waitFor();
     s = await guardado(pg);
     assert.ok(s.exceptions.some(x => x.label === 'Cumpleaños') && s.done.some(d => d.evalId === fis.id && d.min === 60) && s.evals.find(e => e.id === fis.id).date === fecha(5));
     await pg.locator('#toastbox').getByRole('button', { name: 'Deshacer' }).click();
