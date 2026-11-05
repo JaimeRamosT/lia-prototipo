@@ -90,6 +90,9 @@ test('una evaluación en horas de clase no avisa (los exámenes suelen ser en cl
   assert.deepEqual(L.choques(st, { ...evento('Repaso', '2026-11-02', '10:00', '12:00'), cat: 'clase' }, ahora()).cruces.map(c => c.ref), ['tr']);
   // Pero un examen de otro curso encima de la clase de Cálculo sí es un cruce (revisión ux del 4-nov).
   assert.deepEqual(L.choques(st, evalua('Química', '2026-11-02', '08:30'), ahora()).cruces.map(c => c.ref), ['cl', 'tr']);
+  // Una rutina «Clases» no dice de qué curso es: no avisa (el registro de siempre: clases de 8 a 1 y examen a las 10).
+  const st2 = estado({ compromisos: [{ id: 'cg', name: 'Clases', type: 'clase', days: [1, 3, 5], start: '08:00', end: '13:00' }] });
+  assert.deepEqual(L.choques(st2, evalua('Cálculo', '2026-11-02', '10:00'), ahora()).cruces, []);
   // Y una clase nueva de otro curso encima de un examen, también.
   assert.deepEqual(L.choques(st, { ...rutina('Inglés', [1], '10:00', '12:00'), type: 'clase' }, ahora()).cruces.map(c => c.ref), ['tr', 'e0']);
 });

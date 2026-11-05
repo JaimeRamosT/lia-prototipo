@@ -1455,9 +1455,10 @@ function choques(state,item,now,excluir){const nada={duplicado:null,cruces:[]},f
   if(!item||typeof item!=='object')return nada;
   const semanal=item.kind==='commit',esEval=item.kind==='eval',esClase=tipoRutina(semanal?item.type:item.kind==='evento'?item.cat:'')==='clase';
   // Un examen suele ser en su propia clase: una evaluación no cruza con la rutina de clases de su mismo curso (sí con la
-  // de otro curso), ni con una clase de un día (recuperación), que no dice de qué curso es.
-  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',mismoCurso=o=>o.label!==undefined||nombreN(o.name)===nombre;
-  const cuenta=o=>esEval?!(deClase(o)&&mismoCurso(o)):true,cuentaE=e=>!esClase||(item.kind!=='evento'&&nombreN(e.course)!==nombre);
+  // de otro curso), ni con clases que no dicen de qué curso son (una de un día, o «Clases», «Universidad»).
+  const generico=n=>/^(clases?|universidad|facultad|cursos?|la u|u|estudios?)$/.test(n);
+  const deClase=o=>tipoRutina(o.type||o.cat||'')==='clase',mismoCurso=o=>o.label!==undefined||generico(nombreN(o.name))||nombreN(o.name)===nombre;
+  const cuenta=o=>esEval?!(deClase(o)&&mismoCurso(o)):true,cuentaE=e=>!esClase||(item.kind!=='evento'&&!generico(nombre)&&nombreN(e.course)!==nombre);
   if(semanal&&!(Array.isArray(item.days)&&item.days.length&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(item.kind==='evento'&&!(fechaIA(item.date)&&ok(item.start)&&ok(item.end)&&item.start!==item.end))return nada;
   if(esEval&&!(fechaIA(item.date)&&ok(item.time)&&EVAL_TYPES[item.type]))return nada;
