@@ -44,31 +44,54 @@ test('preparar la base', async () => {
   const sql = fs.readFileSync(M + '20261104140000_preventa.sql', 'utf8');
   await db.exec(sql);
   await db.exec(sql);   // se puede aplicar dos veces
+  // Precio de LIA Pro desde el 10-nov-2026: S/ 15 al mes y S/ 54.90 por ciclo.
+  const precio = fs.readFileSync(M + '20261111015500_precio_pro.sql', 'utf8');
+  await db.exec(precio);
+  await db.exec(precio);   // también se puede aplicar dos veces
   await db.exec(`insert into auth.users (id, email, email_confirmed_at) values
     ('${A}', 'Ana@Correo.pe', now()), ('${B}', 'beto@correo.pe', now()), ('${C}', 'caro@correo.pe', null), ('${D}', 'dani@correo.pe', now())`);
 });
 
+test('LIA Pro cuesta S/ 15 al mes y S/ 54.90 por ciclo; nadie de la app puede llamar precio()', async () => {
+  const p = await una(`select public.precio('mes') mes, public.precio('ciclo') ciclo, public.precio('anual') otro`);
+  assert.deepEqual([Number(p.mes), Number(p.ciclo), p.otro], [15, 54.9, null]);
+  for (const rol of ['anon', 'authenticated']) {
+    await db.exec(`set role ${rol}`);
+    const e = await falla(`select public.precio('mes')`);
+    await db.exec('reset role');
+    assert.ok(e && /permission denied/.test(e.message), rol);
+  }
+});
+
+test('el precio anterior (S/ 9.90 y S/ 34.90) ya no activa Pro', async () => {
+  for (const [periodo, monto] of [['mes', '9.90'], ['ciclo', '34.90']]) {
+    const e = await falla(`select * from public.registrar_preventa('beto@correo.pe', '${periodo}', ${monto}, 'VIEJO-${periodo}')`);
+    assert.match(e && e.message, /no coincide con el precio/, periodo);
+  }
+  assert.equal(await pagos(), 0);
+});
+
 test('registrar_preventa activa Pro real por el periodo y anota el pago con su operación', async () => {
-  const s = await una(`select * from public.registrar_preventa(' ana@correo.pe ', 'ciclo', 34.90, ' 12345678 ')`);
+  const s = await una(`select * from public.registrar_preventa(' ana@correo.pe ', 'ciclo', 54.90, ' 12345678 ')`);
   assert.deepEqual([s.plan, s.periodo, s.medio, s.demo, s.renovacion_automatica], ['pro', 'ciclo', 'yape', false, false]);
   assert.equal(iso(s.hasta), mas(await hoy(), 4));
   const p = await una(`select * from public.pagos where user_id = '${A}'`);
-  assert.deepEqual([p.periodo, p.medio, Number(p.monto), p.demo, p.referencia], ['ciclo', 'yape', 34.9, false, '12345678']);
+  assert.deepEqual([p.periodo, p.medio, Number(p.monto), p.demo, p.referencia], ['ciclo', 'yape', 54.9, false, '12345678']);
 });
 
 test('la misma operación no se registra dos veces, aunque se escriba distinto', async () => {
-  const e = await falla(`select * from public.registrar_preventa('ana@correo.pe', 'ciclo', 34.90, '12345678')`);
+  const e = await falla(`select * from public.registrar_preventa('ana@correo.pe', 'ciclo', 54.90, '12345678')`);
   assert.match(e && e.message, /ya se registró/);
-  await db.exec(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 9.90, 'ab-1234')`);
+  await db.exec(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 15, 'ab-1234')`);
   assert.equal((await una(`select referencia from public.pagos where referencia ilike 'ab-1234'`)).referencia, 'AB-1234', 'se guarda en mayúsculas');
-  const e2 = await falla(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 9.90, ' Ab-1234 ')`);
+  const e2 = await falla(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 15, ' Ab-1234 ')`);
   assert.match(e2 && e2.message, /ya se registró/, 'misma operación con espacio o en minúsculas');
   assert.equal(await pagos(), 2);
 });
 
 test('otra operación siendo Pro suma el periodo al final; el medio puede ser Plin', async () => {
   const antes = (await plan(A)).hasta;
-  const s = await una(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '87654321', 'plin')`);
+  const s = await una(`select * from public.registrar_preventa('ana@correo.pe', 'mes', 15, '87654321', 'plin')`);
   assert.equal(iso(s.hasta), mas(antes, 1));
   assert.equal(s.medio, 'plin');
   assert.equal((await una(`select medio from public.pagos where referencia = '87654321'`)).medio, 'plin');
@@ -78,11 +101,11 @@ test('monto, plan, operación o correo que no cuadran: error y nada anotado', as
   for (const [q, msj] of [
     [`'ana@correo.pe', 'mes', 5, '1111'`, /no coincide con el precio/],
     [`'ana@correo.pe', 'anual', 99, '1112'`, /Plan no válido/],
-    [`'ana@correo.pe', 'mes', 9.90, ''`, /número de operación/],
-    [`'ana@correo.pe', 'mes', 9.90, '12'`, /número de operación/],
-    [`'ana@correo.pe', 'mes', 9.90, '1234;--'`, /número de operación/],
-    [`'nadie@correo.pe', 'mes', 9.90, '1113'`, /No hay ninguna cuenta/],
-    [`'ana@correo.pe', 'mes', 9.90, '1114', 'tarjeta'`, /Medio no válido/],
+    [`'ana@correo.pe', 'mes', 15, ''`, /número de operación/],
+    [`'ana@correo.pe', 'mes', 15, '12'`, /número de operación/],
+    [`'ana@correo.pe', 'mes', 15, '1234;--'`, /número de operación/],
+    [`'nadie@correo.pe', 'mes', 15, '1113'`, /No hay ninguna cuenta/],
+    [`'ana@correo.pe', 'mes', 15, '1114', 'tarjeta'`, /Medio no válido/],
   ]) assert.match((await falla(`select * from public.registrar_preventa(${q})`) || {}).message || '', msj);
   assert.equal(await pagos(), 3);
 });
@@ -91,8 +114,8 @@ test('la app ni el servidor pueden llamar registrar_preventa, quitar_pro ni prue
   for (const rol of ['anon', 'authenticated', 'service_role']) {
     await db.exec(`set role ${rol}`);
     const e = [
-      await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '2222')`),
-      await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 9.90, '2223', 'plin')`),
+      await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 15, '2222')`),
+      await falla(`select public.registrar_preventa('ana@correo.pe', 'mes', 15, '2223', 'plin')`),
       await falla(`select public.quitar_pro('ana@correo.pe')`),
       await falla(`select public.prueba_permitida('${A}')`),
       await falla(`select * from public.cuentas_prueba`),
