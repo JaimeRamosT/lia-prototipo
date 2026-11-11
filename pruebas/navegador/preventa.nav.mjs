@@ -40,15 +40,15 @@ for (const dispositivo of ['iPhone', 'Computadora']) {
     const hoja = pg.locator('.sheet');
     await hoja.getByRole('heading', { name: 'Pagar LIA Pro' }).waitFor();
     const texto = await hoja.innerText();
-    assert.match(texto, /Preventa · Por ciclo · S\/ 34\.90/i);
+    assert.match(texto, /Preventa · Por ciclo · S\/ 54\.90/i);
     assert.match(texto, /Tienes Pro por 4 meses desde que lo activemos\./);
-    assert.match(texto, /Envía S\/ 34\.90 por Yape o Plin al 987 654 321\./);
+    assert.match(texto, /Envía S\/ 54\.90 por Yape o Plin al 987 654 321\./);
     assert.match(texto, /Si pagas con Yape, elige «Plin» como destino\. Antes de confirmar, revisa que el número sea 987 654 321\./);
     assert.equal(await hoja.getByRole('button', { name: 'Simular pago aprobado' }).count(), 0, 'sin pago gratis');
     const wa = hoja.getByRole('link', { name: 'Enviar por WhatsApp (se abre en una pestaña nueva)' });
     const href = await wa.getAttribute('href');
     assert.ok(href.startsWith('https://wa.me/51987654321?text='));
-    assert.match(decodeURIComponent(href.split('text=')[1]), /quiero LIA Pro por ciclo \(S\/ 34\.90\)\. Ya pagué\. Mi correo en LIA es ana@correo\.pe\. Número de operación: $/);
+    assert.match(decodeURIComponent(href.split('text=')[1]), /quiero LIA Pro por ciclo \(S\/ 54\.90\)\. Ya pagué\. Mi correo en LIA es ana@correo\.pe\. Número de operación: $/);
     // Todavía no activado: el aviso queda dentro de la hoja (role="status"), y después sí.
     await revisar(hoja);
     await hoja.getByRole('status').getByText('Tu Pro aún no está activo. Si ya nos enviaste el número de operación, lo activamos en menos de 24 horas.').waitFor();
@@ -119,7 +119,7 @@ test('el número de Coconut ya viene configurado', async () => {
   const { ctx, pg, errores } = await preparar('Computadora');
   await abrirPago(pg);
   const texto = await pg.locator('.sheet').innerText();
-  assert.match(texto, /Envía S\/ 34\.90 por Yape o Plin al 956 387 807\./);
+  assert.match(texto, /Envía S\/ 54\.90 por Yape o Plin al 956 387 807\./);
   assert.ok((await pg.locator('.sheet').getByRole('link', { name: /Enviar por WhatsApp/ }).getAttribute('href')).startsWith('https://wa.me/51956387807?text='));
   assert.deepEqual(errores, []);
   await ctx.close();

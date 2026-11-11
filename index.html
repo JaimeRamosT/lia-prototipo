@@ -1975,7 +1975,7 @@ const cuentasActivas=()=>!!(SB_CFG.url&&SB_CFG.key);
 const FREE_EVALS=3;
 // Insignia PRO dentro de botones: se ve la insignia y el lector de pantalla oye "(LIA Pro)".
 const PRO_TAG=' <span class="pro" aria-hidden="true">PRO</span><span class="sr-only"> (LIA Pro)</span>';
-const PRICES={mes:{amount:9.90,months:1,name:'Mensual'},ciclo:{amount:34.90,months:4,name:'Por ciclo'}};
+const PRICES={mes:{amount:15,months:1,name:'Mensual'},ciclo:{amount:54.90,months:4,name:'Por ciclo'}};
 const METHODS={
  yape:{name:'Yape',how:'Ingresas tu número de celular y el código de aprobación que te da Yape.',fail:'Revisa que el código de aprobación siga vigente (dura 2 minutos) y que tengas saldo.'},
  plin:{name:'Plin u otra billetera',how:'Escaneas un código QR desde Plin o la app de tu banco.',fail:'Revisa tu saldo e inténtalo otra vez.'},
@@ -1989,7 +1989,7 @@ const PREVENTA={numero:'956387807',titular:'',whatsapp:'51956387807'};
 const preventaConfigurada=()=>/^9\d{8}$/.test(PREVENTA.numero)&&/^\d{10,15}$/.test(PREVENTA.whatsapp);
 const preventaActiva=()=>preventaConfigurada()&&!modoPruebas();
 const SAVE_CICLO=PRICES.mes.amount*PRICES.ciclo.months-PRICES.ciclo.amount;
-const SAVE_PCT=Math.round(SAVE_CICLO/(PRICES.mes.amount*PRICES.ciclo.months)*100);
+const SAVE_PCT=Math.floor(SAVE_CICLO/(PRICES.mes.amount*PRICES.ciclo.months)*100+1e-9);  // hacia abajo: nunca promete más ahorro del real
 const fechaSub=s=>{const d=fromYmd(s);return fechaLarga(s)+(d.getFullYear()!==now().getFullYear()?` de ${d.getFullYear()}`:'');};
 function freeSub(history){return{tier:'free',period:null,method:null,since:null,until:null,autoRenew:false,history:history||[]};}
 // Pro = hay cuenta y su plan Pro sigue vigente. El plan lo decide Supabase; aquí se guarda para usarlo sin internet.
@@ -3783,7 +3783,7 @@ Object.assign(A,{
 });
 
 // ---------- Versión y modo de la app ----------
-const APP_VERSION='0.12.1';
+const APP_VERSION='0.12.2';
 const isStandalone=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;}catch(e){return false;}};
 const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 function calm(){const a=document.activeElement;return !ui.sheet&&!ui.session&&!ui.listen&&!(a&&a.matches('input,select'));}
