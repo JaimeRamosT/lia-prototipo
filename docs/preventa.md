@@ -1,6 +1,6 @@
 # LIA · Preventa de LIA Pro con Yape o Plin
 
-4 de noviembre de 2026. Pedido de Coconut: tener lista la preventa con Yape mientras se construye el cobro con Mercado Pago (`docs/pagos.md`, en borrador y pospuesto hasta que Coconut lo indique). El número del equipo (956 387 807) recibe por **Plin**, no tiene Yape: desde 2023 Yape y Plin se pueden enviar dinero entre sí, así que la persona paga con cualquiera de los dos (en Yape elige «Plin» como destino). Pago único por mes (S/ 9.90) o por ciclo (S/ 34.90). Sin renovación automática.
+4 de noviembre de 2026. Pedido de Coconut: tener lista la preventa con Yape mientras se construye el cobro con Mercado Pago (`docs/pagos.md`, en borrador y pospuesto hasta que Coconut lo indique). El número del equipo (956 387 807) recibe por **Plin**, no tiene Yape: desde 2023 Yape y Plin se pueden enviar dinero entre sí, así que la persona paga con cualquiera de los dos (en Yape elige «Plin» como destino). Pago único por mes (S/ 15) o por ciclo de 4 meses (S/ 54.90), desde el 10 de noviembre de 2026 (antes S/ 9.90 y S/ 34.90). Sin renovación automática.
 
 ## Cómo funciona
 
@@ -9,7 +9,7 @@
 3. El equipo revisa en su app de Plin que llegó el monto y, en Supabase → SQL Editor, activa Pro (el último dato es con qué pagó la persona: `'yape'` o `'plin'`; si no se pone, queda `'yape'`):
 
    ```sql
-   select * from public.registrar_preventa('correo@de-la-persona.pe', 'ciclo', 34.90, 'NUMERO-DE-OPERACION', 'plin');
+   select * from public.registrar_preventa('correo@de-la-persona.pe', 'ciclo', 54.90, 'NUMERO-DE-OPERACION', 'plin');
    ```
 
    - El monto tiene que ser el precio del plan, y el número de operación es obligatorio (de 4 a 40 letras, números o guiones; se guarda sin espacios y en mayúsculas): la misma operación no se registra dos veces.
@@ -17,6 +17,34 @@
    - Si la cuenta ya es Pro, el periodo se suma al final.
    - Es un pago real: `demo = false`, con el medio (`yape` o `plin`) y la operación en `pagos.referencia`.
 4. La persona toca **Ya me activaron: revisar mi plan**, o simplemente abre LIA, y ya tiene Pro. Si todavía no está activo (o, si ya era Pro, si su Pro no se alargó), el aviso aparece en la misma hoja.
+
+## Mensaje para quien pide Pro por WhatsApp
+
+Cuando alguien escribe al equipo (o se interesa en persona) sin pasar por la app, envíale este mensaje. Pide lo mismo que el mensaje que arma la app: el plan, el correo de su cuenta en LIA y el número de operación. Si cambia el precio, el número o el plazo de activación, cambia también este texto.
+
+```text
+Hola, gracias por tu interés en LIA Pro. Para activarlo:
+
+1. Elige tu plan: *Mensual, S/ 15.00* o *Por ciclo (4 meses), S/ 54.90*.
+2. Envía el monto por Yape o Plin al *956 387 807*. Si pagas con Yape, elige «Plin» como destino. Antes de confirmar, revisa que el número sea ese.
+3. Respóndenos por aquí con:
+   - el plan que elegiste,
+   - el correo con el que entras a LIA (si aún no tienes cuenta, créala en Perfil → «Crear cuenta»: https://lia-prototipo.jaime-ramos-93c.workers.dev),
+   - el número de operación que te muestra tu app al pagar.
+
+Activamos tu Pro en menos de 24 horas y te avisamos por aquí. Tu Pro empieza el día que lo activamos. Es un pago único: no se renueva solo, y al terminar vuelves a Gratis sin perder tus datos.
+```
+
+Con su respuesta, activa Pro con `registrar_preventa` (paso 3). Si el correo no tiene cuenta, la función lo avisa: pídele que la cree con ese correo.
+
+## Cambio de precio (10 de noviembre de 2026)
+
+- LIA Pro pasó de S/ 9.90 a **S/ 15 al mes** y de S/ 34.90 a **S/ 54.90 por ciclo** (8.5 % menos que 4 meses sueltos: la app muestra «Ahorras S/ 5.10 (8%)», porque redondea hacia abajo para no prometer más ahorro del real).
+- El precio está en `PRICES` (`index.html`) y en `precio()` (migración `20261111015500_precio_pro.sql`). `pruebas/precios.test.mjs` revisa que digan lo mismo.
+- **Antes de aplicar la migración, activa los pagos que llegaron con el precio anterior.** Después, `registrar_preventa` solo acepta el precio nuevo.
+- **Aplica la migración el mismo día que integras a `main`.** Mientras la app muestre un precio y la base tenga el otro, `registrar_preventa` rechaza lo que la persona pagó. Comprueba en el SQL Editor con `select public.precio('mes'), public.precio('ciclo');`: debe dar 15.00 y 54.90. Al 10-nov, la lista de migraciones de producción llega solo hasta el 3-nov, así que revisa que esta se aplique.
+- **Si alguien paga el precio anterior después del cambio** (por ejemplo, con la app abierta desde antes), no se puede activar con ese monto. Pídele la diferencia y activa con el precio nuevo y la operación del primer pago (anota la segunda operación fuera de la base), o devuélvele lo que pagó.
+- Quien ya tiene Pro lo mantiene hasta su fecha: la preventa no se renueva sola.
 
 ## Abrir la preventa (una vez)
 
